@@ -31,6 +31,7 @@ def validate_lease_for_command(
     revoked_lease_ids: set[str] | None = None,
     max_lease_age_seconds: int = DEFAULT_LEASE_MAX_AGE_SECONDS,
     max_lease_ttl_seconds: int = DEFAULT_LEASE_MAX_TTL_SECONDS,
+    now: datetime | None = None,
 ) -> tuple[bool, str]:
     revoked_lease_ids = revoked_lease_ids or set()
     if lease is None:
@@ -41,7 +42,7 @@ def validate_lease_for_command(
         return False, "ISSUER_NOT_TRUSTED"
     if not verify_lease_signature(lease, issuer_public_key_b64):
         return False, "INVALID_SIGNATURE"
-    now = datetime.now(timezone.utc)
+    now = now or datetime.now(timezone.utc)
     if is_not_yet_valid(lease, now):
         return False, "LEASE_NOT_YET_VALID"
     if is_expired(lease, now):

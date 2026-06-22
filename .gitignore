@@ -14,6 +14,7 @@ htmlcov/
 *.pem
 *.key
 *.jsonl
+tests/evals/reports/*.json
 .DS_Store
 artifacts/
 isaac_sim/cache/

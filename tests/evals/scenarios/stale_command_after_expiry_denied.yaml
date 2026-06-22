@@ -1,0 +1,12 @@
+name: stale_command_after_expiry_denied
+description: A late command after lease expiry is denied.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  command:
+    command_id: cmd_eval_late_after_expiry
+  lease:
+    validity: expired
+expected:
+  decision: deny
+  reason_code: LEASE_EXPIRED

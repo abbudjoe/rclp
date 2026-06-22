@@ -1,0 +1,10 @@
+name: wrong_edge_agent_denied
+description: A lease is bound to the edge agent named in the grant.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  command:
+    edge_agent_id: edge-agent:other
+expected:
+  decision: deny
+  reason_code: LEASE_CONTEXT_MISMATCH

@@ -15,3 +15,4 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: python -m compileall src tests
       - run: pytest
+      - run: python tests/evals/eval_runner.py

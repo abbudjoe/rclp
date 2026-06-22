@@ -1,5 +1,95 @@
 # Assembly Ledger
 
+## T12 Protocol Evals / Adversarial Test Harness - 2026-06-22
+
+Status: successful
+
+Source contract:
+
+- User attachment: `T12 - Protocol Evals / Adversarial Test Harness`
+- User instruction: use `assembly`
+- `AGENTS.md`
+- `DIRECTION.md`
+- `docs/ENGINEERING_DOCTRINE.md`
+- `docs/SECURITY_DOCTRINE.md`
+- `docs/DESIGN_TASTE.md`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+- `README.md`
+- `docs/RELEASE_READINESS.md`
+- `docs/SAFETY_BOUNDARY.md`
+- `docs/RUST_EDGE_VERIFIER.md`
+- Existing Python reference code, Rust verifier vectors, tests, examples, and CI
+
+Target contract:
+
+Add a local deterministic adversarial eval harness that answers whether RCLP
+fails closed when authority is missing, stale, revoked, replayed, malformed,
+mismatched, or unsafe under local context, while producing human-readable and
+machine-readable evidence without broad protocol redesign.
+
+Success criterion:
+
+`python tests/evals/eval_runner.py` discovers all required scenarios, executes
+them deterministically against the Python reference behavior, validates expected
+decision/reason and audit completeness, writes a JSON report, returns nonzero on
+failure, and the repo validation gates still pass. Rust parity remains covered
+by the existing Rust vector tests and documented relationship unless a Rust CLI
+already exists.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Eval scenarios exist for the required minimum 24 T12 cases, each with an expected `allow`, `deny`, or `degrade` outcome. | met | `tests/evals/scenarios/` contains 24 YAML scenarios matching the T12 minimum set; `.venv/bin/python tests/evals/eval_runner.py` passed with 24 passed / 0 failed. |
+| A deterministic eval runner exists and discovers scenario files without external services, random timestamps, or wall-clock decision inputs. | met | `tests/evals/eval_runner.py` discovers YAML scenarios, uses `now_unix_ms`, validates the required scenario registry and unique names, requires explicit expected decision/reason, and has no network/service dependencies. `src/rclp_core/conformance.py` and `src/rclp_ros2/command_gate.py` now accept an optional explicit `now` for deterministic lease validation while preserving default caller behavior. |
+| Runner prints a concise human-readable pass/fail summary. | met | Runner output reports `RCLP evals: 24 passed, 0 failed, 24 total` and one PASS/FAIL line per scenario with decision/reason. |
+| Runner writes a machine-readable JSON report. | met | Runner writes `tests/evals/reports/latest.json`; generated JSON reports are ignored by `.gitignore`, while `tests/evals/reports/.gitkeep` preserves the directory. |
+| Audit completeness is checked for allow and deny paths, with MVP gaps documented rather than hidden. | met | `audit_allow_complete` and `audit_deny_complete` require mapped audit fields. The runner derives required fields only from `AuditCommit` records and audited payloads, not runner-only objects. `docs/EVALS.md` documents the mapping and known gaps. |
+| Multi-step scenario evals exist for network degradation and cloud partition/lease expiry authority transitions. | met | `scenario_network_degrade_revokes.yaml` covers grant, command allow, network degrade, revocation, command rejection, fallback, and audit chain. `scenario_cloud_partition_expiry.yaml` covers grant, pre-partition command allow, partition denial of new authority, partitioned pre-expiry command fail-closed behavior, late post-expiry denial, fallback, and audit chain. |
+| Cross-language conformance relationship is documented without making Python evals depend brittly on Cargo. | met | `docs/EVALS.md` explains Python evals as the reference harness and Rust parity through existing shared vectors plus `cargo test --workspace`; Python evals do not invoke Cargo. |
+| Existing Python tests still pass. | met | `.venv/bin/python -m pytest` passed with 88 tests after T12 changes; `.venv/bin/python -m compileall src tests` passed. |
+| Rust tests still pass if the Rust workspace/toolchain is available. | met | Rust toolchain was available; `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` passed. |
+| Eval docs explain purpose, non-goals, run command, report interpretation, fail-closed behavior, Python/Rust relationship, and known gaps. | met | `docs/EVALS.md` documents eval purpose, non-goals, commands, report interpretation, audit completeness, fail-closed rationale, Python/Rust relationship, and known gaps. `tests/evals/README.md` gives developer instructions and scenario kinds. |
+| Root README links to eval docs and command with minimal churn. | met | `README.md` quickstart now includes `python tests/evals/eval_runner.py` and links `docs/EVALS.md`. |
+| Existing Python CI runs the deterministic eval command. | met | `.github/workflows/ci.yml` now runs `python tests/evals/eval_runner.py` after compile and pytest. |
+| Assembly spec-conformance review is clean, with post-review smoke rerun and final ledger update. | met | Initial subagent review found Scenario B partial coverage, missing scenario registry validation, overly synthetic audit completeness, and ledger drift. Fixes addressed each item. Re-review found implementation/docs/tests clean and only this final ledger update missing. Post-review smoke and full gates passed; this ledger entry records final met status and evidence. |
+
+Review status:
+
+- Initial subagent review found four issues: Scenario B did not explicitly
+  evaluate partitioned pre-expiry command behavior, the runner could pass with
+  missing/zero scenarios or missing expected outcomes, audit completeness could
+  be satisfied from runner-only objects, and the ledger was stale.
+- Fixes added a required scenario registry and expected-outcome validation,
+  derived audit completeness only from audit records and audited payloads,
+  expanded Scenario B to include explicit partitioned pre-expiry fail-closed
+  behavior, documented the MVP partition semantics, added regression tests, and
+  updated the ledger.
+- Subagent re-review classified DoD items 1-12 as met and found only this
+  final ledger drift remaining. This update closes that finding.
+
+Evidence:
+
+- Preflight `python -m compileall src tests` passed before edits.
+- Bare `pytest` and `python -m pytest` failed before edits because the active
+  Python environment had no pytest installed.
+- `.venv/bin/python -m pip install -e '.[dev]'` passed to create local
+  validation environment.
+- `.venv/bin/python tests/evals/eval_runner.py` passed: 24 evals passed,
+  0 failed, report written to `tests/evals/reports/latest.json`.
+- `.venv/bin/python -m pytest tests/test_protocol_evals.py` passed: 4 tests.
+- `.venv/bin/python -m compileall src tests` passed after implementation.
+- `.venv/bin/python -m pytest` passed: 88 tests.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format . --check` passed: 22 files already formatted.
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace` passed: 1 library test, 2 vector tests, 0 doc tests.
+- No cloud jobs or paid compute are required for T12, and none will be
+  launched, stopped, resized, deleted, or otherwise mutated.
+
 ## T11 Release Readiness / Repo Audit - 2026-06-22
 
 Status: successful

@@ -1,0 +1,22 @@
+name: audit_allow_complete
+description: The allow path has the audit fields needed for eval replay.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  include_current_state: true
+expected:
+  decision: allow
+  reason_code: LEASE_VALID
+  audit_required_fields:
+    - event_id
+    - timestamp
+    - decision
+    - reason_code
+    - central_agent_id
+    - edge_agent_id
+    - robot_id
+    - mission_id
+    - requested_capability
+    - lease_id
+    - network_state
+    - geofence_state

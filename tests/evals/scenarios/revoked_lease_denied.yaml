@@ -1,0 +1,16 @@
+name: revoked_lease_denied
+description: A known revocation invalidates a previously valid lease.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  revocation:
+    present: true
+    reason_code: NETWORK_PROFILE_REVOKE
+    fallback_action: hold_position
+expected:
+  decision: deny
+  reason_code: LEASE_REVOKED
+  audit_event_types:
+    - lease_revoked
+    - fallback_declared
+    - command_rejected

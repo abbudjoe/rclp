@@ -1,0 +1,10 @@
+name: not_yet_valid_denied
+description: A future-dated lease is rejected before its validity window.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  lease:
+    validity: not_yet_valid
+expected:
+  decision: deny
+  reason_code: LEASE_NOT_YET_VALID

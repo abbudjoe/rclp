@@ -1,0 +1,10 @@
+name: wrong_central_agent_denied
+description: A lease for one central agent cannot be replayed by another agent.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  command:
+    central_agent_id: fleet-agent:other
+expected:
+  decision: deny
+  reason_code: LEASE_CONTEXT_MISMATCH

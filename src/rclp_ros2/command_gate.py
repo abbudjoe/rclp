@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 
 from pydantic import BaseModel
 
@@ -195,6 +196,7 @@ class CommandGate:
         command: Command,
         lease: CapabilityLease | None,
         current_state: RobotStateAssertion | None = None,
+        now: datetime | None = None,
     ) -> GateResult:
         ok, reason = validate_lease_for_command(
             lease,
@@ -209,6 +211,7 @@ class CommandGate:
             revoked_lease_ids=set(self.revocations),
             max_lease_age_seconds=self.max_lease_age_seconds,
             max_lease_ttl_seconds=self.max_lease_ttl_seconds,
+            now=now,
         )
         if ok:
             payload = {

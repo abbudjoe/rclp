@@ -1,0 +1,10 @@
+name: expired_lease_denied
+description: An expired lease cannot authorize a command.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  lease:
+    validity: expired
+expected:
+  decision: deny
+  reason_code: LEASE_EXPIRED

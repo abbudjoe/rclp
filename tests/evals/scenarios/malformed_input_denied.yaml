@@ -1,0 +1,14 @@
+name: malformed_input_denied
+description: Missing required request fields are rejected without crashing the runner.
+kind: malformed_input
+now_unix_ms: 1760000000000
+input:
+  raw_request:
+    requesting_agent_id: fleet-agent:v0.1
+    edge_agent_id: edge-agent:rover-001
+    mission_id: mission-001
+    capability: remote_assist
+    reason: malformed request missing robot_id
+expected:
+  decision: deny
+  reason_code: MALFORMED_INPUT

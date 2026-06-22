@@ -1,0 +1,9 @@
+name: valid_remote_assist
+description: Valid remote-assist lease under normal local context.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  include_current_state: true
+expected:
+  decision: allow
+  reason_code: LEASE_VALID

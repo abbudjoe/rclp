@@ -1,0 +1,12 @@
+name: replay_nonce_denied
+description: A repeated central-agent request nonce fails closed.
+kind: policy_decision
+now_unix_ms: 1760000000000
+input:
+  request:
+    request_nonce: nonce_replay_eval
+  seen_request_nonces:
+    - nonce_replay_eval
+expected:
+  decision: deny
+  reason_code: REQUEST_REPLAYED

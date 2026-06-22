@@ -1,0 +1,10 @@
+name: no_lease_denied
+description: A command without a lease fails closed.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  lease:
+    present: false
+expected:
+  decision: deny
+  reason_code: NO_LEASE

@@ -1,0 +1,11 @@
+name: cloud_partition_no_new_authority
+description: A partitioned network denies new high-risk authority.
+kind: policy_decision
+now_unix_ms: 1760000000000
+input:
+  local_context:
+    network:
+      profile: partition
+expected:
+  decision: deny
+  reason_code: NETWORK_DETACHED

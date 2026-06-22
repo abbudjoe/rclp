@@ -1,0 +1,13 @@
+name: geofence_violation_denied
+description: Local geofence state can invalidate an otherwise valid lease.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  include_current_state: true
+  local_context:
+    geofence:
+      geofence_id: test-zone-a
+      inside: false
+expected:
+  decision: deny
+  reason_code: GEOFENCE_CONSTRAINT_VIOLATED

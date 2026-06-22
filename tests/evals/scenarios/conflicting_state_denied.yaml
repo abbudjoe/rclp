@@ -1,0 +1,11 @@
+name: conflicting_state_denied
+description: Fresher local mission state conflicting with the lease fails closed.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  include_current_state: true
+  local_context:
+    mission_id: mission-002
+expected:
+  decision: deny
+  reason_code: LEASE_STATE_MISMATCH

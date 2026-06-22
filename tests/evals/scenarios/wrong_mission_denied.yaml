@@ -1,0 +1,10 @@
+name: wrong_mission_denied
+description: A lease is scoped to one mission.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  command:
+    mission_id: mission-002
+expected:
+  decision: deny
+  reason_code: LEASE_CONTEXT_MISMATCH

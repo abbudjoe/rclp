@@ -1,0 +1,30 @@
+name: scenario_network_degrade_revokes
+description: A valid lease is revoked after network degradation and later commands are denied.
+kind: network_degrade_revokes
+now_unix_ms: 1760000000000
+expected:
+  decision: deny
+  reason_code: LEASE_REVOKED
+  audit_event_types:
+    - capability_requested
+    - network_state_asserted
+    - capability_allowed
+    - command_allowed
+    - capability_degraded
+    - lease_revoked
+    - command_rejected
+    - fallback_declared
+  audit_required_fields:
+    - event_id
+    - timestamp
+    - decision
+    - reason_code
+    - central_agent_id
+    - edge_agent_id
+    - robot_id
+    - mission_id
+    - requested_capability
+    - lease_id
+    - network_state
+    - geofence_state
+    - fallback_action

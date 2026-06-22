@@ -59,6 +59,7 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 python -m compileall src tests
 pytest
+python tests/evals/eval_runner.py
 python -m rclp_agents.demo_remote_assist
 ```
 
@@ -162,3 +163,5 @@ Release readiness notes: `docs/RELEASE_READINESS.md`.
 Conformance checklist: `docs/CONFORMANCE_CHECKLIST.md`.
 
 Rust verifier notes: `docs/RUST_EDGE_VERIFIER.md`.
+
+Protocol evals: `docs/EVALS.md`.

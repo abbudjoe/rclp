@@ -1,0 +1,10 @@
+name: malformed_signature_denied
+description: A malformed lease signature is rejected before context use.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  lease:
+    signature: malformed
+expected:
+  decision: deny
+  reason_code: INVALID_SIGNATURE

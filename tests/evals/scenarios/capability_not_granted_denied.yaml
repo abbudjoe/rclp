@@ -1,0 +1,10 @@
+name: capability_not_granted_denied
+description: A remote-assist lease cannot authorize a different capability.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  command:
+    capability: mission_continue
+expected:
+  decision: deny
+  reason_code: LEASE_CONTEXT_MISMATCH

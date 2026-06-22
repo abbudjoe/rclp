@@ -1,0 +1,12 @@
+name: high_latency_degraded_or_denied
+description: Latency above the remote-assist threshold degrades authority.
+kind: policy_decision
+now_unix_ms: 1760000000000
+input:
+  local_context:
+    network:
+      profile: normal
+      latency_ms_p95: 180
+expected:
+  decision: degrade
+  reason_code: NETWORK_LATENCY_DEGRADED

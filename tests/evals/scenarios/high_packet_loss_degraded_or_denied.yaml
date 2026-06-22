@@ -1,0 +1,12 @@
+name: high_packet_loss_degraded_or_denied
+description: Packet loss above the remote-assist threshold degrades authority.
+kind: policy_decision
+now_unix_ms: 1760000000000
+input:
+  local_context:
+    network:
+      profile: normal
+      packet_loss_pct: 3.5
+expected:
+  decision: degrade
+  reason_code: NETWORK_PACKET_LOSS_DEGRADED

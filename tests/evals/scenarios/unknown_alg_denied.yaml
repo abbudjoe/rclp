@@ -1,0 +1,10 @@
+name: unknown_alg_denied
+description: An unsupported signature profile marker fails closed in the Python profile.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  lease:
+    signature: unknown_algorithm
+expected:
+  decision: deny
+  reason_code: INVALID_SIGNATURE
