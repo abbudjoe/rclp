@@ -1,0 +1,69 @@
+{
+  "name": "network_partition_rejected",
+  "description": "A detached edge context fails closed under network policy.",
+  "now_unix_ms": 1760000000000,
+  "trusted_context": {
+    "trusted_issuer_ids": [
+      "issuer"
+    ],
+    "dev_hmac_secret": "dev-test-secret",
+    "now_unix_ms": 1760000000000,
+    "revocations": [],
+    "max_lease_ttl_ms": 600000,
+    "max_lease_age_ms": 600000
+  },
+  "seen_nonces": [],
+  "input": {
+    "lease": {
+      "alg": "RCLP-DEV-HMAC-SHA256",
+      "claims": {
+        "lease_id": "lease-network-partition",
+        "issuer_id": "issuer",
+        "agent_id": "fleet-agent:v0.1",
+        "edge_agent_id": "edge-agent:rover-001",
+        "robot_id": "rover-001",
+        "mission_id": "mission-001",
+        "capability": "remote_assist",
+        "constraints": {
+          "geofence_id": "test-zone-a",
+          "max_latency_ms_p95": 80.0,
+          "max_packet_loss_pct": 1.0,
+          "min_uplink_mbps": 3.0,
+          "fallback_on_degrade": "local_autonomy_only"
+        },
+        "issued_at": 1759999900000,
+        "expires_at": 1760000500000,
+        "nonce": "nonce-network-partition"
+      },
+      "signature": "1b8b762fe31f3fb4d24e7fe4cd3acccec4449a657396633e6d38cb9308e225d9"
+    },
+    "command": {
+      "command_id": "cmd-network-partition",
+      "agent_id": "fleet-agent:v0.1",
+      "edge_agent_id": "edge-agent:rover-001",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "capability": "remote_assist"
+    },
+    "local_context": {
+      "robot_id": "rover-001",
+      "edge_agent_id": "edge-agent:rover-001",
+      "mission_id": "mission-001",
+      "network_state": {
+        "profile": "partition",
+        "attached": false,
+        "latency_ms_p95": 500.0,
+        "packet_loss_pct": 100.0,
+        "uplink_mbps": 0.0
+      },
+      "geofence_state": {
+        "geofence_id": "test-zone-a",
+        "inside": true
+      }
+    }
+  },
+  "expected": {
+    "decision": "deny",
+    "reason_code": "DENY_NETWORK_POLICY"
+  }
+}

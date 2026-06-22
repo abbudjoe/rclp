@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/rclp-edge-verifier"]
+resolver = "2"

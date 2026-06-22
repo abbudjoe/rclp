@@ -1,0 +1,186 @@
+{
+  "correlation_id": "corr_demo_001",
+  "events": [
+    {
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg_audit_001",
+      "correlation_id": "corr_demo_001",
+      "created_at": "2026-06-22T00:00:00Z",
+      "message_type": "audit_commit",
+      "audit_id": "audit_001",
+      "event_type": "capability_requested",
+      "actor_id": "fleet-agent:v0.1",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "summary": "fleet-agent requested remote_assist",
+      "payload": {
+        "request_id": "msg_request_001",
+        "capability": "remote_assist"
+      },
+      "payload_hash": "sha256:fb08e93e01911131cf2f0312112393fbaf67d3a7ab2cfac7f57a963defe08913",
+      "authority_relevant": true,
+      "integrity_profile": "local_hash_chain_v0",
+      "integrity_proof": "sha256:09c96798cf358f00c3fdffb37fe39ad5c6847d0bb3d8ef562af69604c906c013",
+      "previous_audit_hash": null,
+      "policy_id": null,
+      "state_refs": [],
+      "related_message_ids": [
+        "msg_request_001"
+      ]
+    },
+    {
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg_audit_002",
+      "correlation_id": "corr_demo_001",
+      "created_at": "2026-06-22T00:00:00Z",
+      "message_type": "audit_commit",
+      "audit_id": "audit_002",
+      "event_type": "capability_allowed",
+      "actor_id": "rclp-demo-issuer",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "summary": "remote_assist allowed under normal network",
+      "payload": {
+        "request_id": "msg_request_001",
+        "state_assertion_id": "msg_state_normal",
+        "decision": "allow",
+        "reason_code": "POLICY_SATISFIED"
+      },
+      "payload_hash": "sha256:35235d07e1a62e4eb171ea91554aebfcb6e407816b1c771f57fc80117db3d34f",
+      "authority_relevant": true,
+      "integrity_profile": "local_hash_chain_v0",
+      "integrity_proof": "sha256:c1434c0c9bd5d563c16a78e75371613c74c75647186f21e7466ecc387e78ddbb",
+      "previous_audit_hash": "sha256:09c96798cf358f00c3fdffb37fe39ad5c6847d0bb3d8ef562af69604c906c013",
+      "policy_id": "remote-assist-authority-v0",
+      "state_refs": [
+        "msg_state_normal"
+      ],
+      "related_message_ids": [
+        "msg_request_001",
+        "msg_state_normal"
+      ]
+    },
+    {
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg_audit_003",
+      "correlation_id": "corr_demo_001",
+      "created_at": "2026-06-22T00:00:00Z",
+      "message_type": "audit_commit",
+      "audit_id": "audit_003",
+      "event_type": "network_state_asserted",
+      "actor_id": "edge-agent:rover-001",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "summary": "degraded network state observed",
+      "payload": {
+        "state_assertion_id": "msg_state_degraded",
+        "profile": "degraded_teleop"
+      },
+      "payload_hash": "sha256:7a44c2cdd32bef3108cff43103131d1734784dfb48d95cff34d93c6639a5e5cd",
+      "authority_relevant": true,
+      "integrity_profile": "local_hash_chain_v0",
+      "integrity_proof": "sha256:a70f067efc855d704c104cde481606c033b3012a303e0fead574dd81e65ca7a6",
+      "previous_audit_hash": "sha256:c1434c0c9bd5d563c16a78e75371613c74c75647186f21e7466ecc387e78ddbb",
+      "policy_id": null,
+      "state_refs": [],
+      "related_message_ids": [
+        "msg_state_degraded"
+      ]
+    },
+    {
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg_audit_004",
+      "correlation_id": "corr_demo_001",
+      "created_at": "2026-06-22T00:00:00Z",
+      "message_type": "audit_commit",
+      "audit_id": "audit_004",
+      "event_type": "capability_degraded",
+      "actor_id": "rclp-demo-issuer",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "summary": "remote_assist degraded after network change",
+      "payload": {
+        "request_id": "msg_request_001",
+        "state_assertion_id": "msg_state_degraded",
+        "decision": "degrade",
+        "reason_code": "NETWORK_LATENCY_DEGRADED",
+        "safe_alternatives": [
+          "crawl_to_safe_zone"
+        ]
+      },
+      "payload_hash": "sha256:1d5b0ff96da519fdf9cd218f2a1d3b871f410089c3763119bbccd5a4d7842b66",
+      "authority_relevant": true,
+      "integrity_profile": "local_hash_chain_v0",
+      "integrity_proof": "sha256:95200447c1d11865dcac1de4d0aae7f05b1d3cddcf6d6be848a74531b0c35326",
+      "previous_audit_hash": "sha256:a70f067efc855d704c104cde481606c033b3012a303e0fead574dd81e65ca7a6",
+      "policy_id": "remote-assist-authority-v0",
+      "state_refs": [
+        "msg_state_degraded"
+      ],
+      "related_message_ids": [
+        "msg_request_001",
+        "msg_state_degraded"
+      ]
+    },
+    {
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg_audit_005",
+      "correlation_id": "corr_demo_001",
+      "created_at": "2026-06-22T00:00:00Z",
+      "message_type": "audit_commit",
+      "audit_id": "audit_005",
+      "event_type": "lease_revoked",
+      "actor_id": "edge-agent:rover-001",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "summary": "remote_assist lease revoked",
+      "payload": {
+        "lease_id": "lease_001",
+        "reason_code": "NETWORK_PROFILE_REVOKE",
+        "fallback_action": "crawl_to_safe_zone",
+        "revocation_id": "msg_revocation_001"
+      },
+      "payload_hash": "sha256:d873db37d3158187e5792645b0e152525498259289d449cb9820362009f37745",
+      "authority_relevant": true,
+      "integrity_profile": "local_hash_chain_v0",
+      "integrity_proof": "sha256:bf6459876e7fd5ca9171f027cb156a936e3a40a9b746de7ccd54d1de8f639040",
+      "previous_audit_hash": "sha256:95200447c1d11865dcac1de4d0aae7f05b1d3cddcf6d6be848a74531b0c35326",
+      "policy_id": null,
+      "state_refs": [],
+      "related_message_ids": [
+        "msg_revocation_001"
+      ]
+    },
+    {
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg_audit_006",
+      "correlation_id": "corr_demo_001",
+      "created_at": "2026-06-22T00:00:00Z",
+      "message_type": "audit_commit",
+      "audit_id": "audit_006",
+      "event_type": "fallback_declared",
+      "actor_id": "edge-agent:rover-001",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "summary": "edge agent declared crawl_to_safe_zone fallback hook",
+      "payload": {
+        "message_id": "msg_fallback_001",
+        "trigger": "NETWORK_PROFILE_REVOKE",
+        "fallback_action": "crawl_to_safe_zone",
+        "lease_id": "lease_001",
+        "revocation_id": "msg_revocation_001"
+      },
+      "payload_hash": "sha256:c28f69c2f6a82a119b208fccc78e5133aa571fe785fb0ff85b5b3d40da2c64e3",
+      "authority_relevant": true,
+      "integrity_profile": "local_hash_chain_v0",
+      "integrity_proof": "sha256:6fdb464f905f1e51d7822e2e4c5e02718ccd8dcab18aac99a0bf436df8bfa6d7",
+      "previous_audit_hash": "sha256:bf6459876e7fd5ca9171f027cb156a936e3a40a9b746de7ccd54d1de8f639040",
+      "policy_id": null,
+      "state_refs": [],
+      "related_message_ids": [
+        "lease_001",
+        "msg_revocation_001"
+      ]
+    }
+  ]
+}

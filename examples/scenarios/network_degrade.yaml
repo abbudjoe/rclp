@@ -1,0 +1,11 @@
+scenario_id: remote-assist-network-degrade
+steps:
+  - name: normal_network_request
+    profile: normal
+    expected_decision: allow
+  - name: degraded_network_request
+    profile: degraded_teleop
+    expected_decision: degrade
+  - name: expired_lease_command
+    profile: normal
+    expected_command_gate: reject

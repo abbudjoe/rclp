@@ -1,0 +1,11 @@
+agent_id: fleet-agent:v0.1
+kind: central_agent
+manifest_digest: sha256:example-central-agent
+trust_tier: development
+allowed_capabilities_to_request:
+  - remote_assist
+  - mission_continue
+  - autonomy_escalation
+requires_human_approval_for:
+  - autonomy_escalation
+notes: Example only. Do not use as production trust metadata.

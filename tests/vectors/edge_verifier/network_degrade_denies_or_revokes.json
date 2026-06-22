@@ -1,0 +1,70 @@
+{
+  "name": "network_degrade_denies_or_revokes",
+  "description": "A lease can explicitly degrade authority instead of allowing a command when network metrics violate soft constraints and a fallback hook exists.",
+  "now_unix_ms": 1760000000000,
+  "trusted_context": {
+    "trusted_issuer_ids": [
+      "issuer"
+    ],
+    "dev_hmac_secret": "dev-test-secret",
+    "now_unix_ms": 1760000000000,
+    "revocations": [],
+    "max_lease_ttl_ms": 600000,
+    "max_lease_age_ms": 600000
+  },
+  "seen_nonces": [],
+  "input": {
+    "lease": {
+      "alg": "RCLP-DEV-HMAC-SHA256",
+      "claims": {
+        "lease_id": "lease-network-degrade",
+        "issuer_id": "issuer",
+        "agent_id": "fleet-agent:v0.1",
+        "edge_agent_id": "edge-agent:rover-001",
+        "robot_id": "rover-001",
+        "mission_id": "mission-001",
+        "capability": "remote_assist",
+        "constraints": {
+          "geofence_id": "test-zone-a",
+          "max_latency_ms_p95": 80.0,
+          "max_packet_loss_pct": 1.0,
+          "min_uplink_mbps": 3.0,
+          "fallback_on_degrade": "crawl_to_safe_zone",
+          "network_violation_action": "degrade"
+        },
+        "issued_at": 1759999900000,
+        "expires_at": 1760000500000,
+        "nonce": "nonce-network-degrade"
+      },
+      "signature": "8ab2e189e3e8af87471516fd0d1fc07606cbec77b981ed37795e2515d90920dc"
+    },
+    "command": {
+      "command_id": "cmd-network-degrade",
+      "agent_id": "fleet-agent:v0.1",
+      "edge_agent_id": "edge-agent:rover-001",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "capability": "remote_assist"
+    },
+    "local_context": {
+      "robot_id": "rover-001",
+      "edge_agent_id": "edge-agent:rover-001",
+      "mission_id": "mission-001",
+      "network_state": {
+        "profile": "degraded_teleop",
+        "attached": true,
+        "latency_ms_p95": 180.0,
+        "packet_loss_pct": 3.5,
+        "uplink_mbps": 1.2
+      },
+      "geofence_state": {
+        "geofence_id": "test-zone-a",
+        "inside": true
+      }
+    }
+  },
+  "expected": {
+    "decision": "degrade",
+    "reason_code": "DEGRADE_NETWORK_POLICY"
+  }
+}

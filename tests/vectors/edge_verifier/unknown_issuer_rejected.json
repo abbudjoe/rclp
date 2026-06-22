@@ -1,0 +1,69 @@
+{
+  "name": "unknown_issuer_rejected",
+  "description": "A correctly signed lease is rejected when the issuer is not in the edge-local trusted issuer list.",
+  "now_unix_ms": 1760000000000,
+  "trusted_context": {
+    "trusted_issuer_ids": [
+      "issuer"
+    ],
+    "dev_hmac_secret": "dev-test-secret",
+    "now_unix_ms": 1760000000000,
+    "revocations": [],
+    "max_lease_ttl_ms": 600000,
+    "max_lease_age_ms": 600000
+  },
+  "seen_nonces": [],
+  "input": {
+    "lease": {
+      "alg": "RCLP-DEV-HMAC-SHA256",
+      "claims": {
+        "lease_id": "lease-unknown-issuer",
+        "issuer_id": "issuer:unknown",
+        "agent_id": "fleet-agent:v0.1",
+        "edge_agent_id": "edge-agent:rover-001",
+        "robot_id": "rover-001",
+        "mission_id": "mission-001",
+        "capability": "remote_assist",
+        "constraints": {
+          "geofence_id": "test-zone-a",
+          "max_latency_ms_p95": 80.0,
+          "max_packet_loss_pct": 1.0,
+          "min_uplink_mbps": 3.0,
+          "fallback_on_degrade": "crawl_to_safe_zone"
+        },
+        "issued_at": 1759999900000,
+        "expires_at": 1760000500000,
+        "nonce": "nonce-unknown-issuer"
+      },
+      "signature": "9943937a5e02eee09ddaf855964cb9a5df8de323626785726eedb8974c71d65c"
+    },
+    "command": {
+      "command_id": "cmd-unknown-issuer",
+      "agent_id": "fleet-agent:v0.1",
+      "edge_agent_id": "edge-agent:rover-001",
+      "robot_id": "rover-001",
+      "mission_id": "mission-001",
+      "capability": "remote_assist"
+    },
+    "local_context": {
+      "robot_id": "rover-001",
+      "edge_agent_id": "edge-agent:rover-001",
+      "mission_id": "mission-001",
+      "network_state": {
+        "profile": "normal",
+        "attached": true,
+        "latency_ms_p95": 45.0,
+        "packet_loss_pct": 0.1,
+        "uplink_mbps": 8.0
+      },
+      "geofence_state": {
+        "geofence_id": "test-zone-a",
+        "inside": true
+      }
+    }
+  },
+  "expected": {
+    "decision": "deny",
+    "reason_code": "DENY_UNKNOWN_ISSUER"
+  }
+}

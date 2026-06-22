@@ -1,0 +1,176 @@
+protocol: RCLP
+name: Robot Capability Lease Protocol
+version: 0.0.1-draft
+status: experimental
+primary_object: physical_capability_lease
+messages:
+  - AgentAttestation
+  - RobotStateAssertion
+  - NetworkStateAssertion
+  - CapabilityRequest
+  - CapabilityDecision
+  - CapabilityLease
+  - LeaseRevocation
+  - FallbackDeclaration
+  - AuditCommit
+message_models:
+  AgentAttestation:
+    python_model: rclp_core.models.AgentAttestation
+    message_type: agent_attestation
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - agent_id
+      - kind
+      - manifest_digest
+      - public_key_id
+      - trust_tier
+  RobotStateAssertion:
+    python_model: rclp_core.models.RobotStateAssertion
+    message_type: robot_state_assertion
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - robot_id
+      - edge_agent_id
+      - mission_id
+      - safety_state
+      - geofence_state
+      - network_state
+      - observed_at
+  NetworkStateAssertion:
+    python_model: rclp_core.models.NetworkStateAssertion
+    message_type: network_state_assertion
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - edge_agent_id
+      - robot_id
+      - mission_id
+      - profile
+      - attached
+      - latency_ms_p95
+      - packet_loss_pct
+      - uplink_mbps
+      - observed_at
+      - measurement_window_seconds
+      - source
+      - signature
+  CapabilityRequest:
+    python_model: rclp_core.models.CapabilityRequest
+    message_type: capability_request
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - requesting_agent_id
+      - authenticated_agent_id
+      - edge_agent_id
+      - robot_id
+      - mission_id
+      - capability
+      - reason
+      - requested_duration_seconds
+      - request_nonce
+      - signature
+  CapabilityDecision:
+    python_model: rclp_core.models.CapabilityDecision
+    message_type: capability_decision
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - request_id
+      - decision
+      - reason_code
+      - deciding_actor_id
+      - policy_id
+      - policy_digest
+      - audit_id
+      - lease
+      - safe_alternatives
+      - signature
+  CapabilityLease:
+    python_model: rclp_core.models.CapabilityLease
+    required_fields:
+      - lease_id
+      - issuer_id
+      - agent_id
+      - edge_agent_id
+      - robot_id
+      - mission_id
+      - capability
+      - constraints
+      - issued_at
+      - expires_at
+      - nonce
+      - signature
+  LeaseRevocation:
+    python_model: rclp_core.models.LeaseRevocation
+    message_type: lease_revocation
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - lease_id
+      - revoked_by
+      - reason_code
+      - revoked_at
+      - fallback_action
+      - signature
+  FallbackDeclaration:
+    python_model: rclp_core.models.FallbackDeclaration
+    message_type: fallback_declaration
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - robot_id
+      - edge_agent_id
+      - mission_id
+      - trigger
+      - fallback_action
+      - declared_by
+      - signature
+  AuditCommit:
+    python_model: rclp_core.models.AuditCommit
+    message_type: audit_commit
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - audit_id
+      - event_type
+      - actor_id
+      - robot_id
+      - mission_id
+      - summary
+      - payload
+      - payload_hash
+      - authority_relevant
+      - integrity_profile
+      - integrity_proof
+non_goals:
+  - fleet_dispatch
+  - low_level_safety_control
+  - teleoperation_media_transport
+  - cellular_service_provisioning

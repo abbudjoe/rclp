@@ -1,0 +1,24 @@
+policy_id: remote-assist-authority-v0
+capability: remote_assist
+lease_ttl_seconds: 600
+requirements:
+  allowed_agents:
+    - fleet-agent:v0.1
+  allowed_edge_agents:
+    - edge-agent:rover-001
+  allowed_robots:
+    - rover-001
+  allowed_missions:
+    - mission-001
+  geofence_required: true
+  geofence_allowed: true
+  human_operator_available: true
+  network:
+    max_latency_ms_p95: 80
+    max_packet_loss_pct: 1.0
+    min_uplink_mbps: 3.0
+fallback:
+  on_deny: local_autonomy_only
+  on_network_degrade: crawl_to_safe_zone
+  on_disconnect: local_autonomy_only
+  on_expiry: revoke_remote_assist

@@ -1,0 +1,18 @@
+[package]
+name = "rclp-edge-verifier"
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Minimal Rust spike for verifying RCLP edge capability leases."
+
+[lib]
+name = "rclp_edge_verifier"
+path = "src/lib.rs"
+
+[dependencies]
+hex = "0.4"
+hmac = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"

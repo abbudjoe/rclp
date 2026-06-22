@@ -1,0 +1,15 @@
+agent_id: edge-agent:rover-001
+kind: edge_agent
+manifest_digest: sha256:example-edge-agent
+trust_tier: development
+robot_id: rover-001
+enforcement_modes:
+  - observe_only
+  - advisory
+  - soft_gate
+  - hard_gate_selected_capabilities
+fallback_capabilities:
+  - local_autonomy_only
+  - crawl_to_safe_zone
+  - hold_position
+notes: Example only. Local robot safety stack remains authoritative for physical safety.
