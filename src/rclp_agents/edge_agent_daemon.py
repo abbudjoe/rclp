@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from rclp_core.models import AuditEventType
 from rclp_core.models import CapabilityLease
+from rclp_core.models import RobotStateAssertion
 from rclp_ros2.command_gate import Command, CommandGate, GateResult
 
 
@@ -10,8 +11,15 @@ class EdgeAgentDaemon:
         self.edge_agent_id = edge_agent_id
         self.command_gate = command_gate
 
-    def handle_command(self, command: Command, lease: CapabilityLease | None) -> GateResult:
+    def handle_command(
+        self,
+        command: Command,
+        lease: CapabilityLease | None,
+        current_state: RobotStateAssertion | None = None,
+    ) -> GateResult:
         if command.edge_agent_id != self.edge_agent_id:
+            if self.command_gate._command_auth_violation(command):
+                return self.command_gate.evaluate(command, lease, current_state=current_state)
             event = self.command_gate.audit_log.record(
                 event_type=AuditEventType.COMMAND_REJECTED,
                 actor_id=self.edge_agent_id,
@@ -32,4 +40,4 @@ class EdgeAgentDaemon:
                 reason_code="EDGE_AGENT_MISMATCH",
                 audit_id=event.audit_id,
             )
-        return self.command_gate.evaluate(command, lease)
+        return self.command_gate.evaluate(command, lease, current_state=current_state)

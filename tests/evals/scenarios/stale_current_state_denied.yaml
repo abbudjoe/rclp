@@ -1,0 +1,12 @@
+name: stale_current_state_denied
+description: A previously valid lease is denied when edge-local current state is stale.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  include_current_state: true
+  local_context:
+    observed_at_offset_ms: -120000
+expected:
+  decision: deny
+  reason_code: STATE_STALE
+

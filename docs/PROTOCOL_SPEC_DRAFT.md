@@ -69,10 +69,10 @@ Authority-changing messages MUST produce or reference an audit record.
 
 ## Message Types
 
-The v0.0.1 reference implementation exposes the following Pydantic message
-models in `src/rclp_core/models.py`. `AuditEvent` and `AgentIdentity` remain
-compatibility aliases, but the protocol message names are `AuditCommit` and
-`AgentAttestation`.
+The v0.0.1 reference implementation exposes the following Pydantic protocol
+messages in `src/rclp_core/models.py` and the ROS-agnostic command gate.
+`AuditEvent` and `AgentIdentity` remain compatibility aliases, but the protocol
+message names are `AuditCommit` and `AgentAttestation`.
 
 | Protocol message | Reference model | Wire `message_type` |
 |---|---|---|
@@ -82,16 +82,18 @@ compatibility aliases, but the protocol message names are `AuditCommit` and
 | `CapabilityRequest` | `CapabilityRequest` | `capability_request` |
 | `CapabilityDecision` | `CapabilityDecision` | `capability_decision` |
 | `CapabilityLease` | `CapabilityLease` | embedded signed lease object |
+| `EdgeCommand` | `rclp_ros2.command_gate.EdgeCommand` | `edge_command` |
 | `LeaseRevocation` | `LeaseRevocation` | `lease_revocation` |
 | `FallbackDeclaration` | `FallbackDeclaration` | `fallback_declaration` |
 | `AuditCommit` | `AuditCommit` | `audit_commit` |
 
-The local v0.0.1 implementation enforces signed `CapabilityRequest` and signed
-`CapabilityLease` paths. Standalone `NetworkStateAssertion`,
-`CapabilityDecision`, `LeaseRevocation`, and `FallbackDeclaration`
-trust-boundary signature verification are v0.1 release blockers, so those
-messages MUST be treated as local/in-process demo messages unless a downstream
-implementation adds authenticated envelopes and negative tests.
+The local v0.0.1 implementation enforces signed `CapabilityRequest`, signed
+edge-local `RobotStateAssertion`, signed `CapabilityLease`, and signed
+`LeaseRevocation` paths. Standalone `NetworkStateAssertion`,
+`CapabilityDecision`, and `FallbackDeclaration` trust-boundary signature
+verification remain v0.1 release blockers, so those messages MUST be treated as
+local/in-process demo messages unless a downstream implementation adds
+authenticated envelopes and negative tests.
 
 ### AgentAttestation
 
@@ -133,11 +135,13 @@ Required fields:
 
 - `robot_id`
 - `edge_agent_id`
+- `authenticated_edge_agent_id`
 - `mission_id`
 - `safety_state`
 - `geofence_state`
 - `network_state`
 - `observed_at`
+- `signature` or equivalent authenticated envelope
 
 Optional fields:
 
@@ -149,6 +153,8 @@ Rejection conditions:
 - state is stale for the policy profile in use
 - safety, geofence, network, or mission state is missing or unsupported
 - authenticated identity does not match `edge_agent_id`
+- signature is missing, malformed, or invalid
+- nested network/geofence observation timestamps are stale or in the future
 - fresher local state conflicts with the assertion
 
 Audit impact:
@@ -305,6 +311,9 @@ Rejection conditions:
 - lease is not bound to the requesting command's agent, edge agent, robot,
   mission, or capability
 - lease constraints are violated by current local state
+- a state-constrained capability lacks fresh edge-local current state
+- a `max_speed_mps` constraint is present and the command payload omits,
+  malforms, or exceeds the requested speed
 - lease was superseded or revoked by a known `LeaseRevocation`
 - `nonce` or `lease_id` is replayed in a conflicting context
 - required constraint fields for the capability are missing
@@ -316,6 +325,46 @@ Audit impact:
   `CapabilityDecision`.
 - Lease validation failures that block a physical command MUST be auditable.
 
+### EdgeCommand
+
+Purpose: a central-agent command presented to an edge agent for local
+authorization under a matching capability lease.
+
+Required fields:
+
+- common protocol envelope fields: `protocol_version`, `message_id`,
+  `correlation_id`, and `created_at`
+- `message_type`
+- `command_id`
+- `agent_id`
+- `authenticated_agent_id`
+- `edge_agent_id`
+- `robot_id`
+- `mission_id`
+- `capability`
+- `command_nonce`
+- `payload`
+- `signature`
+
+Rejection conditions:
+
+- protocol version is unsupported
+- `authenticated_agent_id` is missing or does not match `agent_id`
+- command signature is missing, invalid, or signed by an untrusted command key
+- command is stale or not yet valid outside the receiver's explicit clock-skew
+  tolerance
+- `command_id` or `command_nonce` has already been accepted in the replay
+  window
+- command agent, edge agent, robot, mission, capability, or payload does not
+  match the presented lease and local state constraints
+
+Audit impact:
+
+- Accepted and rejected commands MUST create or reference an `AuditCommit`.
+- Command rejection audit MUST include the command identity, authenticated
+  command actor, lease reference when present, reason code, and policy-relevant
+  state references.
+
 ### LeaseRevocation
 
 Purpose: invalidates a lease before its natural expiry when policy-relevant
@@ -325,6 +374,7 @@ Required fields:
 
 - `lease_id`
 - `revoked_by`
+- `edge_agent_id`
 - `reason_code`
 - `revoked_at`
 - `created_at`
@@ -341,11 +391,14 @@ Optional fields:
 Normative behavior:
 
 - A revocation MUST be authenticated by an actor authorized to revoke the
-  referenced lease.
+  referenced lease for the referenced `edge_agent_id`.
 - An edge agent that knows a valid revocation MUST reject future use of the
   revoked lease.
 - A revocation SHOULD include enough context for an edge agent to reject wrong
   robot, wrong mission, or wrong capability propagation mistakes.
+- `edge_agent_id` MUST match the referenced lease. If `robot_id`,
+  `mission_id`, or `capability` are present, they MUST also match the
+  referenced lease. The local reference profile rejects conflicting context.
 - A revocation MAY be generated locally by an edge agent when local policy
   inputs invalidate the lease.
 - Lease invalidation MUST NOT depend on whether a fallback hook is present,
@@ -357,8 +410,12 @@ Normative behavior:
 Rejection conditions:
 
 - invalid signature or authenticated identity mismatch
-- `revoked_by` is not authorized to revoke the lease
+- missing signature or untrusted revoker key
+- `revoked_by` is not authorized to revoke leases for the referenced
+  `edge_agent_id`
 - referenced lease is known and context fields conflict with it
+- `edge_agent_id`, optional `robot_id`, optional `mission_id`, or optional
+  `capability` fields conflict with the referenced lease
 - `revoked_at` is implausibly stale or in the future outside the accepted
   clock-skew window
 - `reason_code` is missing or unknown for the profile in use
@@ -528,6 +585,10 @@ Normative behavior:
   `authority_relevant` to `true`.
 - `payload_hash` MUST commit to the protocol payload or canonical summary used
   for replay.
+- `integrity_proof` MUST also commit to replay-critical top-level audit
+  context, including event identity, actor, robot, mission, summary, policy
+  reference, state refs, related message IDs, authority relevance, and previous
+  hash-chain value.
 - `related_message_ids` SHOULD include the request, state assertion, command,
   revocation, lease, or fallback declaration identifiers needed to reconstruct
   the causal chain.
@@ -545,6 +606,7 @@ Normative behavior:
 Rejection conditions:
 
 - missing or duplicate `audit_id`
+- missing common protocol envelope fields
 - missing causal `correlation_id`
 - `payload_hash` does not match the referenced payload
 - integrity proof is missing or invalid for an authority-changing event
@@ -566,6 +628,9 @@ Audit impact:
 
 An edge agent MUST reject a physical command if:
 
+- the command actor identity is missing, unauthenticated, mismatched with the
+  command agent, signed by an untrusted command key, stale, not yet valid, or
+  replayed by command id or nonce
 - no lease is present for the capability
 - the lease issuer is unknown, revoked, or not accepted by local policy
 - the lease signature is invalid
@@ -574,7 +639,12 @@ An edge agent MUST reject a physical command if:
 - the lease agent, edge agent, robot, mission, or capability does not match
 - the lease nonce has been used in an invalid context
 - a revocation for the lease is known
+- the capability requires current local state and no fresh local state is
+  available
+- current local state is unauthenticated or signed by an untrusted edge key
 - local state violates hard constraints
+- command payload constraints such as `max_speed_mps` are missing, malformed,
+  exceeded, or carried in conflicting aliases
 - required audit behavior cannot be satisfied for an authority-changing path
 
 ## Network-State Policy

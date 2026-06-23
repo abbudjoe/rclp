@@ -24,6 +24,7 @@ from rclp_core.models import (
     AuditCommit,
     AuditEventType,
     Capability,
+    CapabilityConstraintRequirement,
     CapabilityLease,
     CapabilityRequest,
     Decision,
@@ -36,7 +37,7 @@ from rclp_core.models import (
 )
 from rclp_core.network import profile
 from rclp_core.policy import Policy, RequestReplayCache, evaluate_policy, policy_digest
-from rclp_ros2.command_gate import Command, CommandGate
+from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache
 
 
 DEFAULT_NOW_UNIX_MS = 1_760_000_000_000
@@ -74,6 +75,15 @@ REQUIRED_SCENARIO_NAMES = {
     "audit_deny_complete",
     "scenario_network_degrade_revokes",
     "scenario_cloud_partition_expiry",
+    "missing_current_state_denied",
+    "stale_current_state_denied",
+    "unsigned_state_policy_denied",
+    "stale_state_policy_denied",
+    "max_speed_too_high_denied",
+    "unsigned_revocation_denied",
+    "unsigned_current_state_denied",
+    "conflicting_speed_alias_denied",
+    "nonfinite_speed_denied",
 }
 
 
@@ -185,6 +195,19 @@ def sign_request(request: CapabilityRequest, key: DemoKeyPair) -> CapabilityRequ
     return request
 
 
+def sign_state(state: RobotStateAssertion, key: DemoKeyPair) -> RobotStateAssertion:
+    state.authenticated_edge_agent_id = state.edge_agent_id
+    state.signature = None
+    state.signature = key.sign(state)
+    return state
+
+
+def sign_revocation(revocation: LeaseRevocation, key: DemoKeyPair) -> LeaseRevocation:
+    revocation.signature = None
+    revocation.signature = key.sign(revocation)
+    return revocation
+
+
 def make_policy() -> Policy:
     return Policy.from_yaml(POLICY_PATH)
 
@@ -229,9 +252,12 @@ def make_state(
     scenario_input: dict[str, Any],
     *,
     now: datetime,
+    edge_key: DemoKeyPair,
     default_network_profile: str = "normal",
 ) -> RobotStateAssertion:
     context = scenario_input.get("local_context", {})
+    state_observed_at = now + timedelta(milliseconds=context.get("observed_at_offset_ms", 0))
+    state_created_at = now + timedelta(milliseconds=context.get("created_at_offset_ms", 0))
     network_spec = context.get("network", {})
     network_profile = network_spec.get("profile", default_network_profile)
     network = profile(network_profile)
@@ -242,26 +268,51 @@ def make_state(
     }
     if network_updates:
         network = network.model_copy(update=network_updates)
-    network = network.model_copy(update={"observed_at": now})
+    network_observed_at = now + timedelta(
+        milliseconds=network_spec.get(
+            "observed_at_offset_ms", context.get("observed_at_offset_ms", 0)
+        )
+    )
+    network = network.model_copy(update={"observed_at": network_observed_at})
 
     geofence_spec = context.get("geofence", {})
+    geofence_verified_at = now + timedelta(
+        milliseconds=geofence_spec.get(
+            "verified_at_offset_ms",
+            context.get("observed_at_offset_ms", 0),
+        )
+    )
     geofence = GeofenceState(
         geofence_id=geofence_spec.get("geofence_id", GEOFENCE_ID),
         inside=geofence_spec.get("inside", True),
-        verified_at=now,
+        verified_at=geofence_verified_at,
     )
-    return RobotStateAssertion(
+    state = RobotStateAssertion(
         message_id=context.get("state_message_id", "msg_eval_state"),
         correlation_id=context.get("correlation_id", "corr_eval"),
-        created_at=now,
+        created_at=state_created_at,
         robot_id=context.get("robot_id", ROBOT_ID),
         edge_agent_id=context.get("edge_agent_id", EDGE_AGENT_ID),
+        authenticated_edge_agent_id=context.get(
+            "authenticated_edge_agent_id",
+            context.get("edge_agent_id", EDGE_AGENT_ID),
+        ),
         mission_id=context.get("mission_id", MISSION_ID),
         network_state=NetworkState.model_validate(network.model_dump(mode="python")),
         geofence_state=geofence,
-        observed_at=now,
+        observed_at=state_observed_at,
         human_operator_available=context.get("human_operator_available", True),
     )
+    signature_mode = context.get("signature", "valid")
+    if signature_mode == "valid":
+        return sign_state(state, edge_key)
+    if signature_mode == "missing":
+        state.signature = None
+        return state
+    if signature_mode == "malformed":
+        state.signature = "not-a-valid-signature"
+        return state
+    raise ValueError(f"unknown state signature mode: {signature_mode}")
 
 
 def make_constraints(
@@ -287,6 +338,7 @@ def make_constraints(
         fallback_on_degrade=FallbackAction(
             constraints_data.get("fallback_on_degrade", policy.fallback.on_network_degrade.value)
         ),
+        max_speed_mps=constraints_data.get("max_speed_mps"),
     )
 
 
@@ -345,11 +397,24 @@ def make_lease(
     return lease
 
 
-def make_command(scenario_input: dict[str, Any]) -> Command:
+def sign_command(command: Command, key: DemoKeyPair) -> Command:
+    command.authenticated_agent_id = command.agent_id
+    command.signature = None
+    command.signature = key.sign(command)
+    return command
+
+
+def make_command(
+    scenario_input: dict[str, Any],
+    *,
+    now: datetime,
+    central_key: DemoKeyPair,
+) -> Command:
     command_spec = scenario_input.get("command", {})
-    return Command(
+    command = Command(
         correlation_id=command_spec.get("correlation_id", "corr_eval"),
         command_id=command_spec.get("command_id", "cmd_eval"),
+        created_at=command_spec.get("created_at", now),
         agent_id=command_spec.get("central_agent_id", CENTRAL_AGENT_ID),
         edge_agent_id=command_spec.get("edge_agent_id", EDGE_AGENT_ID),
         robot_id=command_spec.get("robot_id", ROBOT_ID),
@@ -357,21 +422,48 @@ def make_command(scenario_input: dict[str, Any]) -> Command:
         capability=command_spec.get("capability", CAPABILITY.value),
         payload=command_spec.get("payload", {"intent": "start_remote_assist"}),
     )
+    return sign_command(command, central_key)
 
 
-def make_gate(issuer_key: DemoKeyPair, audit_log: AuditLog) -> CommandGate:
+def make_gate(
+    issuer_key: DemoKeyPair,
+    edge_key: DemoKeyPair,
+    audit_log: AuditLog,
+    central_key: DemoKeyPair,
+) -> CommandGate:
     return CommandGate(
         issuer_key.public_key_b64,
         trusted_issuer_ids={ISSUER_ID},
         trusted_revoker_ids={EDGE_AGENT_ID},
+        accepted_capabilities={CAPABILITY.value},
+        issuer_capability_scopes={ISSUER_ID: {CAPABILITY.value}},
+        capability_constraint_requirements={
+            CAPABILITY.value: CapabilityConstraintRequirement(
+                capability=CAPABILITY,
+                require_geofence_id=True,
+                require_network_thresholds=True,
+                require_fallback_on_degrade=True,
+            )
+        },
+        agent_public_keys_by_id={CENTRAL_AGENT_ID: central_key.public_key_b64},
+        revoker_public_keys_by_id={EDGE_AGENT_ID: edge_key.public_key_b64},
+        state_public_keys_by_edge_id={EDGE_AGENT_ID: edge_key.public_key_b64},
+        command_replay_cache=CommandReplayCache.temporary(),
         audit_log=audit_log,
     )
 
 
-def trusted_policy_kwargs(policy: Policy, central_key: DemoKeyPair) -> dict[str, Any]:
+def trusted_policy_kwargs(
+    policy: Policy,
+    central_key: DemoKeyPair,
+    edge_key: DemoKeyPair,
+    replay_cache: RequestReplayCache,
+) -> dict[str, Any]:
     return {
         "agent_public_keys_by_id": {CENTRAL_AGENT_ID: central_key.public_key_b64},
+        "edge_public_keys_by_id": {EDGE_AGENT_ID: edge_key.public_key_b64},
         "accepted_policy_digests": {policy_digest(policy)},
+        "replay_cache": replay_cache,
     }
 
 
@@ -379,11 +471,12 @@ def run_policy_decision(scenario: dict[str, Any]) -> EvalOutcome:
     now = datetime_from_unix_ms(scenario.get("now_unix_ms"))
     scenario_input = scenario.get("input", {})
     central_key = DemoKeyPair()
+    edge_key = DemoKeyPair()
     policy = make_policy()
     log = AuditLog()
     request = make_request(scenario_input, now=now, central_key=central_key)
-    state = make_state(scenario_input, now=now)
-    replay_cache = RequestReplayCache()
+    state = make_state(scenario_input, now=now, edge_key=edge_key)
+    replay_cache = RequestReplayCache.temporary()
     for nonce in scenario_input.get("seen_request_nonces", []):
         replay_cache.remember(
             make_request(
@@ -399,9 +492,8 @@ def run_policy_decision(scenario: dict[str, Any]) -> EvalOutcome:
         policy,
         audit_log=log,
         deciding_actor_id=ISSUER_ID,
-        replay_cache=replay_cache,
         now=now,
-        **trusted_policy_kwargs(policy, central_key),
+        **trusted_policy_kwargs(policy, central_key, edge_key, replay_cache),
     )
     return EvalOutcome(
         decision=decision.value,
@@ -415,6 +507,7 @@ def run_command_gate(scenario: dict[str, Any]) -> EvalOutcome:
     now = datetime_from_unix_ms(scenario.get("now_unix_ms"))
     scenario_input = scenario.get("input", {})
     central_key = DemoKeyPair()
+    edge_key = DemoKeyPair()
     issuer_key = DemoKeyPair()
     policy = make_policy()
     log = AuditLog()
@@ -426,30 +519,55 @@ def run_command_gate(scenario: dict[str, Any]) -> EvalOutcome:
         issuer_key=issuer_key,
         policy=policy,
     )
-    command = make_command(scenario_input)
-    gate = make_gate(issuer_key, log)
+    command = make_command(scenario_input, now=now, central_key=central_key)
+    gate = make_gate(issuer_key, edge_key, log, central_key)
 
     if lease is not None and scenario_input.get("revocation", {}).get("present", False):
         revocation_spec = scenario_input.get("revocation", {})
-        gate.revoke(
-            LeaseRevocation(
-                message_id=revocation_spec.get("message_id", "msg_eval_revocation"),
-                correlation_id=revocation_spec.get("correlation_id", "corr_eval"),
-                created_at=now,
-                lease_id=lease.lease_id,
-                revoked_by=revocation_spec.get("revoked_by", EDGE_AGENT_ID),
-                reason_code=revocation_spec.get("reason_code", "NETWORK_PROFILE_REVOKE"),
-                revoked_at=now,
-                fallback_action=FallbackAction(
-                    revocation_spec.get("fallback_action", FallbackAction.HOLD_POSITION.value)
-                ),
+        revocation = LeaseRevocation(
+            message_id=revocation_spec.get("message_id", "msg_eval_revocation"),
+            correlation_id=revocation_spec.get("correlation_id", "corr_eval"),
+            created_at=now,
+            lease_id=lease.lease_id,
+            revoked_by=revocation_spec.get("revoked_by", EDGE_AGENT_ID),
+            edge_agent_id=revocation_spec.get("edge_agent_id", lease.edge_agent_id),
+            reason_code=revocation_spec.get("reason_code", "NETWORK_PROFILE_REVOKE"),
+            revoked_at=now,
+            fallback_action=FallbackAction(
+                revocation_spec.get("fallback_action", FallbackAction.HOLD_POSITION.value)
             ),
-            lease=lease,
+            robot_id=revocation_spec.get("robot_id", lease.robot_id),
+            mission_id=revocation_spec.get("mission_id", lease.mission_id),
+            capability=Capability(revocation_spec.get("capability", lease.capability.value)),
         )
+        signature_mode = revocation_spec.get("signature", "valid")
+        if signature_mode == "valid":
+            sign_revocation(revocation, edge_key)
+        elif signature_mode == "malformed":
+            sign_revocation(revocation, edge_key)
+            revocation.reason_code = "TAMPERED_AFTER_SIGNING"
+        elif signature_mode == "missing":
+            revocation.signature = None
+        else:
+            raise ValueError(f"unknown revocation signature mode: {signature_mode}")
+        try:
+            gate.revoke(revocation, lease=lease, now=now)
+        except ValueError:
+            rejected_event = log.events[-1] if log.events else None
+            return EvalOutcome(
+                decision="deny",
+                reason_code=(
+                    rejected_event.payload.get("reason_code")
+                    if rejected_event is not None
+                    else "REVOCATION_REJECTED"
+                ),
+                audit_events=log.events,
+                audit_view=audit_view(rejected_event, log.events),
+            )
 
     state = None
     if scenario_input.get("include_current_state", False):
-        state = make_state(scenario_input, now=now)
+        state = make_state(scenario_input, now=now, edge_key=edge_key)
     result = gate.evaluate(command, lease, current_state=state, now=now)
     primary_event = find_event(log.events, result.audit_id)
     return EvalOutcome(
@@ -480,11 +598,13 @@ def run_malformed_input(scenario: dict[str, Any]) -> EvalOutcome:
 def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
     now = datetime_from_unix_ms(scenario.get("now_unix_ms"))
     central_key = DemoKeyPair()
+    edge_key = DemoKeyPair()
     issuer_key = DemoKeyPair()
     policy = make_policy()
     log = AuditLog()
+    replay_cache = RequestReplayCache.temporary()
     request = make_request(scenario.get("input", {}), now=now, central_key=central_key)
-    gate = make_gate(issuer_key, log)
+    gate = make_gate(issuer_key, edge_key, log, central_key)
 
     log.record(
         event_type=AuditEventType.CAPABILITY_REQUESTED,
@@ -496,7 +616,11 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
         payload=request.model_dump(mode="json"),
         related_message_ids=[request.message_id],
     )
-    normal_state = make_state({"local_context": {"network": {"profile": "normal"}}}, now=now)
+    normal_state = make_state(
+        {"local_context": {"network": {"profile": "normal"}}},
+        now=now,
+        edge_key=edge_key,
+    )
     log.record(
         event_type=AuditEventType.NETWORK_STATE_ASSERTED,
         actor_id=EDGE_AGENT_ID,
@@ -514,7 +638,7 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
         audit_log=log,
         deciding_actor_id=ISSUER_ID,
         now=now,
-        **trusted_policy_kwargs(policy, central_key),
+        **trusted_policy_kwargs(policy, central_key, edge_key, replay_cache),
     )
     if decision != Decision.ALLOW or constraints is None:
         raise ValueError("network degradation scenario could not establish initial lease")
@@ -532,11 +656,21 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
         nonce="lease_nonce_eval_network_degrade",
     )
     lease.signature = issuer_key.sign(lease)
-    gate.evaluate(make_command({"command": {"command_id": "cmd_eval_initial"}}), lease, now=now)
+    gate.evaluate(
+        make_command(
+            {"command": {"command_id": "cmd_eval_initial"}},
+            now=now,
+            central_key=central_key,
+        ),
+        lease,
+        current_state=normal_state,
+        now=now,
+    )
 
     degraded_state = make_state(
         {"local_context": {"network": {"profile": "degraded_teleop"}}},
         now=now + timedelta(seconds=5),
+        edge_key=edge_key,
     )
     log.record(
         event_type=AuditEventType.NETWORK_STATE_ASSERTED,
@@ -548,34 +682,62 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
         payload=degraded_state.model_dump(mode="json"),
         related_message_ids=[degraded_state.message_id],
     )
+    degraded_request = make_request(
+        {
+            "request": {
+                "message_id": "msg_eval_degraded_request",
+                "correlation_id": request.correlation_id,
+                "request_nonce": "nonce_eval_degraded_request",
+            }
+        },
+        now=now + timedelta(seconds=5),
+        central_key=central_key,
+    )
+    log.record(
+        event_type=AuditEventType.CAPABILITY_REQUESTED,
+        actor_id=degraded_request.requesting_agent_id,
+        robot_id=degraded_request.robot_id,
+        mission_id=degraded_request.mission_id,
+        correlation_id=degraded_request.correlation_id,
+        summary="eval central agent requested remote_assist after degradation",
+        payload=degraded_request.model_dump(mode="json"),
+        related_message_ids=[degraded_request.message_id],
+    )
     degrade_decision, _, degrade_alternatives, _, _ = evaluate_policy(
-        request,
+        degraded_request,
         degraded_state,
         policy,
         audit_log=log,
         deciding_actor_id=ISSUER_ID,
         now=now + timedelta(seconds=5),
-        **trusted_policy_kwargs(policy, central_key),
+        **trusted_policy_kwargs(policy, central_key, edge_key, replay_cache),
     )
     if degrade_decision not in {Decision.DEGRADE, Decision.DENY}:
         raise ValueError("network degradation scenario did not degrade or deny")
     fallback = (
         degrade_alternatives[0] if degrade_alternatives else FallbackAction.CRAWL_TO_SAFE_ZONE
     )
-    gate.revoke(
-        LeaseRevocation(
-            message_id="msg_eval_network_revocation",
-            correlation_id=request.correlation_id,
-            created_at=now + timedelta(seconds=6),
-            lease_id=lease.lease_id,
-            revoked_by=EDGE_AGENT_ID,
-            reason_code="NETWORK_PROFILE_REVOKE",
-            revoked_at=now + timedelta(seconds=6),
-            fallback_action=fallback,
-        ),
-        lease=lease,
+    revocation = LeaseRevocation(
+        message_id="msg_eval_network_revocation",
+        correlation_id=request.correlation_id,
+        created_at=now + timedelta(seconds=6),
+        lease_id=lease.lease_id,
+        revoked_by=EDGE_AGENT_ID,
+        edge_agent_id=EDGE_AGENT_ID,
+        reason_code="NETWORK_PROFILE_REVOKE",
+        revoked_at=now + timedelta(seconds=6),
+        fallback_action=fallback,
+        robot_id=ROBOT_ID,
+        mission_id=MISSION_ID,
+        capability=Capability.REMOTE_ASSIST,
     )
-    final_command = make_command({"command": {"command_id": "cmd_eval_after_degrade"}})
+    sign_revocation(revocation, edge_key)
+    gate.revoke(revocation, lease=lease, now=now + timedelta(seconds=6))
+    final_command = make_command(
+        {"command": {"command_id": "cmd_eval_after_degrade"}},
+        now=now + timedelta(seconds=7),
+        central_key=central_key,
+    )
     final_result = gate.evaluate(
         final_command,
         lease,
@@ -594,11 +756,13 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
 def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
     now = datetime_from_unix_ms(scenario.get("now_unix_ms"))
     central_key = DemoKeyPair()
+    edge_key = DemoKeyPair()
     issuer_key = DemoKeyPair()
     policy = make_policy()
     log = AuditLog()
+    replay_cache = RequestReplayCache.temporary()
     request = make_request(scenario.get("input", {}), now=now, central_key=central_key)
-    gate = make_gate(issuer_key, log)
+    gate = make_gate(issuer_key, edge_key, log, central_key)
     log.record(
         event_type=AuditEventType.CAPABILITY_REQUESTED,
         actor_id=request.requesting_agent_id,
@@ -609,7 +773,11 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
         payload=request.model_dump(mode="json"),
         related_message_ids=[request.message_id],
     )
-    normal_state = make_state({"local_context": {"network": {"profile": "normal"}}}, now=now)
+    normal_state = make_state(
+        {"local_context": {"network": {"profile": "normal"}}},
+        now=now,
+        edge_key=edge_key,
+    )
     log.record(
         event_type=AuditEventType.NETWORK_STATE_ASSERTED,
         actor_id=EDGE_AGENT_ID,
@@ -627,7 +795,7 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
         audit_log=log,
         deciding_actor_id=ISSUER_ID,
         now=now,
-        **trusted_policy_kwargs(policy, central_key),
+        **trusted_policy_kwargs(policy, central_key, edge_key, replay_cache),
     )
     if decision != Decision.ALLOW or constraints is None:
         raise ValueError("cloud partition scenario could not establish initial lease")
@@ -647,14 +815,20 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
     )
     lease.signature = issuer_key.sign(lease)
     gate.evaluate(
-        make_command({"command": {"command_id": "cmd_eval_before_partition"}}),
+        make_command(
+            {"command": {"command_id": "cmd_eval_before_partition"}},
+            now=now + timedelta(seconds=30),
+            central_key=central_key,
+        ),
         lease,
+        current_state=normal_state,
         now=now + timedelta(seconds=30),
     )
 
     partition_state = make_state(
         {"local_context": {"network": {"profile": "partition"}}},
         now=now + timedelta(seconds=31),
+        edge_key=edge_key,
     )
     log.record(
         event_type=AuditEventType.NETWORK_STATE_ASSERTED,
@@ -666,20 +840,43 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
         payload=partition_state.model_dump(mode="json"),
         related_message_ids=[partition_state.message_id],
     )
+    partition_request = make_request(
+        {
+            "request": {
+                "message_id": "msg_eval_partition_request",
+                "correlation_id": request.correlation_id,
+                "request_nonce": "nonce_eval_partition_request",
+            }
+        },
+        now=now + timedelta(seconds=31),
+        central_key=central_key,
+    )
+    log.record(
+        event_type=AuditEventType.CAPABILITY_REQUESTED,
+        actor_id=partition_request.requesting_agent_id,
+        robot_id=partition_request.robot_id,
+        mission_id=partition_request.mission_id,
+        correlation_id=partition_request.correlation_id,
+        summary="eval central agent requested remote_assist during partition",
+        payload=partition_request.model_dump(mode="json"),
+        related_message_ids=[partition_request.message_id],
+    )
     new_authority_decision, _, _, _, _ = evaluate_policy(
-        request,
+        partition_request,
         partition_state,
         policy,
         audit_log=log,
         deciding_actor_id=ISSUER_ID,
         now=now + timedelta(seconds=31),
-        **trusted_policy_kwargs(policy, central_key),
+        **trusted_policy_kwargs(policy, central_key, edge_key, replay_cache),
     )
     if new_authority_decision != Decision.DENY:
         raise ValueError("partition did not deny new high-risk authority")
 
     partition_command = make_command(
-        {"command": {"command_id": "cmd_eval_partition_before_expiry"}}
+        {"command": {"command_id": "cmd_eval_partition_before_expiry"}},
+        now=now + timedelta(seconds=32),
+        central_key=central_key,
     )
     partition_result = gate.evaluate(
         partition_command,
@@ -690,7 +887,11 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
     if partition_result.allowed or partition_result.reason_code != "NETWORK_DETACHED":
         raise ValueError("partitioned pre-expiry command did not fail closed")
 
-    final_command = make_command({"command": {"command_id": "cmd_eval_partition_after_expiry"}})
+    final_command = make_command(
+        {"command": {"command_id": "cmd_eval_partition_after_expiry"}},
+        now=now + timedelta(seconds=61),
+        central_key=central_key,
+    )
     final_result = gate.evaluate(
         final_command,
         lease,

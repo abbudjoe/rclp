@@ -1,5 +1,544 @@
 # Assembly Ledger
 
+## Post-Scan 4-Finding Security Remediation - 2026-06-23T2
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all four Codex Security findings using `assembly`.
+- Completed fresh Codex Security scan `0aab2b4e-d69b-4eb4-830f-edcde6bbf656`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T165856Z_r90lo99j/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- `DIRECTION.md` is intentionally removed from the current worktree by prior
+  user request. The current `AGENTS.md` no longer lists it as required reading.
+- No cloud jobs or paid compute are required for this remediation, and none
+  will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Close the four validated scan findings at their root authority contracts:
+command replay state must be durable/shared rather than process-local, every
+accepted Python capability must have an explicit constraint requirement profile,
+Rust trusted verifier secrets must not leak through debug or serialization, and
+Rust verifier audit events must be chained to a caller-provided audit head.
+
+Success criterion:
+
+The Python command gate rejects the original restart replay PoC, accepted
+non-remote capabilities fail closed without their declared constraints, Rust
+debug/JSON output redacts HMAC secrets, Rust audit events bind a non-empty prior
+audit chain head, focused regressions pass, and the required local gates pass.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| RCLP-CMD-REPLAY-DURABLE-001: Python command replay protection uses an explicit durable/shared store for command id and nonce replay, and `CommandGate` fails closed without one. | met | `CommandReplayCache` now supports SQLite-backed atomic command-id and nonce inserts, `CommandGate` requires a durable injected cache, and `test_replayed_signed_command_is_rejected_after_gate_restart` proves a recreated gate with the same store rejects the original replay PoC. |
+| RCLP-PY-CAP-CONSTRAINT-001: Python lease validation enforces typed per-capability required constraints for every accepted capability, not only `remote_assist`. | met | `CapabilityConstraintRequirement` now defines the Python profile, `CommandGate` requires every accepted capability to have a requirement, and tests cover non-remote empty-constraint denial, legitimate constrained `mission_continue` allow, and explicit fallback-field enforcement. |
+| RCLP-RUST-SECRET-REDACT-001: Rust `TrustedVerifierContext` does not print or serialize HMAC secrets by default. | met | Rust `TrustedVerifierContext` now uses custom redacted `Debug` and `skip_serializing` on HMAC secrets; `trusted_verifier_context_redacts_hmac_secrets` verifies debug output and JSON serialization do not expose the secrets. |
+| RCLP-RUST-AUDIT-ANCHOR-001: Rust verifier audit events bind a caller-provided previous audit hash / chain head instead of always emitting `previous_audit_hash: None`. | met | Rust trusted context now requires `audit_chain_head`, serde rejects malformed chain heads, `verify_json_value()` preflights the chain head before parse-error audits, and vector tests prove non-empty previous hash binding plus proof sensitivity to chain-head tampering. |
+| Security-relevant tests cover every changed behavior and legitimate behavior remains covered. | met | Added Python regressions for durable command replay, non-remote constraints, and explicit fallback requirements; added Rust regressions for secret redaction, malformed audit-chain context, malformed JSON audit binding, and previous-hash proof tamper sensitivity. |
+| Validation gates pass. | met | Passed: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (147 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `cargo test --workspace`; `cargo test -p rclp-edge-verifier --test vector_tests` (17 passed); `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `.venv/bin/ruff check .`; `.venv/bin/ruff format . --check`. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Subagent reviewer `019ef587-c2ab-7562-8cd7-5d24fb55c773` first found fallback explicitness and malformed-input audit-chain gaps; both were fixed, focused and broad gates reran, and re-review returned clean with all DoD items met. |
+
+Review notes:
+
+- Reviewer: `019ef587-c2ab-7562-8cd7-5d24fb55c773` ("Descartes").
+- Initial review status: two valid code findings and one ledger update item.
+- Final review status: clean. The reviewer classified all remediation DoD
+  items as met and made no code or cloud changes.
+- No cloud jobs or paid compute were required or mutated.
+
+## Post-Scan 6-Finding Security Remediation - 2026-06-23
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all six Codex Security findings using `assembly`.
+- Completed Codex Security scan `c3c5a16a-9f5b-4d0e-9805-99314da56f24`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T141934Z_j9b_oj7r/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- `DIRECTION.md` is listed as required reading in `AGENTS.md`, but it is
+  currently removed from the worktree by prior user request. The remaining
+  required doctrine files were read before implementation.
+- No cloud jobs or paid compute are required for this remediation, and none
+  will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Close the six validated scan findings at their root authority contracts:
+audit import authenticity, per-capability constraint schemas, Rust audit proof
+field binding, durable request replay storage, command authentication before
+authority audit, and Rust policy digest pinning.
+
+Success criterion:
+
+The Python reference implementation and Rust edge verifier reject all six
+reproduced attack paths with focused negative tests, preserve legitimate
+behavior, and pass local validation gates.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| RCLP-AUDIT-AUTH-001: Python audit JSONL import rejects authority events whose integrity profile is only locally recomputable unless a trusted anchor validates the chain. | met | `load_jsonl()` now requires a matching `trusted_chain_head` when authority events are imported. Tests cover anchored positive load, unanchored authority rejection, and recomputed tamper rejection against the original trusted chain head. |
+| RCLP-CAP-CONSTRAINT-001: Rust verifier enforces typed per-capability required constraints, so accepted non-`remote_assist` capabilities cannot authorize with empty constraints. | met | `TrustedVerifierContext` now carries `capability_constraint_requirements`, and `required_constraints_missing()` enforces the schema for every accepted capability. Rust regression `accepted_non_remote_capability_requires_declared_constraints` denies a signed accepted `mission_continue` lease with empty constraints. |
+| RCLP-RUST-AUDIT-BIND-001: Rust audit `integrity_proof` binds every replay-critical top-level authority field. | met | Rust `AuditEvent` proof payload now includes `decision`, `reason_code`, `lease_id`, `command_id`, and `observed_at_unix_ms`. `authority_decisions_carry_audit_commit_integrity_fields` recomputes the proof and verifies tampering changes the proof. |
+| RCLP-REQUEST-REPLAY-DURABLE-001: Python capability request replay protection is durable and atomic for the request freshness window, and policy issuance fails closed without durable replay storage. | met | `RequestReplayCache` now uses durable SQLite-backed atomic insert semantics for policy issuance; `_evaluate_policy_inputs()` consumes a fresh authenticated nonce before policy/state/network/geofence outcomes. Tests cover missing cache, non-durable store denial, replay across recreated cache instances, and authenticated denial followed by replayed allow attempt. |
+| RCLP-EDGE-PREAUTH-AUDIT-001: Edge daemon does not write authority-relevant command audit events before command authentication succeeds or fails through the command gate. | met | `EdgeAgentDaemon.handle_command()` delegates unauthenticated mismatch commands to `CommandGate.evaluate()`. Negative test verifies an unsigned mismatched command produces `COMMAND_AUTHENTICATED_AGENT_MISSING`, not a pre-auth `EDGE_AGENT_MISMATCH` authority audit. |
+| RCLP-RUST-POLICY-DIGEST-001: Rust verifier authorization is pinned to an accepted policy id/digest and emitted audit events carry that policy reference. | met | Rust `TrustedVerifierContext` now uses accepted `{policy_id, policy_digest}` references. `policy_digest_violation()` requires the pair before authorization, audit events include both fields, and regressions cover downgraded digest plus accepted digest with mismatched policy id. |
+| Security-relevant tests cover every changed behavior and legitimate behavior remains covered. | met | Focused regressions were added in `tests/test_audit.py`, `tests/test_security_negative_paths.py`, `tests/test_rust_edge_vectors.py`, and `crates/rclp-edge-verifier/tests/vector_tests.rs`; shared Rust vectors were migrated to the policy-reference and constraint-schema contract. |
+| Validation gates pass. | met | Final gates passed: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (142 passed); `PYTHONPATH=src .venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `cargo test --workspace` (1 lib test and 14 vector tests); `cargo clippy --workspace --all-targets -- -D warnings`; `.venv/bin/ruff check .`; `.venv/bin/ruff format . --check`; `cargo fmt --all -- --check`. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Subagent reviewer Feynman first found authenticated-deny replay consumption and Rust policy id/digest pair gaps; both were fixed and re-reviewed cleanly with no remaining code findings. Post-review full gates reran successfully. |
+
+Review notes:
+
+- Reviewer: `019ef560-853f-7702-a659-881898bc5819` ("Feynman").
+- Initial review status: two valid code findings and one ledger update item.
+- Post-review status: no remaining code blocker. The reviewer classified all
+  six remediation DoD items as met and noted ledger closure was the remaining
+  administrative step.
+- No cloud jobs or paid compute were required or mutated.
+
+## Post-Scan 4-Finding Security Remediation - 2026-06-23
+
+Status: successful
+
+Source contract:
+- Codex Security scan `eb7bed48-4cd6-41db-b868-66d4fa26f023` report at `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T030156Z_69_emnx1/report.md`.
+- AGENTS-required doctrine read before edits. `DIRECTION.md` is intentionally deleted in the working tree per user request; historical `HEAD:DIRECTION.md` was used as non-authoritative context only.
+- No cloud job mutation authorized or performed.
+
+Definition of done:
+
+| ID | Requirement | Status | Evidence |
+| --- | --- | --- | --- |
+| RCLP-CG-SCOPE-001 | Python `CommandGate` / `validate_lease_for_command` enforce edge-local accepted capabilities and issuer capability scopes; trusted issuers cannot sign capabilities outside local scope. | met | `CommandGate` now requires `accepted_capabilities` and `issuer_capability_scopes`, and `validate_lease_for_command()` rejects locally unsupported or issuer-unscoped capabilities with `CAPABILITY_NOT_GRANTED`. Negative coverage includes trusted issuer `autonomy_escalation` denial. |
+| RCLP-CG-CMD-AUTH-001 | Python commands crossing the edge/ROS gate require authenticated actor identity, signature verification, freshness, and replay protection before lease validation can allow. | met | `EdgeCommand` is a signed `BaseMessage`; `CommandGate.evaluate()` checks authenticated actor, trusted command key, signature, freshness, and command id/nonce replay before lease validation. Negative coverage covers missing auth actor, missing signature, actor mismatch, untrusted key, invalid signature, stale/future command, and replay. |
+| RCLP-RUST-CMD-ACTOR-001 | Rust verifier treats command actor as authenticated envelope state, rejects authenticated actor mismatch, and does not authorize using a spoofable claimed agent field. | met | Rust `EdgeCommand` now carries authenticated actor, command nonce/time, and signature; `TrustedVerifierContext` carries command-agent trust roots and command HMAC secret. Vectors cover missing auth actor, actor mismatch, untrusted agent, invalid/missing signature, stale/future command, and signed command replay. |
+| RCLP-RUST-AUDIT-001 | Rust verifier authority decisions carry AuditCommit-equivalent integrity fields including payload hash and integrity proof. | met | Rust `AuditEvent` now emits `audit_commit` envelope fields, `created_at`, `payload_hash`, `integrity_profile`, `integrity_proof`, policy reference slots, state refs, and related IDs. Rust tests recompute payload hash and integrity proof and verify top-level tamper changes the proof. |
+| RCLP-TESTS-001 | Changed behavior has focused negative tests / vectors; Python and Rust fixtures are updated. | met | Python negative tests and Rust shared vectors updated; `EdgeCommand` added to protocol docs and manifest. |
+| RCLP-GATES-001 | Focused smoke plus required local gates pass where feasible. | met | Passed: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (136 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed); `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace`; `.venv/bin/ruff check .`; `.venv/bin/ruff format --check .`. |
+| RCLP-REVIEW-001 | Spec-conformance review is performed and post-review smoke reruns cleanly. | met | Subagent spec review found audit-proof, command-auth coverage, and `edge_command` protocol-surface gaps; all were resolved, rechecked cleanly, and the full verification gates reran successfully. |
+
+## Post-Scan 3-Finding Security Remediation - 2026-06-23
+
+Status: successful
+
+Source contract:
+
+- User request: resolve the three Codex Security findings using `assembly`.
+- Completed Codex Security scan `1a82e261-a7ff-4db1-868e-bae9c5a42599`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-f4cVft/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T014350Z_7yfom2zj/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- No cloud jobs or paid compute are required for this remediation, and none
+  will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Close the three validated findings at their root authority contracts:
+Rust verifier capability authorization must be explicit and local, Rust replay
+nonce consumption must be atomic from the verifier contract's perspective, and
+signed revocations must be scoped to the referenced lease edge context unless
+an explicit broader role exists.
+
+Success criterion:
+
+The Rust edge verifier rejects HMAC-valid unsupported capabilities and consumes
+lease nonces through a single atomic operation; the Python command gate rejects
+cross-edge revocations from otherwise trusted revokers; focused negative tests
+and local validation gates pass.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| RCLP-RUST-EDGE-001: Rust verifier enforces explicit local accepted capability and issuer-to-capability scope before allow/degrade. | met | `TrustedVerifierContext` now carries `accepted_capabilities` and `issuer_capability_scopes`; `verify()` rejects signed capabilities that are not locally accepted or issuer-scoped with `DENY_CAPABILITY_NOT_GRANTED`. Rust regressions cover an HMAC-valid unsupported capability and issuer scope mismatch. Shared vectors and Python vector-shape tests include the new trusted context contract. |
+| RCLP-RUST-EDGE-002: Rust replay cache contract exposes atomic nonce consumption and no verifier path uses split check/mark. | met | `ReplayCache` now exposes only `consume_nonce()`, and `verify()` consumes the nonce immediately before `allow` or `degrade`. The public `InMemoryReplayCache` export was removed so the crate does not present process-local replay storage as a production default. Rust regressions cover same-cache replay rejection after both allow and degrade. |
+| RCLP-CG-REVOCATION-CTX-001: revocation signer authority is bound to the referenced lease edge context or an explicit scope. | met | `LeaseRevocation` now requires `edge_agent_id`. `CommandGate` verifies signed revocations, requires revocation edge context to match the lease, rejects cross-edge revokers by default, and permits broader revokers only through explicit `revoker_edge_scopes_by_id`. Python tests cover cross-edge denial, explicit scoped revoker allow, and revocation edge mismatch denial. |
+| Security-relevant tests cover every changed behavior. | met | Added Rust vector tests for unsupported signed capability, issuer-capability scope mismatch, allow replay consumption, and degrade replay consumption. Added Python negative/positive revocation tests for cross-edge revoker denial, explicit scoped revoker allow, and revocation edge context mismatch. |
+| Validation gates pass. | met | Focused smoke passed: `cargo test -p rclp-edge-verifier --test vector_tests` (8 passed) and `.venv/bin/python -m pytest tests/test_security_negative_paths.py tests/test_protocol_flow.py tests/test_rust_edge_vectors.py tests/test_conformance_contract.py` (111 passed). Broader gates passed: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (127 passed); `PYTHONPATH=src .venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `cargo test --workspace`; `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `.venv/bin/ruff check .`; `.venv/bin/ruff format . --check`. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Subagent review classified code-level remediation as sound and found only ledger/docs parity nits. Those docs were updated, and post-review gates were rerun successfully. |
+
+Cloud/job status:
+
+- No cloud jobs or paid compute are required for this remediation.
+- Repository cloud mutation rule reviewed; no launch, stop, delete, resize, or
+  other paid-compute mutation will be performed.
+
+Review notes:
+
+- Subagent reviewer: `019ef25b-c45e-7322-bf27-ff39aa71d782` ("Franklin").
+- Initial review status: no code-level security blocker; docs/ledger parity
+  updates requested for this section, `docs/THREAT_MODEL.md`, and
+  `docs/CONFORMANCE_CHECKLIST.md`.
+- Post-review action: updated ledger evidence and clarified revocation edge
+  scoping and advisory fallback wording in summary docs.
+
+## Post-Scan 10-Finding Security Remediation - 2026-06-23
+
+Status: successful
+
+Source contract:
+
+- User request: fix all 10 Codex Security findings using `assembly`.
+- Completed Codex Security scan `2b19d816-a775-4733-9e1f-6319bc54e547`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-f4cVft/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T004740Z_17myo_fj/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- `DIRECTION.md` is listed as required reading in `AGENTS.md`, but it is
+  currently removed from the worktree by prior user request. The remaining
+  required doctrine files were read before implementation.
+- No cloud jobs or paid compute are required for this remediation, and none
+  will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Close the 10 scan findings at their root authority/control-plane contracts:
+finite signed numerics, supported protocol versions, Rust freshness overflow,
+fallback policy selection, explicit state-key trust, fail-closed lease
+timestamps, strict signature encoding, manifest/model requiredness parity, and
+single-principal scoping for the Rust dev HMAC profile.
+
+Success criterion:
+
+The Python reference implementation, ROS-adjacent command gate, manifest
+conformance tests, eval scenarios, and Rust verifier reject all 10 reproduced
+attack paths with focused negative tests and local validation gates.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| CS-RCLP-001: malformed signature encodings are rejected before Ed25519 verification. | met | `rclp_core.crypto.unb64()` now uses strict validating URL-safe base64 and canonical re-encoding. Negative tests cover malformed request and lease signatures returning `REQUEST_SIGNATURE_INVALID` / `INVALID_SIGNATURE`. |
+| CS-RCLP-002: all authority-critical numeric fields reject non-finite values before policy or command comparisons. | met | Pydantic fields now set `allow_inf_nan=False`; policy and command conformance add runtime finite checks for copied/signed objects. Negative tests cover model rejection, signed non-finite network state, and non-finite lease constraints. |
+| CS-RCLP-003: malformed or naive lease timestamps fail closed with auditable denial/fallback instead of exceptions. | met | `lease_time_violation()` centralizes timezone/window/age/TTL checks before datetime arithmetic. Negative coverage verifies naive lease timestamps return `LEASE_TIMESTAMP_INVALID` with local fallback instead of crashing. |
+| CS-RCLP-004: unsupported `protocol_version` values are rejected before signed authority semantics are interpreted. | met | `SUPPORTED_PROTOCOL_VERSION` and runtime `protocol_version_violation()` are enforced at the start of policy evaluation and in revocation handling before mutation. Post-review tests cover unsupported request/state versions even with semantic conflicts, plus unsupported revocation versions. |
+| CS-RCLP-006: expired, stale, revoked, malformed, or otherwise invalid leases cannot select command-gate fallback actions. | met | `CommandGate` now selects fallback from local reason-code policy, not lease constraints. Negative coverage verifies expired leases with attacker-chosen lease fallback still emit `LOCAL_AUTONOMY_ONLY`. |
+| CS-RCLP-007: revocation `fallback_action` is advisory and local fallback policy selects the emitted fallback. | met | Revocation audit payload preserves `requested_fallback_action`, while emitted fallback is selected by local policy. Negative coverage verifies a `HOLD_POSITION` revocation request cannot force fallback for an unrecognized local reason. |
+| CS-RCLP-008: command-gate state signing keys are explicit and cannot silently alias to revocation keys. | met | `CommandGate` no longer defaults `state_public_keys_by_edge_id` from revoker keys; callers/tests pass state keys explicitly. Negative coverage verifies revoker-only keys produce `EDGE_STATE_KEY_NOT_TRUSTED`. |
+| CS-RCLP-009: Rust state freshness arithmetic overflow fails closed. | met | Rust state freshness arithmetic now returns `DENY_MALFORMED_INPUT` on checked-add overflow. Rust regression `overflowing_state_freshness_window_fails_closed` covers the overflow case. |
+| CS-RCLP-010: Rust dev HMAC profile cannot silently authorize multiple issuers or state-edge principals with one shared secret. | met | The dev HMAC verifier now rejects trust contexts with more than one issuer or state edge id. Rust regression `dev_hmac_profile_rejects_multi_principal_trust_sets` covers both sets. |
+| CS-RCLP-011: manifest-required trust-boundary fields match model requiredness or an explicit runtime-required contract enforced by tests. | met | `manifests/rclp_protocol_manifest.yaml` now declares `runtime_required_fields`; conformance tests require every manifest required field to be either model-required or explicitly runtime-required. |
+| Security-relevant tests cover every changed behavior. | met | Added Python negative tests for the scan findings in `tests/test_security_negative_paths.py`, conformance manifest checks in `tests/test_conformance_contract.py`, and Rust verifier regressions in `crates/rclp-edge-verifier/tests/vector_tests.rs`. |
+| Validation gates pass. | met | Final local gates passed: compileall, full pytest, eval runner, Ruff check/format check, Cargo fmt check, Cargo clippy, and Cargo test. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Subagent reviewer `019ef21e-d9ce-76a2-b054-a1165fbee052` first found a CS-RCLP-004 ordering blocker; after the fix, targeted re-review reported no remaining blocker and confirmed unsupported request/state/revocation versions fail before semantic handling or mutation. |
+
+Review status:
+
+- Clean after post-review fix. Independent reviewer Popper confirmed the
+  CS-RCLP-004 ordering blocker is closed, probed the prior semantic-conflict
+  cases, and reported no remaining blocker.
+
+Evidence:
+
+- `.venv/bin/python -m pytest tests/test_security_negative_paths.py tests/test_protocol_flow.py tests/test_conformance_contract.py` passed: 106 tests.
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/python tests/evals/eval_runner.py` passed: 33 evals passed, 0 failed.
+- `.venv/bin/python -m pytest` passed: 124 tests.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format . --check` passed.
+- `cargo test -p rclp-edge-verifier` passed: 1 library test, 5 vector tests, 0 doc tests.
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+
+## Post-Scan Security Finding Remediation - 2026-06-23
+
+Status: successful
+
+Source contract:
+
+- User request: fix the four Codex Security findings using `assembly`.
+- Completed Codex Security scan `e02479b0-82f5-4d68-9748-e2bfc4efa38b`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- `DIRECTION.md` is listed as required reading in `AGENTS.md`, but it is
+  currently removed from the worktree by prior user request. The remaining
+  required doctrine files were read before implementation.
+- No cloud jobs or paid compute are required for this remediation, and none
+  will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Close the four post-scan security findings at their root control-plane
+contracts: authenticated Rust local state, issuer-id-to-key binding, authenticated
+revocation fallback binding, and audited fail-closed malformed request
+timestamps.
+
+Success criterion:
+
+The Python reference command gate and policy path, plus the Rust verifier spike,
+reject the four reproduced attack paths with focused negative tests and local
+validation gates.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Rust verifier authenticates local network/geofence state before using it for authority. | met | `LocalContext` now carries `authenticated_edge_agent_id`, local state timestamps, and a dev-profile state signature. `TrustedVerifierContext` now carries trusted state edge ids and a state HMAC secret. The verifier rejects missing/mismatched/untrusted/unsigned/invalid state before geofence or network policy checks. Shared vectors were regenerated with signed local state, and `unsigned_local_state_rejected.json` plus the Rust mutation regression prove unsigned or forged local state cannot authorize a command. |
+| Lease issuer identity is bound to the public key used for verification. | met | `validate_lease_for_command()` now builds an issuer-key registry and verifies a lease only with the key mapped to `lease.issuer_id`; multi-issuer `CommandGate` construction requires an explicit issuer-key registry. Negative coverage includes a trusted low-privilege key signing a lease claiming a different trusted issuer and receiving `INVALID_SIGNATURE`. |
+| Revocation fallback is selected only for an authenticated, context-bound revoked lease. | met | Revoked-lease id handling now occurs after signature, lease time, required constraints, and command-context checks. Stored revocation records include the authenticated lease authority tuple, and fallback declarations only use revocation fallback/correlation/revocation ids when the current authenticated lease and command context match that tuple. Negative coverage proves a fake unsigned/context-shifted lease reusing a revoked id gets `INVALID_SIGNATURE` and `LOCAL_AUTONOMY_ONLY` with no revocation id. |
+| Naive `CapabilityRequest.created_at` is rejected as an audited denial, not an exception. | met | `_request_time_violation()` rejects naive request timestamps as `REQUEST_TIMESTAMP_INVALID` before datetime comparison. Negative coverage verifies policy evaluation returns `Decision.DENY`, records `capability_denied`, and includes the reason in the audit payload. |
+| Security-relevant tests cover every changed behavior. | met | Added focused Python negative tests for naive request timestamps, forged revoked-id fallback, issuer/key mismatch, and multi-issuer key-registry enforcement. Rust vectors and tests cover signed local state, unsigned local state, forged local context mutation, and replay. Python vector shape tests assert the new state trust-root and signature contract. |
+| Validation gates pass. | met | Full gates passed after formatting: compileall, full pytest, eval runner, Ruff check, Ruff format check, Cargo fmt check, Cargo clippy, and Cargo test. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Subagent reviewer `019ef1ec-d70f-7810-ad45-28bc2334e555` returned no actionable findings and noted only documented production gaps. The review thread was closed, then post-review pytest/Rust/eval smoke passed. |
+
+Review status:
+
+- Clean. Subagent reviewer Maxwell reviewed the four finding contracts,
+  changed files, extracted DoD, and evidence in read-only mode. The reviewer
+  reported no actionable findings and confirmed the four contracts appear
+  covered. Residual risks are intentionally out of scope and documented: the
+  Rust spike still uses the test-only HMAC profile and consumes a local
+  revocation set rather than verifying revocation messages itself.
+
+Evidence:
+
+- `.venv/bin/python -m pytest tests/test_security_negative_paths.py tests/test_protocol_flow.py tests/test_rust_edge_vectors.py` passed: 89 tests.
+- `cargo test -p rclp-edge-verifier --test vector_tests` passed: 3 tests.
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/python -m pytest` passed: 110 tests.
+- `PYTHONPATH=src .venv/bin/python tests/evals/eval_runner.py` passed: 33
+  evals passed, 0 failed.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format . --check` passed after formatting one touched Python
+  test file.
+- `cargo fmt --all -- --check` passed after formatting touched Rust files.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace` passed: 1 library test, 3 vector tests, 0 doc
+  tests.
+- Post-review smoke passed:
+  `.venv/bin/python -m pytest tests/test_security_negative_paths.py tests/test_rust_edge_vectors.py`
+  with 47 tests passed.
+- Post-review smoke passed:
+  `cargo test -p rclp-edge-verifier --test vector_tests` with 3 tests passed.
+- Post-review smoke passed:
+  `PYTHONPATH=src .venv/bin/python tests/evals/eval_runner.py` with 33 evals
+  passed, 0 failed.
+
+Artifacts:
+
+- Python issuer-key and state/fallback policy contracts:
+  `src/rclp_core/conformance.py`, `src/rclp_core/policy.py`, and
+  `src/rclp_ros2/command_gate.py`.
+- Python regression tests: `tests/test_security_negative_paths.py`.
+- Rust local-state authentication: `crates/rclp-edge-verifier/src/types.rs`,
+  `crates/rclp-edge-verifier/src/crypto.rs`, and
+  `crates/rclp-edge-verifier/src/verifier.rs`.
+- Rust/vector regressions:
+  `crates/rclp-edge-verifier/tests/vector_tests.rs`,
+  `tests/test_rust_edge_vectors.py`, and
+  `tests/vectors/edge_verifier/`.
+- Documentation:
+  `docs/RUST_EDGE_VERIFIER.md`,
+  `tests/vectors/edge_verifier/README.md`, and
+  `crates/rclp-edge-verifier/README.md`.
+
+Cloud/job status:
+
+- No cloud jobs or paid compute were required.
+- Repository cloud mutation rule reviewed; no launch, stop, delete, resize, or
+  other paid-compute mutation was performed.
+
+## Security Review Remediation - 2026-06-22
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all security/code-review findings using `assembly`.
+- Human reviewer findings from the RCLP MVP security pass.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+
+Target contract:
+
+Close the security review findings at their protocol/control-plane roots so RCLP
+fails closed for stale or unauthenticated state, unsigned revocation, replayed
+authority requests, unenforced command constraints, and tampered audit context.
+
+Success criterion:
+
+The Python reference, command gate, eval harness, and Rust verifier all enforce
+the same authority contracts; negative tests cover every changed
+security-relevant behavior; full local validation gates pass.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Edge command validation fails closed when required local state is missing or stale. | met | `validate_lease_for_command()` now requires current state for state-scoped `remote_assist` leases, authenticates signed edge-local state, and rejects stale state. Negative coverage includes missing, unsigned, and stale current-state command-gate cases in `tests/test_security_negative_paths.py` and eval scenarios `missing_current_state_denied`, `unsigned_current_state_denied`, and `stale_current_state_denied`. |
+| Policy issuance requires authenticated edge-local state and bounded freshness. | met | `RobotStateAssertion` now carries `authenticated_edge_agent_id` and `signature`; policy validation uses trusted edge keys and shared state freshness checks. Negative coverage includes unsigned and stale state policy tests/evals. |
+| Policy issuance requires replay protection instead of allowing a no-cache authority path. | met | `_evaluate_policy_inputs()` and `evaluate_policy()` require a `RequestReplayCache` and deny `REQUEST_REPLAY_CACHE_REQUIRED` when absent. Replay-negative tests still cover duplicate nonce denial. |
+| Lease revocation acceptance requires a signed trusted revoker, freshness bounds, and matching lease context. | met | `CommandGate.revoke()` now requires a trusted revoker key, valid signature, fresh `created_at`/`revoked_at`, matching lease id, and non-conflicting optional robot/mission/capability context. Negative tests cover unsigned, invalid, stale, unknown, lease-mismatched, and context-conflicting revocations. |
+| `max_speed_mps` lease constraints are enforced against command payloads and fail closed on missing or malformed command data. | met | Command payloads are passed into conformance; speed-limited leases reject missing, malformed, non-finite, conflicting-alias, and too-high speed data. Negative tests and evals cover `COMMAND_SPEED_MISSING`, `COMMAND_SPEED_MALFORMED`, `COMMAND_SPEED_CONFLICT`, and `COMMAND_SPEED_TOO_HIGH`. |
+| Audit integrity proofs bind replay-critical top-level `AuditCommit` context. | met | Audit proofs now bind common envelope fields, actor/context fields, summary, authority relevance, policy id/digest, state refs, related message ids, payload hash, and previous hash. JSONL import requires common envelope fields. Negative tests cover top-level context tamper and missing common envelope field rejection. |
+| Rust verifier parity covers state freshness and speed constraint enforcement. | met | Rust verifier types/checks now include local context timestamps, `max_state_age_ms`, and command `max_speed_mps`; shared vectors include stale local state and over-speed command rejection. Cargo vector tests pass. |
+| Security-relevant negative tests and evals cover every changed behavior. | met | `.venv/bin/python -m pytest` passed 106 tests; `PYTHONPATH=src .venv/bin/python tests/evals/eval_runner.py` passed 33/33 scenarios including missing/unsigned/stale state, unsigned revocation, over-speed, conflicting speed alias, and non-finite speed. |
+| Validation gates pass. | met | Full gates passed: compileall, pytest, eval runner, Ruff check, Ruff format check, Cargo fmt check, Cargo clippy, and Cargo test. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Initial subagent review found unsigned current-state, speed alias, audit envelope, revocation context, and stale ledger issues; fixes addressed each. Focused re-review found a remaining NaN speed blocker; fix added finite-speed validation and a non-finite speed eval. Final focused re-review found no concrete blockers. Post-review gates passed. |
+
+Review status:
+
+- First assembly reviewer found five valid issues: command-gate current state
+  was not authenticated, conflicting speed aliases could bypass
+  `max_speed_mps`, audit import accepted missing common envelope fields,
+  revocation context was only lease-id deep, and this ledger was stale.
+- Fixes added shared state authentication, command-gate trusted state keys,
+  conflicting-speed rejection, common-envelope audit import requirements,
+  `message_type` / `policy_digest` audit proof binding, optional revocation
+  robot/mission/capability context, and negative tests/evals for each gap.
+- Focused re-review found one remaining blocker: non-finite Python speeds
+  such as `NaN` could pass comparisons. Fix added an explicit finite check and
+  the `nonfinite_speed_denied` eval scenario.
+- Final focused re-review returned no concrete blockers and classified D1-D9
+  as met, with D10 pending only this ledger update.
+
+Evidence:
+
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/python -m pytest` passed: 106 tests.
+- `PYTHONPATH=src .venv/bin/python tests/evals/eval_runner.py` passed: 33
+  evals passed, 0 failed.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format . --check` passed: 23 files already formatted.
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace` passed: 1 library test, 2 vector tests, 0 doc
+  tests.
+- Final reviewer smoke passed:
+  `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider tests/test_security_negative_paths.py::test_max_speed_constraint_is_enforced_against_command_payload tests/test_protocol_evals.py::test_eval_runner_executes_required_scenario_set`
+  with 7 tests passed.
+
+Cloud/job status:
+
+- No cloud jobs or paid compute are required for this remediation.
+- Repository cloud mutation rule reviewed; no launch, stop, delete, resize, or
+  other paid-compute mutation will be performed.
+
+## Post-T12 Validation Sequence Plan - 2026-06-22
+
+Status: successful
+
+Source contract:
+
+- User attachment: `Sequence Plan - Post-T12 Validation Sequence`
+- User-provided T13 prompt: `T13 - Demo + Validation Release Package`
+- User-provided T14 prompt: `T14 - Isaac Sim Visual POC on Lambda.ai`
+- User instruction: use `assembly`
+- `AGENTS.md`
+- `DIRECTION.md` at the time of the Post-T12 sequence work; this file was
+  later removed by user request.
+- Required repo doctrine under `docs/`
+
+Target contract:
+
+Create a planning/documentation handoff that tells the project owner exactly
+what to do after T12, which Codex threads to run next, what must be true before
+controlled technical validation calls, and what not to build yet. The work must
+not add new protocol features.
+
+Success criterion:
+
+The repo contains a clear post-T12 sequence plan, customer-call readiness gate,
+and next-thread map that recommend T13 before broad outreach, T14 as a visual
+Isaac Sim POC, controlled calls before public launch, and no commercial
+platform work yet.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| `docs/POST_T12_SEQUENCE_PLAN.md` exists. | met | Created `docs/POST_T12_SEQUENCE_PLAN.md` with current state, proof/non-proof boundaries, recommended sequence, build freeze guidance, customer-call gate, public release gate, and post-call decision criteria. After the fast-forward merge from `origin/main`, the plan now references the present T12 eval artifacts instead of treating them as absent. |
+| `docs/CUSTOMER_CALL_READINESS_CHECKLIST.md` exists. | met | Created `docs/CUSTOMER_CALL_READINESS_CHECKLIST.md` with repo hygiene, demo readiness, eval readiness, safety/security caveats, customer-call packet, legal/IP hygiene, open-source posture, and post-call notes sections. |
+| `docs/NEXT_THREAD_MAP.md` exists. | met | Created `docs/NEXT_THREAD_MAP.md` with T13, T14, T15, T16, and T17 goals, inputs, non-goals, definitions of done, and timing. The supplied T13/T14 prompts are mapped as thread inputs without executing them. |
+| `DIRECTION.md` is updated if appropriate. | met | Appended a concise Post-T12 sequence section to `DIRECTION.md` during the Post-T12 sequence work. The file was later removed by user request, and current live references now point to the replacement sequence docs. |
+| The sequence clearly recommends T13 before broad outreach and T14 for visual POC. | met | `docs/POST_T12_SEQUENCE_PLAN.md` recommends T13 before `v0.1-validation` and 5-8 controlled calls, then T14 for the Isaac Sim visual POC; `docs/NEXT_THREAD_MAP.md` says T13 runs before broad outreach and T14 runs after T13 unless explicitly parallelized. |
+| The plan distinguishes controlled technical validation calls from public launch. | met | `docs/POST_T12_SEQUENCE_PLAN.md` separates the customer-call gate from the public release gate; `docs/CUSTOMER_CALL_READINESS_CHECKLIST.md` states controlled-call framing is `v0.1-validation`, not public launch. |
+| The plan makes clear that no commercial platform work should start yet. | met | `docs/POST_T12_SEQUENCE_PLAN.md` and `docs/NEXT_THREAD_MAP.md` explicitly block hosted commercial platform, customer accounts, billing, carrier/MVNO integration, real QoS integration, and managed SaaS work in this repo. |
+| Tests are run and reported where possible. | met | Local gates were run and are recorded below. After fast-forwarding to `origin/main`, `.venv/bin/python tests/evals/eval_runner.py` passed 24/24 evals. |
+
+Review status:
+
+- Subagent spec-conformance review found two valid issues: this ledger still
+  recorded the item as `in-progress`, and older ledger entries contained
+  absolute local workspace paths that contradicted the new readiness gate.
+- The first fix recorded actual evidence, classified every mapped DoD item, and
+  removed the old absolute local workspace path references.
+- Focused subagent re-review returned no findings and classified the prior P1
+  ledger-status issue and P2 local-path issue as resolved.
+- Post-review smoke reran `python -m compileall src tests` and
+  `.venv/bin/python -m pytest`; both passed.
+- After the user authorized the fast-forward merge from `origin/main`, the T12
+  eval artifacts were brought into the local checkout and the eval runner was
+  rerun successfully under the repo virtualenv.
+
+Evidence:
+
+- Fast-forward merge from `origin/main` succeeded after stashing and reapplying
+  local Post-T12 documentation edits.
+- `python -m compileall src tests` passed.
+- `.venv/bin/python -m pytest` passed: 84 tests before the T12 merge.
+- `python tests/evals/eval_runner.py` under the system Python failed because
+  that interpreter did not have `PyYAML` installed.
+- `.venv/bin/python tests/evals/eval_runner.py` passed after the T12 merge: 24
+  evals passed, 0 failed.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format . --check` passed: 20 files already formatted before
+  the T12 merge.
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace` passed: 1 library test, 2 vector tests, 0 doc tests.
+- Content scan found no absolute local-user paths in the changed public
+  sequence docs or `README.md`; intended checklist wording about
+  Boost/internal references and fallback hooks remains.
+
+Cloud/job status:
+
+- No cloud jobs or paid compute are required for this planning/documentation
+  work.
+- Repository cloud mutation rule reviewed; no launch, stop, delete, resize, or
+  other paid-compute mutation will be performed.
+
 ## T12 Protocol Evals / Adversarial Test Harness - 2026-06-22
 
 Status: successful

@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 
 from rclp_core.crypto import DemoKeyPair, verify_with_public_key_b64
-from rclp_core.models import Capability, CapabilityLease, CapabilityRequest, LeaseConstraints
+from rclp_core.models import (
+    CapabilityConstraintRequirement,
+    CapabilityLease,
+    CapabilityRequest,
+    LeaseConstraints,
+)
+
+
+def _timestamp_is_naive(value: datetime) -> bool:
+    return value.tzinfo is None or value.utcoffset() is None
 
 
 def issue_lease(
@@ -44,6 +54,40 @@ def is_not_yet_valid(lease: CapabilityLease, at: datetime | None = None) -> bool
     return at < lease.issued_at
 
 
+def lease_time_violation(
+    lease: CapabilityLease,
+    *,
+    at: datetime,
+    max_lease_age_seconds: int,
+    max_lease_ttl_seconds: int,
+    clock_skew_seconds: int,
+) -> str | None:
+    if (
+        _timestamp_is_naive(at)
+        or _timestamp_is_naive(lease.issued_at)
+        or _timestamp_is_naive(lease.expires_at)
+    ):
+        return "LEASE_TIMESTAMP_INVALID"
+    skew = timedelta(seconds=clock_skew_seconds)
+    try:
+        latest_accepted_issued_at = at + skew
+    except OverflowError:
+        return "LEASE_TIMESTAMP_INVALID"
+    if lease.issued_at > latest_accepted_issued_at:
+        return "LEASE_NOT_YET_VALID"
+    if at >= lease.expires_at:
+        return "LEASE_EXPIRED"
+    if lease.expires_at <= lease.issued_at:
+        return "LEASE_TIME_WINDOW_INVALID"
+    lease_ttl = lease.expires_at - lease.issued_at
+    if lease_ttl > timedelta(seconds=max_lease_ttl_seconds) + skew:
+        return "LEASE_TTL_TOO_LONG"
+    lease_age = at - lease.issued_at
+    if lease_age > timedelta(seconds=max_lease_age_seconds) + skew:
+        return "LEASE_STALE"
+    return None
+
+
 def verify_lease_signature(lease: CapabilityLease, issuer_public_key_b64: str) -> bool:
     if not lease.signature:
         return False
@@ -68,14 +112,53 @@ def lease_matches_context(
     )
 
 
-def required_constraints_missing(lease: CapabilityLease) -> bool:
-    if lease.capability != Capability.REMOTE_ASSIST:
-        return False
+def capability_constraint_requirement_violation(
+    lease: CapabilityLease,
+    capability_constraint_requirements: Mapping[str, CapabilityConstraintRequirement] | None,
+) -> str | None:
+    if capability_constraint_requirements is None:
+        return "CAPABILITY_CONSTRAINT_REQUIREMENTS_REQUIRED"
+    requirement = capability_constraint_requirements.get(str(lease.capability))
+    if requirement is None or str(requirement.capability) != str(lease.capability):
+        return "CAPABILITY_CONSTRAINT_REQUIREMENTS_REQUIRED"
+    if capability_constraints_missing(lease.constraints, requirement):
+        return "LEASE_CONSTRAINTS_MISSING"
+    return None
 
-    constraints = lease.constraints
+
+def required_constraints_missing(
+    lease: CapabilityLease,
+    capability_constraint_requirements: Mapping[str, CapabilityConstraintRequirement] | None,
+) -> bool:
     return (
-        constraints.geofence_id is None
-        or constraints.max_latency_ms_p95 is None
-        or constraints.max_packet_loss_pct is None
-        or constraints.min_uplink_mbps is None
+        capability_constraint_requirement_violation(
+            lease,
+            capability_constraint_requirements,
+        )
+        == "LEASE_CONSTRAINTS_MISSING"
+    )
+
+
+def capability_constraints_missing(
+    constraints: LeaseConstraints,
+    requirement: CapabilityConstraintRequirement,
+) -> bool:
+    return (
+        (requirement.require_geofence_id and constraints.geofence_id is None)
+        or (
+            requirement.require_network_thresholds
+            and (
+                constraints.max_latency_ms_p95 is None
+                or constraints.max_packet_loss_pct is None
+                or constraints.min_uplink_mbps is None
+            )
+        )
+        or (
+            requirement.require_fallback_on_degrade
+            and (
+                "fallback_on_degrade" not in constraints.model_fields_set
+                or not str(constraints.fallback_on_degrade).strip()
+            )
+        )
+        or (requirement.require_max_speed_mps and constraints.max_speed_mps is None)
     )

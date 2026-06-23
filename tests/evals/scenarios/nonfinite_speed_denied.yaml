@@ -1,0 +1,17 @@
+name: nonfinite_speed_denied
+description: Non-finite command speed under a speed-limited lease fails closed.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  include_current_state: true
+  lease:
+    constraints:
+      max_speed_mps: 0.5
+  command:
+    payload:
+      intent: start_remote_assist
+      max_speed_mps: .nan
+expected:
+  decision: deny
+  reason_code: COMMAND_SPEED_MALFORMED
+

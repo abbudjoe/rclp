@@ -9,6 +9,7 @@ from rclp_core.leases import issue_lease
 from rclp_core.models import (
     AuditEventType,
     Capability,
+    CapabilityConstraintRequirement,
     CapabilityLease,
     CapabilityRequest,
     FallbackAction,
@@ -20,13 +21,21 @@ from rclp_core.models import (
     RobotStateAssertion,
 )
 from rclp_core.network import profile, profile_names
-from rclp_core.policy import Policy, _evaluate_policy_inputs, evaluate_policy, policy_digest
-from rclp_ros2.command_gate import Command, CommandGate
+from rclp_core.policy import (
+    Policy,
+    RequestReplayCache,
+    _evaluate_policy_inputs,
+    evaluate_policy,
+    policy_digest,
+)
+from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache
 
 
 CENTRAL_AGENT_ID = "fleet-agent:v0.1"
+EDGE_AGENT_ID = "edge-agent:rover-001"
 TRUSTED_ISSUER_ID = "issuer"
 CENTRAL_KEY = DemoKeyPair()
+EDGE_KEY = DemoKeyPair()
 
 
 def sign_request(request: CapabilityRequest, key: DemoKeyPair = CENTRAL_KEY) -> CapabilityRequest:
@@ -36,10 +45,33 @@ def sign_request(request: CapabilityRequest, key: DemoKeyPair = CENTRAL_KEY) -> 
     return request
 
 
+def sign_state(state: RobotStateAssertion, key: DemoKeyPair = EDGE_KEY) -> RobotStateAssertion:
+    state.authenticated_edge_agent_id = state.edge_agent_id
+    state.signature = None
+    state.signature = key.sign(state)
+    return state
+
+
+def sign_revocation(
+    revocation: LeaseRevocation,
+    key: DemoKeyPair = EDGE_KEY,
+) -> LeaseRevocation:
+    revocation.signature = None
+    revocation.signature = key.sign(revocation)
+    return revocation
+
+
+def sign_command(command: Command, key: DemoKeyPair = CENTRAL_KEY) -> Command:
+    command.authenticated_agent_id = command.agent_id
+    command.signature = None
+    command.signature = key.sign(command)
+    return command
+
+
 def make_request(**updates) -> CapabilityRequest:
     request = CapabilityRequest(
         requesting_agent_id=CENTRAL_AGENT_ID,
-        edge_agent_id="edge-agent:rover-001",
+        edge_agent_id=EDGE_AGENT_ID,
         robot_id="rover-001",
         mission_id="mission-001",
         capability=Capability.REMOTE_ASSIST,
@@ -51,17 +83,20 @@ def make_request(**updates) -> CapabilityRequest:
 
 
 def make_state(network_profile: str = "normal") -> RobotStateAssertion:
-    return RobotStateAssertion(
-        robot_id="rover-001",
-        edge_agent_id="edge-agent:rover-001",
-        mission_id="mission-001",
-        network_state=profile(network_profile),
-        geofence_state=GeofenceState(geofence_id="test-zone-a", inside=True),
+    return sign_state(
+        RobotStateAssertion(
+            robot_id="rover-001",
+            edge_agent_id=EDGE_AGENT_ID,
+            mission_id="mission-001",
+            network_state=profile(network_profile),
+            geofence_state=GeofenceState(geofence_id="test-zone-a", inside=True),
+        )
     )
 
 
-def make_command() -> Command:
-    return Command(
+def make_command(**updates) -> Command:
+    command = Command(
+        correlation_id="cmd_test",
         command_id="cmd_test",
         agent_id="fleet-agent:v0.1",
         edge_agent_id="edge-agent:rover-001",
@@ -70,6 +105,9 @@ def make_command() -> Command:
         capability="remote_assist",
         payload={},
     )
+    if updates:
+        command = command.model_copy(update=updates)
+    return sign_command(command)
 
 
 def make_policy() -> Policy:
@@ -79,7 +117,9 @@ def make_policy() -> Policy:
 def policy_trust_kwargs(policy: Policy) -> dict:
     return {
         "agent_public_keys_by_id": {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+        "edge_public_keys_by_id": {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
         "accepted_policy_digests": {policy_digest(policy)},
+        "replay_cache": RequestReplayCache.temporary(),
     }
 
 
@@ -92,30 +132,60 @@ def evaluate_inputs(
 
 
 def make_gate(key: DemoKeyPair, **kwargs) -> CommandGate:
+    kwargs.setdefault("accepted_capabilities", {Capability.REMOTE_ASSIST.value})
+    kwargs.setdefault(
+        "issuer_capability_scopes",
+        {TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
+    )
+    kwargs.setdefault(
+        "capability_constraint_requirements",
+        {
+            Capability.REMOTE_ASSIST.value: CapabilityConstraintRequirement(
+                capability=Capability.REMOTE_ASSIST,
+                require_geofence_id=True,
+                require_network_thresholds=True,
+                require_fallback_on_degrade=True,
+            )
+        },
+    )
+    kwargs.setdefault(
+        "agent_public_keys_by_id",
+        {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+    )
+    kwargs.setdefault(
+        "state_public_keys_by_edge_id",
+        {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
+    )
+    kwargs.setdefault("command_replay_cache", CommandReplayCache.temporary())
     return CommandGate(
         key.public_key_b64,
         trusted_issuer_ids={TRUSTED_ISSUER_ID},
-        trusted_revoker_ids={"edge-agent:rover-001"},
+        trusted_revoker_ids={EDGE_AGENT_ID},
+        revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
         **kwargs,
     )
 
 
 def state_with_network_updates(**updates) -> RobotStateAssertion:
-    return make_state("normal").model_copy(
-        update={"network_state": profile("normal").model_copy(update=updates)}
+    return sign_state(
+        make_state("normal").model_copy(
+            update={"network_state": profile("normal").model_copy(update=updates)}
+        )
     )
 
 
 def state_with_unknown_network() -> RobotStateAssertion:
-    return make_state("normal").model_copy(
-        update={
-            "network_state": NetworkState(
-                profile=NetworkProfile.UNKNOWN,
-                latency_ms_p95=45,
-                packet_loss_pct=0.1,
-                uplink_mbps=8.0,
-            )
-        }
+    return sign_state(
+        make_state("normal").model_copy(
+            update={
+                "network_state": NetworkState(
+                    profile=NetworkProfile.UNKNOWN,
+                    latency_ms_p95=45,
+                    packet_loss_pct=0.1,
+                    uplink_mbps=8.0,
+                )
+            }
+        )
     )
 
 
@@ -136,7 +206,7 @@ def test_normal_network_allows_lease_and_command_gate_accepts():
     assert reason == "POLICY_SATISFIED"
     assert constraints is not None
     lease = issue_lease(request, constraints, "issuer", key, 600)
-    result = gate.evaluate(make_command(), lease)
+    result = gate.evaluate(make_command(), lease, current_state=make_state("normal"))
     assert result.allowed is True
     assert result.reason_code == "LEASE_VALID"
     assert result.audit_id == gate.audit_log.events[-1].audit_id
@@ -238,7 +308,7 @@ def test_policy_denies_for_hard_network_failures(
     [
         ({"capability": Capability.MISSION_CONTINUE}, {}, "CAPABILITY_NOT_COVERED_BY_POLICY"),
         ({"requested_duration_seconds": 601}, {}, "REQUESTED_DURATION_TOO_LONG"),
-        ({"requesting_agent_id": "unknown-agent"}, {}, "AGENT_NOT_ALLOWED"),
+        ({"requesting_agent_id": "unknown-agent"}, {}, "AGENT_KEY_NOT_TRUSTED"),
         ({"edge_agent_id": "edge-agent:other"}, {}, "EDGE_AGENT_NOT_ALLOWED"),
         ({"robot_id": "other-robot"}, {}, "ROBOT_NOT_ALLOWED"),
         ({"mission_id": "mission-other"}, {}, "MISSION_NOT_ALLOWED"),
@@ -252,7 +322,7 @@ def test_policy_denies_for_hard_network_failures(
 )
 def test_policy_denies_each_allow_requirement(request_update, state_update, expected_reason):
     request = make_request(**request_update)
-    state = make_state("normal").model_copy(update=state_update)
+    state = sign_state(make_state("normal").model_copy(update=state_update))
     decision, reason, alternatives, constraints = evaluate_inputs(request, state, make_policy())
     assert decision == "deny"
     assert reason == expected_reason
@@ -261,7 +331,7 @@ def test_policy_denies_each_allow_requirement(request_update, state_update, expe
 
 
 def test_policy_denies_state_mission_mismatch():
-    state = make_state("normal").model_copy(update={"mission_id": "mission-other"})
+    state = sign_state(make_state("normal").model_copy(update={"mission_id": "mission-other"}))
     decision, reason, alternatives, constraints = evaluate_inputs(
         make_request(), state, make_policy()
     )
@@ -336,7 +406,7 @@ def test_no_lease_rejected():
 
 def test_fallback_declaration_uses_command_correlation_id():
     key = DemoKeyPair()
-    command = make_command().model_copy(update={"correlation_id": "corr_command"})
+    command = make_command(correlation_id="corr_command")
     result = make_gate(key).evaluate(command, None)
     assert result.fallback_declaration is not None
     assert result.fallback_declaration.correlation_id == "corr_command"
@@ -346,7 +416,7 @@ def test_edge_agent_mismatch_rejection_is_audited():
     key = DemoKeyPair()
     gate = make_gate(key)
     daemon = EdgeAgentDaemon("edge-agent:rover-001", gate)
-    command = make_command().model_copy(update={"edge_agent_id": "edge-agent:other"})
+    command = make_command(edge_agent_id="edge-agent:other")
 
     result = daemon.handle_command(command, None)
 
@@ -375,7 +445,7 @@ def test_expired_lease_rejected():
 def test_wrong_robot_rejected():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
-    command = make_command().model_copy(update={"robot_id": "other-robot"})
+    command = make_command(robot_id="other-robot")
     result = make_gate(key).evaluate(command, lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONTEXT_MISMATCH"
@@ -385,7 +455,7 @@ def test_wrong_robot_rejected():
 def test_wrong_mission_rejected():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
-    command = make_command().model_copy(update={"mission_id": "mission-other"})
+    command = make_command(mission_id="mission-other")
     result = make_gate(key).evaluate(command, lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONTEXT_MISMATCH"
@@ -394,7 +464,7 @@ def test_wrong_mission_rejected():
 def test_wrong_capability_rejected():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
-    command = make_command().model_copy(update={"capability": "mission_continue"})
+    command = make_command(capability="mission_continue")
     result = make_gate(key).evaluate(command, lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONTEXT_MISMATCH"
@@ -409,19 +479,26 @@ def test_revoked_lease_rejected():
     revocation = LeaseRevocation(
         lease_id=lease.lease_id,
         revoked_by="edge-agent:rover-001",
+        edge_agent_id=EDGE_AGENT_ID,
         reason_code="NETWORK_DEGRADED_REVOKE",
         fallback_action=FallbackAction.HOLD_POSITION,
     )
+    sign_revocation(revocation)
     revoke_event = gate.revoke(revocation, lease=lease)
     assert revoke_event is not None
     assert revoke_event.trigger == "NETWORK_DEGRADED_REVOKE"
-    assert revoke_event.fallback_action == FallbackAction.HOLD_POSITION
+    assert revoke_event.fallback_action == FallbackAction.CRAWL_TO_SAFE_ZONE
     assert revoke_event.revocation_id == revocation.message_id
+    assert (
+        gate.audit_log.events[0].payload["requested_fallback_action"]
+        == FallbackAction.HOLD_POSITION
+    )
+    assert gate.audit_log.events[0].payload["fallback_action"] == FallbackAction.CRAWL_TO_SAFE_ZONE
     result = gate.evaluate(make_command(), lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_REVOKED"
     assert result.audit_id == gate.audit_log.events[-2].audit_id
-    assert result.fallback_action == FallbackAction.HOLD_POSITION
+    assert result.fallback_action == FallbackAction.CRAWL_TO_SAFE_ZONE
     assert result.fallback_declaration is not None
     assert result.fallback_declaration.revocation_id == revocation.message_id
     assert emitted == gate.fallback_events
@@ -442,9 +519,11 @@ def test_revocation_fallback_uses_revocation_correlation_id():
         correlation_id="corr_revocation",
         lease_id=lease.lease_id,
         revoked_by="edge-agent:rover-001",
+        edge_agent_id=EDGE_AGENT_ID,
         reason_code="NETWORK_DEGRADED_REVOKE",
         fallback_action=FallbackAction.HOLD_POSITION,
     )
+    sign_revocation(revocation)
     fallback = gate.revoke(revocation, lease=lease)
     assert fallback is not None
     assert fallback.correlation_id == "corr_revocation"
@@ -470,9 +549,11 @@ def test_revocation_lease_mismatch_rejected_without_recording():
     revocation = LeaseRevocation(
         lease_id="lease_other",
         revoked_by="edge-agent:rover-001",
+        edge_agent_id=EDGE_AGENT_ID,
         reason_code="WRONG_REVOCATION_CONTEXT",
         fallback_action=FallbackAction.HOLD_POSITION,
     )
+    sign_revocation(revocation)
     with pytest.raises(ValueError, match="revocation lease_id does not match lease"):
         gate.revoke(revocation, lease=lease)
     assert gate.revoked_lease_ids == set()
@@ -566,8 +647,10 @@ def test_unknown_current_network_state_rejects_previously_valid_lease():
 def test_wrong_geofence_current_state_rejects_previously_valid_lease():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
-    state = make_state("normal").model_copy(
-        update={"geofence_state": GeofenceState(geofence_id="wrong-zone", inside=True)}
+    state = sign_state(
+        make_state("normal").model_copy(
+            update={"geofence_state": GeofenceState(geofence_id="wrong-zone", inside=True)}
+        )
     )
     result = make_gate(key).evaluate(make_command(), lease, current_state=state)
     assert result.allowed is False

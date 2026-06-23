@@ -109,9 +109,7 @@ Detailed walkthrough: `docs/DEMO_WALKTHROUGH.md`.
 
 ```text
 AGENTS.md                         Project-level agent guidance
-DIRECTION.md                      Workstream plan and phase boundaries
 docs/                             Protocol, doctrine, threat, readiness docs
-prompts/                          Workstream prompts used to build the MVP
 src/rclp_core/                    Protocol models, policy, leases, crypto, audit
 src/rclp_agents/                  Central-agent and edge-agent MVP mocks/demo
 src/rclp_ros2/                    ROS 2 command-gate adapter scaffold
@@ -165,3 +163,10 @@ Conformance checklist: `docs/CONFORMANCE_CHECKLIST.md`.
 Rust verifier notes: `docs/RUST_EDGE_VERIFIER.md`.
 
 Protocol evals: `docs/EVALS.md`.
+
+Post-T12 sequence plan: `docs/POST_T12_SEQUENCE_PLAN.md`.
+
+Customer-call readiness checklist:
+`docs/CUSTOMER_CALL_READINESS_CHECKLIST.md`.
+
+Next thread map: `docs/NEXT_THREAD_MAP.md`.

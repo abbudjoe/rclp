@@ -1,16 +1,55 @@
 {
   "name": "wrong_agent_rejected",
-  "description": "A lease bound to one central agent cannot authorize a command from another agent.",
+  "description": "A trusted command actor cannot use a lease bound to another central agent.",
   "now_unix_ms": 1760000000000,
   "trusted_context": {
+    "policy_id": "remote-assist-authority-v0",
+    "policy_digest": "sha256:remote-assist-authority-v0-test-digest",
+    "audit_chain_head": "sha256:trusted-dev-audit-chain-head",
+    "accepted_policies": [
+      {
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
+      }
+    ],
     "trusted_issuer_ids": [
       "issuer"
     ],
+    "accepted_capabilities": [
+      "remote_assist"
+    ],
+    "issuer_capability_scopes": [
+      {
+        "issuer_id": "issuer",
+        "capabilities": [
+          "remote_assist"
+        ]
+      }
+    ],
+    "capability_constraint_requirements": [
+      {
+        "capability": "remote_assist",
+        "require_geofence_id": true,
+        "require_network_thresholds": true,
+        "require_fallback_on_degrade": true,
+        "require_max_speed_mps": false
+      }
+    ],
+    "trusted_command_agent_ids": [
+      "fleet-agent:v0.1"
+    ],
+    "command_hmac_secret": "command-dev-test-secret",
     "dev_hmac_secret": "dev-test-secret",
     "now_unix_ms": 1760000000000,
     "revocations": [],
     "max_lease_ttl_ms": 600000,
-    "max_lease_age_ms": 600000
+    "max_lease_age_ms": 600000,
+    "max_state_age_ms": 30000,
+    "max_command_age_ms": 30000,
+    "trusted_state_edge_ids": [
+      "edge-agent:rover-001"
+    ],
+    "state_hmac_secret": "state-dev-test-secret"
   },
   "seen_nonces": [],
   "input": {
@@ -19,7 +58,7 @@
       "claims": {
         "lease_id": "lease-wrong-agent",
         "issuer_id": "issuer",
-        "agent_id": "fleet-agent:v0.1",
+        "agent_id": "fleet-agent:other",
         "edge_agent_id": "edge-agent:rover-001",
         "robot_id": "rover-001",
         "mission_id": "mission-001",
@@ -35,15 +74,19 @@
         "expires_at": 1760000500000,
         "nonce": "nonce-wrong-agent"
       },
-      "signature": "9abdf721f643ea151f9764dc1525a7359a0a676be8f0013f5e199b79eabbae58"
+      "signature": "6485dc9e1e0acb8a8510923879a29d7f7faf30b5ee9c65e79ab3e4bea11ab394"
     },
     "command": {
       "command_id": "cmd-wrong-agent",
-      "agent_id": "fleet-agent:other",
+      "agent_id": "fleet-agent:v0.1",
       "edge_agent_id": "edge-agent:rover-001",
       "robot_id": "rover-001",
       "mission_id": "mission-001",
-      "capability": "remote_assist"
+      "capability": "remote_assist",
+      "authenticated_agent_id": "fleet-agent:v0.1",
+      "command_nonce": "cmd-nonce-wrong-agent-rejected",
+      "created_at_unix_ms": 1760000000000,
+      "signature": "d2495f29bf21eb0a8d8b19a991583fc960d519edb5254072a35d7ca615f40938"
     },
     "local_context": {
       "robot_id": "rover-001",
@@ -54,12 +97,17 @@
         "attached": true,
         "latency_ms_p95": 45.0,
         "packet_loss_pct": 0.1,
-        "uplink_mbps": 8.0
+        "uplink_mbps": 8.0,
+        "observed_at_unix_ms": 1760000000000
       },
       "geofence_state": {
         "geofence_id": "test-zone-a",
-        "inside": true
-      }
+        "inside": true,
+        "verified_at_unix_ms": 1760000000000
+      },
+      "observed_at_unix_ms": 1760000000000,
+      "authenticated_edge_agent_id": "edge-agent:rover-001",
+      "signature": "df6ba78b2e6d42f075ca20a25e812a8d62b7cc1b4a6b1cb61fc3f2b0b7e74808"
     }
   },
   "expected": {

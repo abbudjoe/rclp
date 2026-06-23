@@ -27,7 +27,14 @@ def b64(data: bytes) -> str:
 
 
 def unb64(data: str) -> bytes:
-    return base64.urlsafe_b64decode(data.encode("ascii"))
+    try:
+        encoded = data.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise binascii.Error("base64 payload must be ASCII") from exc
+    decoded = base64.b64decode(encoded, altchars=b"-_", validate=True)
+    if b64(decoded) != data:
+        raise binascii.Error("base64 payload must use canonical URL-safe encoding")
+    return decoded
 
 
 class DemoKeyPair:

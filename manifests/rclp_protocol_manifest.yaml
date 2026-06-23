@@ -10,6 +10,7 @@ messages:
   - CapabilityRequest
   - CapabilityDecision
   - CapabilityLease
+  - EdgeCommand
   - LeaseRevocation
   - FallbackDeclaration
   - AuditCommit
@@ -28,6 +29,13 @@ message_models:
       - manifest_digest
       - public_key_id
       - trust_tier
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - trust_tier
   RobotStateAssertion:
     python_model: rclp_core.models.RobotStateAssertion
     message_type: robot_state_assertion
@@ -39,11 +47,23 @@ message_models:
       - message_type
       - robot_id
       - edge_agent_id
+      - authenticated_edge_agent_id
       - mission_id
       - safety_state
       - geofence_state
       - network_state
       - observed_at
+      - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - authenticated_edge_agent_id
+      - safety_state
+      - observed_at
+      - signature
   NetworkStateAssertion:
     python_model: rclp_core.models.NetworkStateAssertion
     message_type: network_state_assertion
@@ -65,6 +85,14 @@ message_models:
       - measurement_window_seconds
       - source
       - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - observed_at
+      - signature
   CapabilityRequest:
     python_model: rclp_core.models.CapabilityRequest
     message_type: capability_request
@@ -81,6 +109,16 @@ message_models:
       - mission_id
       - capability
       - reason
+      - requested_duration_seconds
+      - request_nonce
+      - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - authenticated_agent_id
       - requested_duration_seconds
       - request_nonce
       - signature
@@ -103,6 +141,17 @@ message_models:
       - lease
       - safe_alternatives
       - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - policy_id
+      - policy_digest
+      - lease
+      - safe_alternatives
+      - signature
   CapabilityLease:
     python_model: rclp_core.models.CapabilityLease
     required_fields:
@@ -118,6 +167,39 @@ message_models:
       - expires_at
       - nonce
       - signature
+    runtime_required_fields:
+      - lease_id
+      - issued_at
+      - nonce
+      - signature
+  EdgeCommand:
+    python_model: rclp_ros2.command_gate.EdgeCommand
+    message_type: edge_command
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - command_id
+      - agent_id
+      - authenticated_agent_id
+      - edge_agent_id
+      - robot_id
+      - mission_id
+      - capability
+      - command_nonce
+      - payload
+      - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - authenticated_agent_id
+      - command_nonce
+      - signature
   LeaseRevocation:
     python_model: rclp_core.models.LeaseRevocation
     message_type: lease_revocation
@@ -129,9 +211,18 @@ message_models:
       - message_type
       - lease_id
       - revoked_by
+      - edge_agent_id
       - reason_code
       - revoked_at
       - fallback_action
+      - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - revoked_at
       - signature
   FallbackDeclaration:
     python_model: rclp_core.models.FallbackDeclaration
@@ -149,6 +240,13 @@ message_models:
       - fallback_action
       - declared_by
       - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - signature
   AuditCommit:
     python_model: rclp_core.models.AuditCommit
     message_type: audit_commit
@@ -164,6 +262,20 @@ message_models:
       - robot_id
       - mission_id
       - summary
+      - payload
+      - payload_hash
+      - authority_relevant
+      - integrity_profile
+      - integrity_proof
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - audit_id
+      - robot_id
+      - mission_id
       - payload
       - payload_hash
       - authority_relevant

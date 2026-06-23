@@ -6,7 +6,6 @@ Build a minimal, testable, open reference implementation for a central-agent ↔
 
 ## Required reading before making changes
 
-- `DIRECTION.md`
 - `docs/ENGINEERING_DOCTRINE.md`
 - `docs/SECURITY_DOCTRINE.md`
 - `docs/DESIGN_TASTE.md`

@@ -24,9 +24,12 @@ AUTHORITY_EVENT_TYPES = {
 }
 
 LOAD_REQUIRED_FIELDS = {
+    "protocol_version",
+    "message_id",
     "audit_id",
     "correlation_id",
     "created_at",
+    "message_type",
     "event_type",
     "actor_id",
     "summary",
@@ -102,6 +105,7 @@ class AuditLog:
         payload: dict[str, Any] | None = None,
         authority_relevant: bool = True,
         policy_id: str | None = None,
+        policy_digest: str | None = None,
         state_refs: list[str] | None = None,
         related_message_ids: list[str] | None = None,
     ) -> AuditCommit:
@@ -116,6 +120,7 @@ class AuditLog:
                 payload=payload or {},
                 authority_relevant=authority_relevant,
                 policy_id=policy_id,
+                policy_digest=policy_digest,
                 state_refs=state_refs or [],
                 related_message_ids=related_message_ids or [],
             )
@@ -127,6 +132,10 @@ class AuditLog:
     def write_jsonl(self, path: str | Path) -> None:
         text = self.to_jsonl()
         Path(path).write_text(text + ("\n" if text else ""), encoding="utf-8")
+
+    @property
+    def chain_head(self) -> str | None:
+        return self.events[-1].integrity_proof if self.events else None
 
     def by_correlation_id(self) -> dict[str, list[AuditCommit]]:
         groups: dict[str, list[AuditCommit]] = defaultdict(list)
@@ -204,20 +213,34 @@ class AuditLog:
         return stable_json_hash(
             {
                 "audit_id": event.audit_id,
+                "message_id": event.message_id,
+                "message_type": event.message_type,
+                "protocol_version": event.protocol_version,
                 "correlation_id": event.correlation_id,
+                "created_at": event.created_at,
                 "event_type": event.event_type,
                 "actor_id": event.actor_id,
+                "robot_id": event.robot_id,
+                "mission_id": event.mission_id,
+                "summary": event.summary,
                 "payload_hash": event.payload_hash,
+                "authority_relevant": event.authority_relevant,
+                "integrity_profile": event.integrity_profile,
+                "policy_id": event.policy_id,
+                "policy_digest": event.policy_digest,
+                "state_refs": event.state_refs,
+                "related_message_ids": event.related_message_ids,
                 "previous_audit_hash": previous_hash,
             }
         )
 
 
-def load_jsonl(path: str | Path) -> list[AuditCommit]:
+def load_jsonl(path: str | Path, *, trusted_chain_head: str | None = None) -> list[AuditCommit]:
     events: list[AuditCommit] = []
     audit_ids: set[str] = set()
     previous_hash: str | None = None
     validator = AuditLog()
+    authority_events = False
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         if line.strip():
             raw_event = json.loads(line)
@@ -234,9 +257,16 @@ def load_jsonl(path: str | Path) -> list[AuditCommit]:
                 raise ValueError("previous_audit_hash does not match audit chain")
             if event.integrity_proof != validator._integrity_proof(event, previous_hash):
                 raise ValueError("integrity_proof does not match audit event")
+            if event.authority_relevant or event.event_type in AUTHORITY_EVENT_TYPES:
+                authority_events = True
             audit_ids.add(event.audit_id)
             events.append(event)
             previous_hash = event.integrity_proof
+    if authority_events:
+        if trusted_chain_head is None:
+            raise ValueError("trusted audit chain head required for authority events")
+        if trusted_chain_head != previous_hash:
+            raise ValueError("trusted audit chain head does not match audit chain")
     return events
 
 

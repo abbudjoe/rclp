@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from rclp_core.audit import AuditLog, load_jsonl
-from rclp_core.models import AuditCommit, AuditEventType
+from rclp_core.models import AuditCommit, AuditEventType, stable_json_hash
 
 
 def test_audit_replay_groups_by_correlation():
@@ -78,11 +78,53 @@ def test_audit_jsonl_round_trip_and_hash_chain(tmp_path):
 
     path = tmp_path / "audit.jsonl"
     log.write_jsonl(path)
-    loaded = load_jsonl(path)
+    loaded = load_jsonl(path, trusted_chain_head=log.chain_head)
 
     assert loaded == log.events
     assert loaded[0].event_type == AuditEventType.CAPABILITY_ALLOWED
     assert loaded[1].event_type == AuditEventType.COMMAND_REJECTED
+
+
+def test_load_jsonl_rejects_unanchored_authority_events(tmp_path):
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.CAPABILITY_ALLOWED,
+        actor_id="issuer",
+        robot_id="robot",
+        mission_id="mission",
+        summary="allow",
+        payload={"decision": "allow"},
+    )
+    path = tmp_path / "audit.jsonl"
+    log.write_jsonl(path)
+
+    with pytest.raises(ValueError, match="trusted audit chain head required"):
+        load_jsonl(path)
+
+
+def test_load_jsonl_rejects_recomputed_tamper_against_trusted_chain_head(tmp_path):
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.CAPABILITY_ALLOWED,
+        actor_id="issuer",
+        robot_id="robot",
+        mission_id="mission",
+        summary="allow",
+        payload={"reason_code": "POLICY_SATISFIED"},
+    )
+    trusted_head = log.chain_head
+    tampered = log.events[0].model_dump(mode="json")
+    tampered["payload"]["reason_code"] = "FORGED_ALLOW"
+    tampered["payload_hash"] = stable_json_hash(tampered["payload"])
+    tampered_event = AuditCommit.model_validate(tampered)
+    tampered["integrity_proof"] = AuditLog()._integrity_proof(tampered_event, None)
+    path = tmp_path / "recomputed-tamper.jsonl"
+    path.write_text(json.dumps(tampered) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="trusted audit chain head"):
+        load_jsonl(path, trusted_chain_head=trusted_head)
 
 
 def test_audit_log_rejects_tampered_payload_hash():
@@ -148,6 +190,29 @@ def test_load_jsonl_rejects_tampered_chain(tmp_path):
         load_jsonl(path)
 
 
+def test_load_jsonl_rejects_tampered_authority_context(tmp_path):
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.CAPABILITY_ALLOWED,
+        actor_id="issuer",
+        robot_id="robot",
+        mission_id="mission",
+        summary="allow",
+        payload={"reason_code": "POLICY_SATISFIED"},
+        policy_id="policy-a",
+        state_refs=["state-a"],
+        related_message_ids=["request-a", "state-a"],
+    )
+    tampered = log.events[0].model_dump(mode="json")
+    tampered["robot_id"] = "robot-other"
+    path = tmp_path / "tampered-context.jsonl"
+    path.write_text(json.dumps(tampered) + "\n")
+
+    with pytest.raises(ValueError, match="integrity_proof"):
+        load_jsonl(path)
+
+
 def test_load_jsonl_rejects_missing_payload_hash(tmp_path):
     log = AuditLog()
     log.record(
@@ -165,6 +230,26 @@ def test_load_jsonl_rejects_missing_payload_hash(tmp_path):
     path.write_text(json.dumps(event) + "\n")
 
     with pytest.raises(ValueError, match="payload_hash"):
+        load_jsonl(path)
+
+
+def test_load_jsonl_rejects_missing_common_envelope_fields(tmp_path):
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.COMMAND_REJECTED,
+        actor_id="edge",
+        robot_id="robot",
+        mission_id="mission",
+        summary="reject",
+        payload={"reason_code": "NO_LEASE"},
+    )
+    event = log.events[0].model_dump(mode="json")
+    del event["message_type"]
+    path = tmp_path / "missing-message-type.jsonl"
+    path.write_text(json.dumps(event) + "\n")
+
+    with pytest.raises(ValueError, match="message_type"):
         load_jsonl(path)
 
 

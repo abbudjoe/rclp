@@ -16,8 +16,9 @@ central-agent to edge-agent `remote_assist` lease primitive.
   names.
 - Demo prints signed request, allowed lease, missing-lease rejection, impaired
   network decision, revocation, audit JSONL, and incident replay summary.
-- Negative tests cover replay, stale request, stale lease, wrong context,
-  invalid signatures, unknown actors, revocation, and policy downgrade.
+- Negative tests cover replay, stale request/state/lease, wrong context,
+  invalid signatures, unknown actors, signed revocation, command constraints,
+  and policy downgrade.
 - Validation passes:
 
   ```bash
@@ -41,8 +42,8 @@ Scope: a first public protocol seed with a stabilized MVP conformance profile.
 - Canonical serialization and signature profile are specified and tested.
 - Signed `CapabilityDecision` verification is implemented or explicitly
   excluded from the v0.1 profile with a narrow local-only rationale.
-- Signed `LeaseRevocation` verification is implemented or explicitly excluded
-  from the v0.1 profile with a narrow local-only rationale.
+- Signed `LeaseRevocation` verification has a versioned key-id and rotation
+  profile, building on the local MVP signature check.
 - Standalone `NetworkStateAssertion` and `FallbackDeclaration` authenticated
   envelope verification is implemented or explicitly scoped out of v0.1.
 - Policy authenticity uses signed bundles or an authenticated policy manifest,

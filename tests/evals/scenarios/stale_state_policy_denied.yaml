@@ -1,0 +1,11 @@
+name: stale_state_policy_denied
+description: Central policy issuance rejects stale edge-local robot state.
+kind: policy_decision
+now_unix_ms: 1760000000000
+input:
+  local_context:
+    observed_at_offset_ms: -120000
+expected:
+  decision: deny
+  reason_code: STATE_STALE
+

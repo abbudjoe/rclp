@@ -1,0 +1,12 @@
+name: unsigned_current_state_denied
+description: Edge command enforcement rejects unsigned current state.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  include_current_state: true
+  local_context:
+    signature: missing
+expected:
+  decision: deny
+  reason_code: STATE_SIGNATURE_MISSING
+

@@ -1,0 +1,11 @@
+name: unsigned_state_policy_denied
+description: Central policy issuance rejects unsigned edge-local robot state.
+kind: policy_decision
+now_unix_ms: 1760000000000
+input:
+  local_context:
+    signature: missing
+expected:
+  decision: deny
+  reason_code: STATE_SIGNATURE_MISSING
+

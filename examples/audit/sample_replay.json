@@ -20,9 +20,10 @@
       "payload_hash": "sha256:fb08e93e01911131cf2f0312112393fbaf67d3a7ab2cfac7f57a963defe08913",
       "authority_relevant": true,
       "integrity_profile": "local_hash_chain_v0",
-      "integrity_proof": "sha256:09c96798cf358f00c3fdffb37fe39ad5c6847d0bb3d8ef562af69604c906c013",
+      "integrity_proof": "sha256:cea1c8cfcd5025065bae8c7ccd0ba9bf74374c3e70d5e3ecbde7cafd58b69212",
       "previous_audit_hash": null,
       "policy_id": null,
+      "policy_digest": null,
       "state_refs": [],
       "related_message_ids": [
         "msg_request_001"
@@ -49,9 +50,10 @@
       "payload_hash": "sha256:35235d07e1a62e4eb171ea91554aebfcb6e407816b1c771f57fc80117db3d34f",
       "authority_relevant": true,
       "integrity_profile": "local_hash_chain_v0",
-      "integrity_proof": "sha256:c1434c0c9bd5d563c16a78e75371613c74c75647186f21e7466ecc387e78ddbb",
-      "previous_audit_hash": "sha256:09c96798cf358f00c3fdffb37fe39ad5c6847d0bb3d8ef562af69604c906c013",
+      "integrity_proof": "sha256:6d325db5d25d10de1760644d10532d26a2fc37dd1b0a33db3d3302ef886fcfe0",
+      "previous_audit_hash": "sha256:cea1c8cfcd5025065bae8c7ccd0ba9bf74374c3e70d5e3ecbde7cafd58b69212",
       "policy_id": "remote-assist-authority-v0",
+      "policy_digest": null,
       "state_refs": [
         "msg_state_normal"
       ],
@@ -79,9 +81,10 @@
       "payload_hash": "sha256:7a44c2cdd32bef3108cff43103131d1734784dfb48d95cff34d93c6639a5e5cd",
       "authority_relevant": true,
       "integrity_profile": "local_hash_chain_v0",
-      "integrity_proof": "sha256:a70f067efc855d704c104cde481606c033b3012a303e0fead574dd81e65ca7a6",
-      "previous_audit_hash": "sha256:c1434c0c9bd5d563c16a78e75371613c74c75647186f21e7466ecc387e78ddbb",
+      "integrity_proof": "sha256:6b110b765f7f0fc6ae793a9e150f1175dc58f013c40036caab2357c9297271a2",
+      "previous_audit_hash": "sha256:6d325db5d25d10de1760644d10532d26a2fc37dd1b0a33db3d3302ef886fcfe0",
       "policy_id": null,
+      "policy_digest": null,
       "state_refs": [],
       "related_message_ids": [
         "msg_state_degraded"
@@ -111,9 +114,10 @@
       "payload_hash": "sha256:1d5b0ff96da519fdf9cd218f2a1d3b871f410089c3763119bbccd5a4d7842b66",
       "authority_relevant": true,
       "integrity_profile": "local_hash_chain_v0",
-      "integrity_proof": "sha256:95200447c1d11865dcac1de4d0aae7f05b1d3cddcf6d6be848a74531b0c35326",
-      "previous_audit_hash": "sha256:a70f067efc855d704c104cde481606c033b3012a303e0fead574dd81e65ca7a6",
+      "integrity_proof": "sha256:20b0f48aa24facf889b741c4aba596290ebac5ba298b06aebac19fa263a6a20e",
+      "previous_audit_hash": "sha256:6b110b765f7f0fc6ae793a9e150f1175dc58f013c40036caab2357c9297271a2",
       "policy_id": "remote-assist-authority-v0",
+      "policy_digest": null,
       "state_refs": [
         "msg_state_degraded"
       ],
@@ -143,9 +147,10 @@
       "payload_hash": "sha256:d873db37d3158187e5792645b0e152525498259289d449cb9820362009f37745",
       "authority_relevant": true,
       "integrity_profile": "local_hash_chain_v0",
-      "integrity_proof": "sha256:bf6459876e7fd5ca9171f027cb156a936e3a40a9b746de7ccd54d1de8f639040",
-      "previous_audit_hash": "sha256:95200447c1d11865dcac1de4d0aae7f05b1d3cddcf6d6be848a74531b0c35326",
+      "integrity_proof": "sha256:684455e195b94fdc1fb48c6a7dff33affae14e9bc504a89dfc70d7c9ae0e9dd7",
+      "previous_audit_hash": "sha256:20b0f48aa24facf889b741c4aba596290ebac5ba298b06aebac19fa263a6a20e",
       "policy_id": null,
+      "policy_digest": null,
       "state_refs": [],
       "related_message_ids": [
         "msg_revocation_001"
@@ -173,9 +178,10 @@
       "payload_hash": "sha256:c28f69c2f6a82a119b208fccc78e5133aa571fe785fb0ff85b5b3d40da2c64e3",
       "authority_relevant": true,
       "integrity_profile": "local_hash_chain_v0",
-      "integrity_proof": "sha256:6fdb464f905f1e51d7822e2e4c5e02718ccd8dcab18aac99a0bf436df8bfa6d7",
-      "previous_audit_hash": "sha256:bf6459876e7fd5ca9171f027cb156a936e3a40a9b746de7ccd54d1de8f639040",
+      "integrity_proof": "sha256:e98b805dcc6c14563e57a482493611ad430905e0d49d4c61c95a3a4c02a567e6",
+      "previous_audit_hash": "sha256:684455e195b94fdc1fb48c6a7dff33affae14e9bc504a89dfc70d7c9ae0e9dd7",
       "policy_id": null,
+      "policy_digest": null,
       "state_refs": [],
       "related_message_ids": [
         "lease_001",

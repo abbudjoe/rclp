@@ -21,7 +21,7 @@ def test_eval_runner_executes_required_scenario_set(tmp_path):
 
     report = runner.run_all(runner.scenario_dir(), tmp_path / "latest.json")
 
-    assert report["summary"] == {"total": 24, "passed": 24, "failed": 0}
+    assert report["summary"] == {"total": 33, "passed": 33, "failed": 0}
     names = {result["name"] for result in report["results"]}
     assert {
         "valid_remote_assist",
@@ -48,6 +48,15 @@ def test_eval_runner_executes_required_scenario_set(tmp_path):
         "audit_deny_complete",
         "scenario_network_degrade_revokes",
         "scenario_cloud_partition_expiry",
+        "missing_current_state_denied",
+        "stale_current_state_denied",
+        "unsigned_state_policy_denied",
+        "stale_state_policy_denied",
+        "max_speed_too_high_denied",
+        "unsigned_revocation_denied",
+        "unsigned_current_state_denied",
+        "conflicting_speed_alias_denied",
+        "nonfinite_speed_denied",
     } == names
 
 

@@ -9,10 +9,11 @@ pub mod types;
 pub mod verifier;
 
 pub use audit::AuditEvent;
-pub use replay::{InMemoryReplayCache, ReplayCache};
+pub use replay::ReplayCache;
 pub use types::{
-    CapabilityLeaseClaims, CapabilityLeaseEnvelope, Decision, EdgeCommand, GeofenceState,
-    LeaseConstraints, LocalContext, NetworkProfile, NetworkState, NetworkViolationAction,
-    ReasonCode, RevocationSet, TrustedVerifierContext, VerificationDecision, VerificationInput,
+    CapabilityConstraintRequirement, CapabilityLeaseClaims, CapabilityLeaseEnvelope, Decision,
+    EdgeCommand, GeofenceState, IssuerCapabilityScope, LeaseConstraints, LocalContext,
+    NetworkProfile, NetworkState, NetworkViolationAction, PolicyReference, ReasonCode,
+    RevocationSet, TrustedVerifierContext, VerificationDecision, VerificationInput,
 };
 pub use verifier::{verify, verify_json_value};

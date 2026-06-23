@@ -3,14 +3,53 @@
   "description": "A malformed signature is rejected before any allow, degrade, or replay mutation.",
   "now_unix_ms": 1760000000000,
   "trusted_context": {
+    "policy_id": "remote-assist-authority-v0",
+    "policy_digest": "sha256:remote-assist-authority-v0-test-digest",
+    "audit_chain_head": "sha256:trusted-dev-audit-chain-head",
+    "accepted_policies": [
+      {
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
+      }
+    ],
     "trusted_issuer_ids": [
       "issuer"
     ],
+    "accepted_capabilities": [
+      "remote_assist"
+    ],
+    "issuer_capability_scopes": [
+      {
+        "issuer_id": "issuer",
+        "capabilities": [
+          "remote_assist"
+        ]
+      }
+    ],
+    "capability_constraint_requirements": [
+      {
+        "capability": "remote_assist",
+        "require_geofence_id": true,
+        "require_network_thresholds": true,
+        "require_fallback_on_degrade": true,
+        "require_max_speed_mps": false
+      }
+    ],
+    "trusted_command_agent_ids": [
+      "fleet-agent:v0.1"
+    ],
+    "command_hmac_secret": "command-dev-test-secret",
     "dev_hmac_secret": "dev-test-secret",
     "now_unix_ms": 1760000000000,
     "revocations": [],
     "max_lease_ttl_ms": 600000,
-    "max_lease_age_ms": 600000
+    "max_lease_age_ms": 600000,
+    "max_state_age_ms": 30000,
+    "max_command_age_ms": 30000,
+    "trusted_state_edge_ids": [
+      "edge-agent:rover-001"
+    ],
+    "state_hmac_secret": "state-dev-test-secret"
   },
   "seen_nonces": [],
   "input": {
@@ -43,7 +82,11 @@
       "edge_agent_id": "edge-agent:rover-001",
       "robot_id": "rover-001",
       "mission_id": "mission-001",
-      "capability": "remote_assist"
+      "capability": "remote_assist",
+      "authenticated_agent_id": "fleet-agent:v0.1",
+      "command_nonce": "cmd-nonce-malformed-signature-rejected",
+      "created_at_unix_ms": 1760000000000,
+      "signature": "b2c8f675dbca09ff635fc292575d5108a41cc6ed4523b37243cddc69c3229475"
     },
     "local_context": {
       "robot_id": "rover-001",
@@ -54,12 +97,17 @@
         "attached": true,
         "latency_ms_p95": 45.0,
         "packet_loss_pct": 0.1,
-        "uplink_mbps": 8.0
+        "uplink_mbps": 8.0,
+        "observed_at_unix_ms": 1760000000000
       },
       "geofence_state": {
         "geofence_id": "test-zone-a",
-        "inside": true
-      }
+        "inside": true,
+        "verified_at_unix_ms": 1760000000000
+      },
+      "observed_at_unix_ms": 1760000000000,
+      "authenticated_edge_agent_id": "edge-agent:rover-001",
+      "signature": "df6ba78b2e6d42f075ca20a25e812a8d62b7cc1b4a6b1cb61fc3f2b0b7e74808"
     }
   },
   "expected": {

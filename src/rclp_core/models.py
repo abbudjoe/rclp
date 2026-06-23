@@ -10,6 +10,9 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, model_validator
 
 
+SUPPORTED_PROTOCOL_VERSION = "0.0.1-draft"
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -64,10 +67,23 @@ class NetworkProfile(StrEnum):
 
 
 class BaseMessage(BaseModel):
-    protocol_version: str = "0.0.1-draft"
+    protocol_version: str = SUPPORTED_PROTOCOL_VERSION
     message_id: str = Field(default_factory=lambda: f"msg_{uuid4().hex}")
     correlation_id: str = Field(default_factory=lambda: f"corr_{uuid4().hex}")
     created_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_protocol_version(self) -> "BaseMessage":
+        if self.protocol_version != SUPPORTED_PROTOCOL_VERSION:
+            raise ValueError(f"unsupported protocol_version: {self.protocol_version}")
+        return self
+
+
+def protocol_version_violation(*messages: BaseMessage) -> str | None:
+    for message in messages:
+        if message.protocol_version != SUPPORTED_PROTOCOL_VERSION:
+            return "PROTOCOL_VERSION_UNSUPPORTED"
+    return None
 
 
 class AgentAttestation(BaseMessage):
@@ -98,9 +114,9 @@ class MissionContext(BaseModel):
 class NetworkState(BaseModel):
     profile: NetworkProfile = NetworkProfile.UNKNOWN
     attached: bool = True
-    latency_ms_p95: float = Field(ge=0)
-    packet_loss_pct: float = Field(ge=0, le=100)
-    uplink_mbps: float = Field(ge=0)
+    latency_ms_p95: float = Field(ge=0, allow_inf_nan=False)
+    packet_loss_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+    uplink_mbps: float = Field(ge=0, allow_inf_nan=False)
     observed_at: datetime = Field(default_factory=utc_now)
 
 
@@ -114,12 +130,14 @@ class RobotStateAssertion(BaseMessage):
     message_type: Literal["robot_state_assertion"] = "robot_state_assertion"
     robot_id: str
     edge_agent_id: str
+    authenticated_edge_agent_id: str | None = None
     mission_id: str
     safety_state: SafetyState = SafetyState.NOMINAL
     network_state: NetworkState
     geofence_state: GeofenceState
     observed_at: datetime = Field(default_factory=utc_now)
     human_operator_available: bool = True
+    signature: str | None = None
 
 
 class NetworkStateAssertion(BaseMessage):
@@ -129,9 +147,9 @@ class NetworkStateAssertion(BaseMessage):
     mission_id: str
     profile: NetworkProfile
     attached: bool
-    latency_ms_p95: float = Field(ge=0)
-    packet_loss_pct: float = Field(ge=0, le=100)
-    uplink_mbps: float = Field(ge=0)
+    latency_ms_p95: float = Field(ge=0, allow_inf_nan=False)
+    packet_loss_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+    uplink_mbps: float = Field(ge=0, allow_inf_nan=False)
     observed_at: datetime = Field(default_factory=utc_now)
     measurement_window_seconds: int = Field(gt=0)
     source: str
@@ -154,11 +172,19 @@ class CapabilityRequest(BaseMessage):
 
 class LeaseConstraints(BaseModel):
     geofence_id: str | None = None
-    max_latency_ms_p95: float | None = Field(default=None, ge=0)
-    max_packet_loss_pct: float | None = Field(default=None, ge=0, le=100)
-    min_uplink_mbps: float | None = Field(default=None, ge=0)
+    max_latency_ms_p95: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    max_packet_loss_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    min_uplink_mbps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     fallback_on_degrade: FallbackAction = FallbackAction.LOCAL_AUTONOMY_ONLY
-    max_speed_mps: float | None = Field(default=None, ge=0)
+    max_speed_mps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class CapabilityConstraintRequirement(BaseModel):
+    capability: Capability
+    require_geofence_id: bool = False
+    require_network_thresholds: bool = False
+    require_fallback_on_degrade: bool = False
+    require_max_speed_mps: bool = False
 
 
 class CapabilityLease(BaseModel):
@@ -174,6 +200,15 @@ class CapabilityLease(BaseModel):
     expires_at: datetime
     nonce: str = Field(default_factory=lambda: f"lease_nonce_{uuid4().hex}")
     signature: str | None = None
+
+    @model_validator(mode="after")
+    def validate_time_window(self) -> "CapabilityLease":
+        for value in (self.issued_at, self.expires_at):
+            if value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError("lease timestamps must be timezone-aware")
+        if self.expires_at <= self.issued_at:
+            raise ValueError("lease expires_at must be after issued_at")
+        return self
 
 
 class CapabilityDecision(BaseMessage):
@@ -194,9 +229,13 @@ class LeaseRevocation(BaseMessage):
     message_type: Literal["lease_revocation"] = "lease_revocation"
     lease_id: str
     revoked_by: str
+    edge_agent_id: str
     reason_code: str
     revoked_at: datetime = Field(default_factory=utc_now)
     fallback_action: FallbackAction
+    robot_id: str | None = None
+    mission_id: str | None = None
+    capability: Capability | None = None
     signature: str | None = None
 
 
@@ -240,6 +279,7 @@ class AuditCommit(BaseMessage):
     integrity_proof: str | None = None
     previous_audit_hash: str | None = None
     policy_id: str | None = None
+    policy_digest: str | None = None
     state_refs: list[str] = Field(default_factory=list)
     related_message_ids: list[str] = Field(default_factory=list)
 

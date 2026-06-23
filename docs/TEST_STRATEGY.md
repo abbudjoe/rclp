@@ -23,6 +23,13 @@ contract that conformance tests should check against the Pydantic models.
 - expired lease rejected
 - stale request rejected
 - stale but not-yet-expired lease rejected
+- unsigned or stale robot state assertion rejected before policy allow
+- policy issuance without replay protection rejected
+- missing, unsigned, or stale current edge state rejected at command gate
+- missing, unsigned, stale, replayed, or actor-mismatched edge commands
+  rejected at command gate before lease validation can allow
+- command payload exceeding `max_speed_mps` or carrying conflicting speed
+  aliases rejected
 - wrong robot rejected
 - wrong agent rejected
 - revoked lease rejected
@@ -30,6 +37,8 @@ contract that conformance tests should check against the Pydantic models.
 - unknown requesting agent rejected
 - unknown lease issuer rejected
 - unknown revocation actor rejected
+- unsigned, invalid-signature, stale, and context-conflicting revocation
+  rejected
 - replayed context rejected
 - replayed request nonce rejected
 - policy authority-scope downgrade rejected
@@ -37,6 +46,7 @@ contract that conformance tests should check against the Pydantic models.
 - audit event created for allow
 - audit event created for deny
 - audit event created for fallback
+- audit replay rejects top-level context tampering
 
 ## Commands
 

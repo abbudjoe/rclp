@@ -70,6 +70,7 @@ def test_demo_remote_assist_outputs_full_local_authority_flow(capsys):
     revocation = json.loads(_section(output, "lease_revocation"))
     assert revocation["reason_code"] == "NETWORK_PROFILE_REVOKE"
     assert revocation["fallback_action"] == "crawl_to_safe_zone"
+    assert revocation["signature"]
 
     revoked_gate_result = json.loads(_section(output, "command_gate_after_network_revocation"))
     assert revoked_gate_result["decision"] == "deny"
@@ -98,6 +99,7 @@ def test_demo_remote_assist_outputs_full_local_authority_flow(capsys):
         "command_rejected",
         "fallback_declared",
         "network_state_asserted",
+        "capability_requested",
         "capability_degraded",
         "lease_revoked",
         "fallback_declared",

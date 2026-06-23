@@ -1,0 +1,16 @@
+name: unsigned_revocation_denied
+description: An unsigned revocation is rejected and does not mutate lease authority.
+kind: command_gate
+now_unix_ms: 1760000000000
+input:
+  revocation:
+    present: true
+    signature: missing
+    reason_code: NETWORK_PROFILE_REVOKE
+    fallback_action: hold_position
+expected:
+  decision: deny
+  reason_code: REVOCATION_SIGNATURE_MISSING
+  audit_event_types:
+    - revocation_rejected
+

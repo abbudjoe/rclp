@@ -1,0 +1,8 @@
+name: missing_current_state_denied
+description: A state-scoped remote-assist lease cannot authorize a command without fresh local state.
+kind: command_gate
+now_unix_ms: 1760000000000
+expected:
+  decision: deny
+  reason_code: CURRENT_STATE_REQUIRED
+

@@ -15,7 +15,7 @@ from rclp_core.models import (
     RobotStateAssertion,
 )
 from rclp_core.network import profile
-from rclp_core.policy import Policy, _evaluate_policy_inputs, policy_digest
+from rclp_core.policy import Policy, RequestReplayCache, _evaluate_policy_inputs, policy_digest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +23,7 @@ CENTRAL_AGENT_ID = "fleet-agent:v0.1"
 EDGE_AGENT_ID = "edge-agent:rover-001"
 ROBOT_ID = "rover-001"
 MISSION_ID = "mission-001"
+EDGE_KEY = DemoKeyPair()
 
 
 def load_yaml(path: str) -> dict:
@@ -44,13 +45,16 @@ def signed_request(key: DemoKeyPair) -> CapabilityRequest:
 
 
 def robot_state(network_profile: str) -> RobotStateAssertion:
-    return RobotStateAssertion(
+    state = RobotStateAssertion(
         robot_id=ROBOT_ID,
         edge_agent_id=EDGE_AGENT_ID,
+        authenticated_edge_agent_id=EDGE_AGENT_ID,
         mission_id=MISSION_ID,
         network_state=profile(network_profile),
         geofence_state=GeofenceState(geofence_id="test-zone-a", inside=True),
     )
+    state.signature = EDGE_KEY.sign(state)
+    return state
 
 
 def test_protocol_manifest_matches_exported_message_models():
@@ -64,7 +68,17 @@ def test_protocol_manifest_matches_exported_message_models():
         model = getattr(importlib.import_module(module_name), class_name)
 
         assert class_name == message_name
-        assert set(contract["required_fields"]).issubset(model.model_fields)
+        required_fields = set(contract["required_fields"])
+        runtime_required_fields = set(contract.get("runtime_required_fields", []))
+
+        assert required_fields.issubset(model.model_fields)
+        defaulted_required_fields = {
+            field_name
+            for field_name in required_fields
+            if not model.model_fields[field_name].is_required()
+        }
+
+        assert runtime_required_fields == defaulted_required_fields
         if "message_type" in contract:
             assert model.model_fields["message_type"].default == contract["message_type"]
 
@@ -122,6 +136,7 @@ def test_network_degrade_scenario_matches_current_policy_profile_behavior():
     request = signed_request(key)
     trust_kwargs = {
         "agent_public_keys_by_id": {CENTRAL_AGENT_ID: key.public_key_b64},
+        "edge_public_keys_by_id": {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
         "accepted_policy_digests": {policy_digest(policy)},
     }
 
@@ -133,5 +148,6 @@ def test_network_degrade_scenario_matches_current_policy_profile_behavior():
             robot_state(step["profile"]),
             policy,
             **trust_kwargs,
+            replay_cache=RequestReplayCache.temporary(),
         )
         assert decision == step["expected_decision"]

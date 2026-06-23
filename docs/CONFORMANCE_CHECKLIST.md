@@ -26,8 +26,9 @@ the same surface from `src/rclp_core/models.py`.
 Minimum v0.0.1 message checklist:
 
 - `AgentAttestation` identifies central and edge software actors.
-- `RobotStateAssertion` binds robot, edge agent, mission, safety state,
-  geofence state, network state, and observation time.
+- `RobotStateAssertion` binds robot, edge agent, authenticated edge identity,
+  mission, safety state, geofence state, network state, observation time, and
+  signature.
 - `NetworkStateAssertion` is available for standalone network-state profiles;
   the local demo embeds network state in `RobotStateAssertion`. Trust-boundary
   use requires an authenticated envelope; the v0.0.1 local demo does not verify
@@ -39,8 +40,11 @@ Minimum v0.0.1 message checklist:
   alternatives when denied or degraded.
 - `CapabilityLease` is signed, short-lived, scoped to agent/edge/robot/mission/
   capability, and carries local rejection constraints.
-- `LeaseRevocation` identifies the lease, revoker, reason, revocation time, and
-  fallback hook to declare if accepted.
+- `LeaseRevocation` identifies the lease, signed revoker, edge agent, reason,
+  revocation time, optional robot/mission/capability context, and advisory
+  fallback hook. Cross-edge revokers are denied by default; broader revokers
+  require explicit `revoker_edge_scopes_by_id` configuration, and the selected
+  fallback remains a local-policy decision.
 - `FallbackDeclaration` records the selected fallback hook; it is not a
   certified safety behavior. Trust-boundary use requires an authenticated
   envelope; the v0.0.1 local demo emits local fallback declarations without
@@ -54,7 +58,8 @@ The policy path MUST:
 
 - fail closed for unknown agents, edge agents, robots, missions, capabilities,
   empty authority scopes, stale requests, replayed request nonces, invalid
-  request signatures, and unaccepted policy digests;
+  request signatures, missing replay protection, unauthenticated or stale state,
+  and unaccepted policy digests;
 - treat network state as an authorization input, not a network guarantee;
 - allow `remote_assist` only when identity, mission, geofence, human-operator,
   network, policy-digest, and request-signature checks pass;
@@ -73,7 +78,11 @@ The edge command gate MUST reject:
 - lease context mismatch for agent, edge agent, robot, mission, or capability;
 - missing required constraints for `remote_assist`;
 - known revoked lease;
-- current local state that violates lease constraints.
+- missing, unsigned, or stale current local state for state-constrained
+  capabilities;
+- current local state that violates lease constraints;
+- command payloads that omit, malform, exceed, or conflict on `max_speed_mps`
+  when present.
 
 Each command allow or rejection MUST be auditable. Rejections SHOULD emit a
 `FallbackDeclaration` chosen from local fallback policy.
@@ -101,7 +110,6 @@ ruff format .
 The local profile does not prove field safety, real cellular behavior,
 production key management, signed policy bundle distribution, standalone
 network-state assertion signature verification, signed decision verification
-across a trust boundary, signed revocation verification across a trust boundary,
-fallback declaration signature verification across a trust boundary,
-fleet-scale revocation propagation, or hosted SaaS behavior. Those are v0.1+
-hardening items.
+across a trust boundary, fallback declaration signature verification across a
+trust boundary, fleet-scale revocation propagation, or hosted SaaS behavior.
+Those are v0.1+ hardening items.

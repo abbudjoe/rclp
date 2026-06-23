@@ -11,6 +11,7 @@ from rclp_core.models import (
     AgentAttestation,
     AuditEventType,
     Capability,
+    CapabilityConstraintRequirement,
     CapabilityDecision,
     CapabilityRequest,
     Decision,
@@ -22,8 +23,8 @@ from rclp_core.models import (
     RobotStateAssertion,
 )
 from rclp_core.network import profile, profile_names
-from rclp_core.policy import Policy, evaluate_policy, policy_digest
-from rclp_ros2.command_gate import Command, CommandGate, GateResult
+from rclp_core.policy import Policy, RequestReplayCache, evaluate_policy, policy_digest
+from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache, GateResult
 
 CORRELATION_ID = "corr_demo_remote_assist"
 CENTRAL_AGENT_ID = "fleet-agent:v0.1"
@@ -35,15 +36,18 @@ POLICY_PATH = "examples/policies/remote_assist_policy.yaml"
 ISSUER_ID = "rclp-demo-issuer"
 
 
-def make_state(network_profile: str) -> RobotStateAssertion:
-    return RobotStateAssertion(
+def make_state(network_profile: str, key: DemoKeyPair) -> RobotStateAssertion:
+    state = RobotStateAssertion(
         correlation_id=CORRELATION_ID,
         robot_id=ROBOT_ID,
         edge_agent_id=EDGE_AGENT_ID,
+        authenticated_edge_agent_id=EDGE_AGENT_ID,
         mission_id=MISSION_ID,
         network_state=profile(network_profile),
         geofence_state=GeofenceState(geofence_id=GEOFENCE_ID, inside=True),
     )
+    state.signature = key.sign(state)
+    return state
 
 
 def audit(
@@ -95,8 +99,15 @@ def command_denial_payload(
     }
 
 
-def make_command(command_id_prefix: str = "cmd") -> Command:
-    return Command(
+def sign_command(command: Command, key: DemoKeyPair) -> Command:
+    command.authenticated_agent_id = command.agent_id
+    command.signature = None
+    command.signature = key.sign(command)
+    return command
+
+
+def make_command(command_id_prefix: str, key: DemoKeyPair) -> Command:
+    command = Command(
         correlation_id=CORRELATION_ID,
         command_id=f"{command_id_prefix}_{uuid4().hex}",
         agent_id=CENTRAL_AGENT_ID,
@@ -106,6 +117,7 @@ def make_command(command_id_prefix: str = "cmd") -> Command:
         capability=Capability.REMOTE_ASSIST.value,
         payload={"intent": "start_remote_assist", "max_speed_mps": 0.6},
     )
+    return sign_command(command, key)
 
 
 def sign_request(request: CapabilityRequest, key: DemoKeyPair) -> CapabilityRequest:
@@ -115,18 +127,41 @@ def sign_request(request: CapabilityRequest, key: DemoKeyPair) -> CapabilityRequ
     return request
 
 
+def sign_revocation(revocation: LeaseRevocation, key: DemoKeyPair) -> LeaseRevocation:
+    revocation.signature = None
+    revocation.signature = key.sign(revocation)
+    return revocation
+
+
 def main(impaired_network_profile: str = "degraded_teleop") -> None:
     log = AuditLog()
     central_key = DemoKeyPair()
+    edge_key = DemoKeyPair()
     issuer_key = DemoKeyPair()
     policy = Policy.from_yaml(POLICY_PATH)
     agent_public_keys_by_id = {CENTRAL_AGENT_ID: central_key.public_key_b64}
+    edge_public_keys_by_id = {EDGE_AGENT_ID: edge_key.public_key_b64}
+    replay_cache = RequestReplayCache.temporary()
     active_policy_digest = policy_digest(policy)
     accepted_policy_digests = {active_policy_digest}
     gate = CommandGate(
         issuer_public_key_b64=issuer_key.public_key_b64,
         trusted_issuer_ids={ISSUER_ID},
         trusted_revoker_ids={EDGE_AGENT_ID},
+        accepted_capabilities={Capability.REMOTE_ASSIST.value},
+        issuer_capability_scopes={ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
+        capability_constraint_requirements={
+            Capability.REMOTE_ASSIST.value: CapabilityConstraintRequirement(
+                capability=Capability.REMOTE_ASSIST,
+                require_geofence_id=True,
+                require_network_thresholds=True,
+                require_fallback_on_degrade=True,
+            )
+        },
+        agent_public_keys_by_id=agent_public_keys_by_id,
+        revoker_public_keys_by_id=edge_public_keys_by_id,
+        state_public_keys_by_edge_id=edge_public_keys_by_id,
+        command_replay_cache=CommandReplayCache.temporary(),
         audit_log=log,
     )
     impaired_profile_state = profile(impaired_network_profile)
@@ -210,7 +245,7 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
     )
     print_json("capability_request", request)
 
-    normal_state = make_state("normal")
+    normal_state = make_state("normal", edge_key)
     audit(
         log,
         AuditEventType.NETWORK_STATE_ASSERTED,
@@ -225,7 +260,9 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
         audit_log=log,
         deciding_actor_id=ISSUER_ID,
         agent_public_keys_by_id=agent_public_keys_by_id,
+        edge_public_keys_by_id=edge_public_keys_by_id,
         accepted_policy_digests=accepted_policy_digests,
+        replay_cache=replay_cache,
     )
     if decision == Decision.ALLOW and constraints:
         lease = issue_lease(request, constraints, ISSUER_ID, issuer_key, policy.lease_ttl_seconds)
@@ -246,12 +283,12 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
     )
     print_json("normal_network_decision", cap_decision)
 
-    command = make_command("cmd_valid_lease")
-    gate_result = gate.evaluate(command, lease)
+    command = make_command("cmd_valid_lease", central_key)
+    gate_result = gate.evaluate(command, lease, current_state=normal_state)
     print_json("command_gate_with_valid_lease", gate_result)
 
-    no_lease_command = make_command("cmd_no_lease")
-    no_lease_result = gate.evaluate(no_lease_command, None)
+    no_lease_command = make_command("cmd_no_lease", central_key)
+    no_lease_result = gate.evaluate(no_lease_command, None, current_state=normal_state)
     no_lease_summary = "command without a valid lease was rejected"
     print_json(
         "command_without_valid_lease",
@@ -264,7 +301,7 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
         ),
     )
 
-    degraded_state = make_state(impaired_network_profile)
+    degraded_state = make_state(impaired_network_profile, edge_key)
     audit(
         log,
         AuditEventType.NETWORK_STATE_ASSERTED,
@@ -272,18 +309,39 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
         f"network profile changed to {impaired_network_profile}",
         degraded_state.model_dump(mode="json"),
     )
+    degraded_request = CapabilityRequest(
+        correlation_id=CORRELATION_ID,
+        requesting_agent_id=CENTRAL_AGENT_ID,
+        authenticated_agent_id=CENTRAL_AGENT_ID,
+        edge_agent_id=EDGE_AGENT_ID,
+        robot_id=ROBOT_ID,
+        mission_id=MISSION_ID,
+        capability=Capability.REMOTE_ASSIST,
+        reason="network impairment authority reevaluation",
+        requested_duration_seconds=600,
+    )
+    sign_request(degraded_request, central_key)
+    audit(
+        log,
+        AuditEventType.CAPABILITY_REQUESTED,
+        degraded_request.requesting_agent_id,
+        "central agent requested remote_assist after network impairment",
+        degraded_request.model_dump(mode="json"),
+    )
     degraded_decision, degraded_reason, degraded_alts, _, degraded_audit = evaluate_policy(
-        request,
+        degraded_request,
         degraded_state,
         policy,
         audit_log=log,
         deciding_actor_id=ISSUER_ID,
         agent_public_keys_by_id=agent_public_keys_by_id,
+        edge_public_keys_by_id=edge_public_keys_by_id,
         accepted_policy_digests=accepted_policy_digests,
+        replay_cache=replay_cache,
     )
     degraded_cap_decision = CapabilityDecision(
-        correlation_id=request.correlation_id,
-        request_id=request.message_id,
+        correlation_id=degraded_request.correlation_id,
+        request_id=degraded_request.message_id,
         decision=degraded_decision,
         reason_code=degraded_reason,
         deciding_actor_id=ISSUER_ID,
@@ -301,14 +359,20 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
             correlation_id=CORRELATION_ID,
             lease_id=lease.lease_id,
             revoked_by=EDGE_AGENT_ID,
+            edge_agent_id=EDGE_AGENT_ID,
             reason_code="NETWORK_PROFILE_REVOKE",
             fallback_action=impaired_fallback,
+            robot_id=ROBOT_ID,
+            mission_id=MISSION_ID,
+            capability=Capability.REMOTE_ASSIST,
         )
+        sign_revocation(revocation, edge_key)
         revocation_fallback = gate.revoke(revocation, lease=lease)
         assert revocation_fallback is not None
         print_json("lease_revocation", revocation)
 
-    revoked_result = gate.evaluate(command, lease, current_state=degraded_state)
+    revoked_command = make_command("cmd_after_revocation", central_key)
+    revoked_result = gate.evaluate(revoked_command, lease, current_state=degraded_state)
     revoked_summary = (
         f"command after network-profile revocation rejected: {revoked_result.reason_code}"
     )

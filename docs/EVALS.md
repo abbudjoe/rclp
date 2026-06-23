@@ -13,7 +13,8 @@ Does RCLP fail closed when authority is missing, stale, revoked, replayed,
 malformed, mismatched, or unsafe under local context?
 ```
 
-The scenarios under `tests/evals/scenarios/` cover the T12 minimum set:
+The scenarios under `tests/evals/scenarios/` cover the T12 minimum set plus
+post-review security regressions:
 
 - valid remote-assist authority
 - missing, expired, not-yet-valid, revoked, replayed, malformed, and
@@ -21,6 +22,10 @@ The scenarios under `tests/evals/scenarios/` cover the T12 minimum set:
 - wrong central agent, edge agent, robot, mission, and capability
 - geofence violation, high latency, high packet loss, and partitioned network
 - stale command after expiry and conflicting local state
+- missing or stale current edge state
+- unsigned or stale policy state assertions
+- over-speed command payloads under `max_speed_mps`
+- unsigned revocation rejection
 - audit completeness for allow and deny paths
 - multi-step network-degradation revocation
 - multi-step cloud partition and lease-expiry behavior
@@ -121,6 +126,9 @@ whose lease is missing, invalid, stale, revoked, mismatched, or unsafe under
 local context MUST NOT pass through the edge gate. Fail-closed behavior keeps
 authority bounded to explicit identity, mission, robot, capability, time,
 network, geofence, revocation, and fallback inputs.
+Policy issuance also fails closed when signed state or replay protection is
+missing; command enforcement fails closed when a state-scoped lease lacks fresh
+local state.
 
 ## Known Gaps
 
@@ -137,4 +145,4 @@ network, geofence, revocation, and fallback inputs.
 - The runner writes a local report artifact but does not publish or persist
   evidence to an external audit backend.
 - Production key rotation, hardware-backed trust, durable replay storage, and
-  signed revocation/fallback envelopes remain future hardening work.
+  signed fallback envelopes remain future hardening work.

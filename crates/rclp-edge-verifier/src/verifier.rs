@@ -1,24 +1,35 @@
 use serde_json::Value;
 
 use crate::audit::{AuditEvent, AuditSubject};
-use crate::crypto::{verify_dev_hmac_sha256, DEV_HMAC_SHA256_ALG};
+use crate::crypto::{
+    verify_dev_hmac_sha256, verify_dev_hmac_sha256_command, verify_dev_hmac_sha256_local_context,
+    DEV_HMAC_SHA256_ALG,
+};
 use crate::replay::ReplayCache;
 use crate::types::{
-    CapabilityLeaseClaims, Decision, EdgeCommand, LeaseConstraints, NetworkProfile,
-    NetworkViolationAction, ReasonCode, TrustedVerifierContext, VerificationDecision,
-    VerificationInput,
+    CapabilityConstraintRequirement, CapabilityLeaseClaims, Decision, EdgeCommand,
+    LeaseConstraints, NetworkProfile, NetworkViolationAction, ReasonCode, TrustedVerifierContext,
+    VerificationDecision, VerificationInput,
 };
+
+const CLOCK_SKEW_MS: i64 = 30_000;
 
 pub fn verify_json_value(
     input: Value,
     trusted_context: &TrustedVerifierContext,
     replay_cache: &mut dyn ReplayCache,
 ) -> VerificationDecision {
+    if !audit_chain_head_well_formed(trusted_context) {
+        return malformed_decision(
+            "trusted audit_chain_head is missing or malformed".to_string(),
+            trusted_context,
+        );
+    }
     match serde_json::from_value::<VerificationInput>(input) {
         Ok(input) => verify(input, trusted_context, replay_cache),
         Err(error) => malformed_decision(
             format!("malformed verification input: {error}"),
-            trusted_context.now_unix_ms,
+            trusted_context,
         ),
     }
 }
@@ -47,20 +58,42 @@ pub fn verify(
         &input.command.robot_id,
         &input.command.mission_id,
         &input.command.capability,
+        &input.command.command_nonce,
         &input.local_context.robot_id,
         &input.local_context.edge_agent_id,
         &input.local_context.mission_id,
+        &trusted_context.policy_id,
+        &trusted_context.policy_digest,
+        &trusted_context.audit_chain_head,
+        &trusted_context.command_hmac_secret,
         &trusted_context.dev_hmac_secret,
+        &trusted_context.state_hmac_secret,
     ]) || trusted_context.trusted_issuer_ids.is_empty()
+        || trusted_scope_malformed(trusted_context)
+        || trusted_context.trusted_state_edge_ids.is_empty()
+        || trusted_context.trusted_command_agent_ids.is_empty()
     {
         return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
     }
     if numeric_fields_malformed(&input, trusted_context) {
         return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
     }
+    if let Some(reason) = policy_digest_violation(trusted_context) {
+        return deny(&input, trusted_context, reason);
+    }
 
     if input.lease.alg != DEV_HMAC_SHA256_ALG {
         return deny(&input, trusted_context, ReasonCode::DenyUnknownAlgorithm);
+    }
+    if trusted_context.trusted_issuer_ids.len() != 1
+        || trusted_context.trusted_command_agent_ids.len() != 1
+        || trusted_context.trusted_state_edge_ids.len() != 1
+    {
+        return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
+    }
+
+    if let Some(reason) = command_auth_violation(&input, trusted_context, replay_cache) {
+        return deny(&input, trusted_context, reason);
     }
 
     if !trusted_context
@@ -79,6 +112,13 @@ pub fn verify(
     .is_err()
     {
         return deny(&input, trusted_context, ReasonCode::DenyInvalidSignature);
+    }
+    if !capability_allowed_for_issuer(claims, trusted_context) {
+        return deny(
+            &input,
+            trusted_context,
+            ReasonCode::DenyCapabilityNotGranted,
+        );
     }
 
     if let Some(not_before) = claims.not_before {
@@ -116,9 +156,6 @@ pub fn verify(
     if trusted_context.revocations.contains(&claims.lease_id) {
         return deny(&input, trusted_context, ReasonCode::DenyRevokedLease);
     }
-    if replay_cache.seen(&claims.nonce) {
-        return deny(&input, trusted_context, ReasonCode::DenyReplayedNonce);
-    }
     if !context_robot_matches(&input.command, claims, &input) {
         return deny(&input, trusted_context, ReasonCode::DenyRobotMismatch);
     }
@@ -137,26 +174,116 @@ pub fn verify(
             ReasonCode::DenyCapabilityNotGranted,
         );
     }
-    if remote_assist_constraints_missing(claims) {
+    if required_constraints_missing(claims, trusted_context) {
         return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
+    }
+    if let Some(reason) = local_state_auth_violation(&input, trusted_context) {
+        return deny(&input, trusted_context, reason);
+    }
+    if let Some(reason) = local_state_time_violation(&input, trusted_context) {
+        return deny(&input, trusted_context, reason);
     }
     if geofence_violated(&input) {
         return deny(&input, trusted_context, ReasonCode::DenyGeofenceViolation);
     }
     if let Some(reason) = network_policy_violation(&input) {
         if reason == ReasonCode::DegradeNetworkPolicy {
-            replay_cache.mark_seen(&claims.nonce);
+            if !replay_cache.consume_nonce(&claims.nonce) {
+                return deny(&input, trusted_context, ReasonCode::DenyReplayedNonce);
+            }
             return decision(&input, trusted_context, Decision::Degrade, reason);
         }
         return deny(&input, trusted_context, reason);
     }
+    if let Some(reason) = command_constraint_violation(&input) {
+        return deny(&input, trusted_context, reason);
+    }
 
-    replay_cache.mark_seen(&claims.nonce);
+    if !replay_cache.consume_nonce(&claims.nonce) {
+        return deny(&input, trusted_context, ReasonCode::DenyReplayedNonce);
+    }
     decision(&input, trusted_context, Decision::Allow, ReasonCode::Allow)
 }
 
 fn required_text_missing(values: &[&String]) -> bool {
     values.iter().any(|value| value.trim().is_empty())
+}
+
+fn trusted_scope_malformed(trusted_context: &TrustedVerifierContext) -> bool {
+    trusted_context.accepted_capabilities.is_empty()
+        || !audit_chain_head_well_formed(trusted_context)
+        || string_list_missing(&trusted_context.accepted_capabilities)
+        || trusted_context.accepted_policies.is_empty()
+        || trusted_context.accepted_policies.iter().any(|policy| {
+            policy.policy_id.trim().is_empty() || policy.policy_digest.trim().is_empty()
+        })
+        || trusted_context.issuer_capability_scopes.is_empty()
+        || trusted_context
+            .capability_constraint_requirements
+            .is_empty()
+        || string_list_missing(&trusted_context.trusted_command_agent_ids)
+        || trusted_context
+            .issuer_capability_scopes
+            .iter()
+            .any(|scope| {
+                scope.issuer_id.trim().is_empty()
+                    || scope.capabilities.is_empty()
+                    || string_list_missing(&scope.capabilities)
+            })
+        || trusted_context
+            .accepted_capabilities
+            .iter()
+            .any(|capability| {
+                trusted_context
+                    .capability_constraint_requirements
+                    .iter()
+                    .filter(|requirement| requirement.capability == *capability)
+                    .count()
+                    != 1
+            })
+        || trusted_context
+            .capability_constraint_requirements
+            .iter()
+            .any(|requirement| requirement.capability.trim().is_empty())
+}
+
+fn string_list_missing(values: &[String]) -> bool {
+    values.iter().any(|value| value.trim().is_empty())
+}
+
+fn capability_allowed_for_issuer(
+    claims: &CapabilityLeaseClaims,
+    trusted_context: &TrustedVerifierContext,
+) -> bool {
+    trusted_context
+        .accepted_capabilities
+        .iter()
+        .any(|capability| capability == &claims.capability)
+        && trusted_context
+            .issuer_capability_scopes
+            .iter()
+            .any(|scope| {
+                scope.issuer_id == claims.issuer_id
+                    && scope
+                        .capabilities
+                        .iter()
+                        .any(|capability| capability == &claims.capability)
+            })
+}
+
+fn policy_digest_violation(trusted_context: &TrustedVerifierContext) -> Option<ReasonCode> {
+    if trusted_context.policy_id.trim().is_empty()
+        || trusted_context.policy_digest.trim().is_empty()
+    {
+        return Some(ReasonCode::DenyPolicyDigestRequired);
+    }
+    if !trusted_context.accepted_policies.iter().any(|policy| {
+        policy.policy_id == trusted_context.policy_id
+            && policy.policy_digest == trusted_context.policy_digest
+    }) {
+        return Some(ReasonCode::DenyPolicyDigestNotAccepted);
+    }
+    None
 }
 
 fn numeric_fields_malformed(
@@ -170,6 +297,20 @@ fn numeric_fields_malformed(
         || claims.not_before.is_some_and(|value| value < 0)
         || trusted_context.max_lease_ttl_ms <= 0
         || trusted_context.max_lease_age_ms <= 0
+        || trusted_context.max_state_age_ms <= 0
+        || trusted_context.max_command_age_ms <= 0
+        || input.command.created_at_unix_ms < 0
+        || input.local_context.observed_at_unix_ms < 0
+        || input.local_context.network_state.observed_at_unix_ms < 0
+        || input.local_context.geofence_state.verified_at_unix_ms < 0
+    {
+        return true;
+    }
+
+    if input
+        .command
+        .max_speed_mps
+        .is_some_and(|value| !finite_nonnegative(value))
     {
         return true;
     }
@@ -188,6 +329,159 @@ fn numeric_fields_malformed(
         || option_malformed_packet_loss(constraints.max_packet_loss_pct)
         || option_malformed_nonnegative(constraints.min_uplink_mbps)
         || option_malformed_nonnegative(constraints.max_speed_mps)
+}
+
+fn command_auth_violation(
+    input: &VerificationInput,
+    trusted_context: &TrustedVerifierContext,
+    replay_cache: &mut dyn ReplayCache,
+) -> Option<ReasonCode> {
+    let command = &input.command;
+    if command.authenticated_agent_id.trim().is_empty() {
+        return Some(ReasonCode::DenyCommandAuthenticatedAgentMissing);
+    }
+    if command.authenticated_agent_id != command.agent_id {
+        return Some(ReasonCode::DenyCommandAuthenticatedAgentMismatch);
+    }
+    if !trusted_context
+        .trusted_command_agent_ids
+        .iter()
+        .any(|agent_id| agent_id == &command.authenticated_agent_id)
+    {
+        return Some(ReasonCode::DenyCommandAgentKeyNotTrusted);
+    }
+    let Some(signature) = command.signature.as_ref() else {
+        return Some(ReasonCode::DenyCommandSignatureMissing);
+    };
+    if signature.trim().is_empty() {
+        return Some(ReasonCode::DenyCommandSignatureMissing);
+    }
+    if verify_dev_hmac_sha256_command(command, signature, &trusted_context.command_hmac_secret)
+        .is_err()
+    {
+        return Some(ReasonCode::DenyInvalidCommandSignature);
+    }
+    if let Some(reason) = command_time_violation(input, trusted_context) {
+        return Some(reason);
+    }
+    let command_id_key = format!(
+        "command-id:{}:{}",
+        command.authenticated_agent_id, command.command_id
+    );
+    let command_nonce_key = format!(
+        "command-nonce:{}:{}",
+        command.authenticated_agent_id, command.command_nonce
+    );
+    if !replay_cache.consume_nonce(&command_id_key)
+        || !replay_cache.consume_nonce(&command_nonce_key)
+    {
+        return Some(ReasonCode::DenyReplayedCommand);
+    }
+    None
+}
+
+fn command_time_violation(
+    input: &VerificationInput,
+    trusted_context: &TrustedVerifierContext,
+) -> Option<ReasonCode> {
+    let Some(max_age) = trusted_context
+        .max_command_age_ms
+        .checked_add(CLOCK_SKEW_MS)
+    else {
+        return Some(ReasonCode::DenyMalformedInput);
+    };
+    let Some(max_future_timestamp) = trusted_context.now_unix_ms.checked_add(CLOCK_SKEW_MS) else {
+        return Some(ReasonCode::DenyMalformedInput);
+    };
+    let timestamp = input.command.created_at_unix_ms;
+    if timestamp > max_future_timestamp {
+        return Some(ReasonCode::DenyCommandNotYetValid);
+    }
+    let Some(age) = trusted_context.now_unix_ms.checked_sub(timestamp) else {
+        return Some(ReasonCode::DenyCommandNotYetValid);
+    };
+    if age > max_age {
+        return Some(ReasonCode::DenyStaleCommand);
+    }
+    None
+}
+
+fn local_state_time_violation(
+    input: &VerificationInput,
+    trusted_context: &TrustedVerifierContext,
+) -> Option<ReasonCode> {
+    let Some(max_age) = trusted_context.max_state_age_ms.checked_add(CLOCK_SKEW_MS) else {
+        return Some(ReasonCode::DenyMalformedInput);
+    };
+    let Some(max_future_timestamp) = trusted_context.now_unix_ms.checked_add(CLOCK_SKEW_MS) else {
+        return Some(ReasonCode::DenyMalformedInput);
+    };
+    for timestamp in [
+        input.local_context.observed_at_unix_ms,
+        input.local_context.network_state.observed_at_unix_ms,
+        input.local_context.geofence_state.verified_at_unix_ms,
+    ] {
+        if timestamp > max_future_timestamp {
+            return Some(ReasonCode::DenyStaleState);
+        }
+        if let Some(age) = trusted_context.now_unix_ms.checked_sub(timestamp) {
+            if age > max_age {
+                return Some(ReasonCode::DenyStaleState);
+            }
+        }
+    }
+    None
+}
+
+fn local_state_auth_violation(
+    input: &VerificationInput,
+    trusted_context: &TrustedVerifierContext,
+) -> Option<ReasonCode> {
+    let Some(authenticated_edge_agent_id) =
+        input.local_context.authenticated_edge_agent_id.as_ref()
+    else {
+        return Some(ReasonCode::DenyStateAuthenticatedEdgeMissing);
+    };
+    if authenticated_edge_agent_id.trim().is_empty() {
+        return Some(ReasonCode::DenyStateAuthenticatedEdgeMissing);
+    }
+    if authenticated_edge_agent_id != &input.local_context.edge_agent_id {
+        return Some(ReasonCode::DenyStateAuthenticatedEdgeMismatch);
+    }
+    if !trusted_context
+        .trusted_state_edge_ids
+        .iter()
+        .any(|edge_id| edge_id == authenticated_edge_agent_id)
+    {
+        return Some(ReasonCode::DenyStateKeyNotTrusted);
+    }
+    let Some(signature) = input.local_context.signature.as_ref() else {
+        return Some(ReasonCode::DenyStateSignatureMissing);
+    };
+    if signature.trim().is_empty() {
+        return Some(ReasonCode::DenyStateSignatureMissing);
+    }
+    if verify_dev_hmac_sha256_local_context(
+        &input.local_context,
+        signature,
+        &trusted_context.state_hmac_secret,
+    )
+    .is_err()
+    {
+        return Some(ReasonCode::DenyInvalidStateSignature);
+    }
+    None
+}
+
+fn command_constraint_violation(input: &VerificationInput) -> Option<ReasonCode> {
+    let max_speed = input.lease.claims.constraints.max_speed_mps?;
+    let Some(command_speed) = input.command.max_speed_mps else {
+        return Some(ReasonCode::DenyCommandConstraint);
+    };
+    if command_speed > max_speed {
+        return Some(ReasonCode::DenyCommandConstraint);
+    }
+    None
 }
 
 fn finite_nonnegative(value: f64) -> bool {
@@ -220,14 +514,37 @@ fn context_agent_matches(
         && input.local_context.edge_agent_id == claims.edge_agent_id
 }
 
-fn remote_assist_constraints_missing(claims: &CapabilityLeaseClaims) -> bool {
-    if claims.capability != "remote_assist" {
-        return false;
-    }
-    claims.constraints.geofence_id.is_none()
-        || claims.constraints.max_latency_ms_p95.is_none()
-        || claims.constraints.max_packet_loss_pct.is_none()
-        || claims.constraints.min_uplink_mbps.is_none()
+fn required_constraints_missing(
+    claims: &CapabilityLeaseClaims,
+    trusted_context: &TrustedVerifierContext,
+) -> bool {
+    let Some(requirement) = trusted_context
+        .capability_constraint_requirements
+        .iter()
+        .find(|requirement| requirement.capability == claims.capability)
+    else {
+        return true;
+    };
+    capability_constraints_missing(&claims.constraints, requirement)
+}
+
+fn capability_constraints_missing(
+    constraints: &LeaseConstraints,
+    requirement: &CapabilityConstraintRequirement,
+) -> bool {
+    (requirement.require_geofence_id && constraints.geofence_id.is_none())
+        || (requirement.require_network_thresholds
+            && (constraints.max_latency_ms_p95.is_none()
+                || constraints.max_packet_loss_pct.is_none()
+                || constraints.min_uplink_mbps.is_none()))
+        || (requirement.require_fallback_on_degrade
+            && constraints
+                .fallback_on_degrade
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .is_empty())
+        || (requirement.require_max_speed_mps && constraints.max_speed_mps.is_none())
 }
 
 fn geofence_violated(input: &VerificationInput) -> bool {
@@ -314,6 +631,20 @@ fn decision(
     result: Decision,
     reason_code: ReasonCode,
 ) -> VerificationDecision {
+    let payload = serde_json::json!({
+        "decision": result.as_str(),
+        "reason_code": reason_code.as_str(),
+        "lease_id": &input.lease.claims.lease_id,
+        "lease_issuer_id": &input.lease.claims.issuer_id,
+        "command_id": &input.command.command_id,
+        "command_agent_id": &input.command.agent_id,
+        "authenticated_command_agent_id": &input.command.authenticated_agent_id,
+        "edge_agent_id": &input.command.edge_agent_id,
+        "robot_id": &input.command.robot_id,
+        "mission_id": &input.command.mission_id,
+        "capability": &input.command.capability,
+        "local_context_observed_at_unix_ms": input.local_context.observed_at_unix_ms,
+    });
     VerificationDecision {
         decision: result,
         reason_code,
@@ -326,28 +657,69 @@ fn decision(
                 robot_id: Some(input.command.robot_id.clone()),
                 edge_agent_id: Some(input.command.edge_agent_id.clone()),
                 mission_id: Some(input.command.mission_id.clone()),
+                actor_id: input.command.edge_agent_id.clone(),
+                correlation_id: input.command.command_id.clone(),
+                payload,
+                policy_id: Some(trusted_context.policy_id.clone()),
+                policy_digest: Some(trusted_context.policy_digest.clone()),
+                previous_audit_hash: audit_chain_head(trusted_context),
+                state_refs: vec![format!(
+                    "local_context:{}:{}",
+                    input.local_context.edge_agent_id, input.local_context.observed_at_unix_ms
+                )],
+                related_message_ids: vec![
+                    input.command.command_id.clone(),
+                    input.lease.claims.lease_id.clone(),
+                ],
                 observed_at_unix_ms: trusted_context.now_unix_ms,
             },
         ),
     }
 }
 
-fn malformed_decision(summary: String, observed_at_unix_ms: i64) -> VerificationDecision {
+fn malformed_decision(
+    summary: String,
+    trusted_context: &TrustedVerifierContext,
+) -> VerificationDecision {
     let reason_code = ReasonCode::DenyMalformedInput;
+    let payload = serde_json::json!({
+        "decision": Decision::Deny.as_str(),
+        "reason_code": reason_code.as_str(),
+        "summary": summary,
+    });
     VerificationDecision {
         decision: Decision::Deny,
         reason_code,
-        audit_event: AuditEvent {
-            event_type: "command_rejected".to_string(),
-            decision: Decision::Deny,
+        audit_event: AuditEvent::new(
+            Decision::Deny,
             reason_code,
-            lease_id: None,
-            command_id: None,
-            robot_id: None,
-            edge_agent_id: None,
-            mission_id: None,
-            observed_at_unix_ms,
-            summary,
-        },
+            AuditSubject {
+                lease_id: None,
+                command_id: None,
+                robot_id: None,
+                edge_agent_id: None,
+                mission_id: None,
+                actor_id: "local_edge_verifier".to_string(),
+                correlation_id: "malformed_verification_input".to_string(),
+                payload,
+                policy_id: Some(trusted_context.policy_id.clone())
+                    .filter(|value| !value.is_empty()),
+                policy_digest: Some(trusted_context.policy_digest.clone())
+                    .filter(|value| !value.is_empty()),
+                previous_audit_hash: audit_chain_head(trusted_context),
+                state_refs: Vec::new(),
+                related_message_ids: Vec::new(),
+                observed_at_unix_ms: trusted_context.now_unix_ms,
+            },
+        ),
     }
+}
+
+fn audit_chain_head(trusted_context: &TrustedVerifierContext) -> Option<String> {
+    Some(trusted_context.audit_chain_head.clone())
+}
+
+fn audit_chain_head_well_formed(trusted_context: &TrustedVerifierContext) -> bool {
+    let value = trusted_context.audit_chain_head.trim();
+    value.starts_with("sha256:") && value.len() > "sha256:".len()
 }

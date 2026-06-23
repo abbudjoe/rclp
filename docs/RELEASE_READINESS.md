@@ -111,7 +111,8 @@ Expected visible evidence:
   trust are not implemented.
 - Revocation and some standalone messages still need authenticated trust-boundary
   envelopes for a hardened profile.
-- Replay windows are in-memory in the Python reference.
+- Python request replay now uses a durable local store, but production
+  retention, compaction, backup, and recovery behavior remain unspecified.
 - Clock trust and monotonic-time handling remain MVP assumptions.
 - Rust verifier uses `RCLP-DEV-HMAC-SHA256` vectors for deterministic offline
   tests and does not verify Python demo Ed25519 leases.

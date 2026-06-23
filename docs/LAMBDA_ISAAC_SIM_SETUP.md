@@ -8,8 +8,8 @@ dispatch, or hosted SaaS behavior.
 
 ## Source Contract
 
-- `DIRECTION.md` Phase 7: explicit Lambda checklist, Isaac Sim ROS 2 bridge
-  approach, minimal simulated robot scenario, and no full autonomy.
+- Historical Phase 7 direction: explicit Lambda checklist, Isaac Sim ROS 2
+  bridge approach, minimal simulated robot scenario, and no full autonomy.
 - `docs/PROTOCOL_SPEC_DRAFT.md`: edge enforcement MUST reject a physical
   command without a valid lease and MUST audit allow/reject paths.
 - `isaac_sim/scenarios/remote_assist_gate.md`: first scenario to execute.

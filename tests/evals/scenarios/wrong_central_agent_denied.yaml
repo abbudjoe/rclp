@@ -7,4 +7,4 @@ input:
     central_agent_id: fleet-agent:other
 expected:
   decision: deny
-  reason_code: LEASE_CONTEXT_MISMATCH
+  reason_code: COMMAND_AGENT_KEY_NOT_TRUSTED
