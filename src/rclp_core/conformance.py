@@ -8,6 +8,7 @@ from numbers import Real
 from rclp_core.leases import (
     capability_constraint_requirement_violation,
     lease_matches_context,
+    lease_signed_material_too_large,
     lease_time_violation,
     verify_lease_signature,
 )
@@ -75,6 +76,8 @@ def validate_lease_for_command(
     issuer_public_key = issuer_public_keys.get(lease.issuer_id)
     if issuer_public_key is None:
         return False, "ISSUER_KEY_NOT_TRUSTED"
+    if lease_signed_material_too_large(lease):
+        return False, "LEASE_SIGNED_MATERIAL_TOO_LARGE"
     if not verify_lease_signature(lease, issuer_public_key):
         return False, "INVALID_SIGNATURE"
     if policy_reason := lease_policy_provenance_violation(
@@ -296,15 +299,17 @@ def validate_command_payload_against_constraints(
     lease: CapabilityLease,
     command_payload: Mapping[str, object] | None,
 ) -> tuple[bool, str]:
+    if command_payload is None:
+        return False, "COMMAND_PAYLOAD_SCHEMA_VIOLATION"
+    if set(command_payload) - SUPPORTED_SPEED_PAYLOAD_FIELDS:
+        return False, "COMMAND_PAYLOAD_SCHEMA_VIOLATION"
     max_speed_mps = lease.constraints.max_speed_mps
     if max_speed_mps is None:
+        if command_payload:
+            return False, "COMMAND_PAYLOAD_SCHEMA_VIOLATION"
         return True, "LEASE_VALID"
     if not _finite_nonnegative_number(max_speed_mps):
         return False, "LEASE_CONSTRAINT_MALFORMED"
-    if command_payload is None:
-        return False, "COMMAND_SPEED_MISSING"
-    if set(command_payload) - SUPPORTED_SPEED_PAYLOAD_FIELDS:
-        return False, "COMMAND_PAYLOAD_SCHEMA_VIOLATION"
     has_max_speed = "max_speed_mps" in command_payload
     has_speed = "speed_mps" in command_payload
     if has_max_speed and has_speed:

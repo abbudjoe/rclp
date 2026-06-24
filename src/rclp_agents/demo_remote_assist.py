@@ -11,6 +11,7 @@ from rclp_core.crypto import DemoKeyPair
 from rclp_core.leases import issue_lease
 from rclp_core.models import (
     AgentAttestation,
+    AuditCommit,
     AuditEventType,
     Capability,
     CapabilityConstraintRequirement,
@@ -23,6 +24,8 @@ from rclp_core.models import (
     MissionContext,
     RobotIdentity,
     RobotStateAssertion,
+    SafetyState,
+    stable_json_hash,
 )
 from rclp_core.network import profile, profile_names
 from rclp_core.policy import Policy, RequestReplayCache, evaluate_policy, policy_digest
@@ -51,8 +54,10 @@ def make_state(network_profile: str, key: DemoKeyPair) -> RobotStateAssertion:
         edge_agent_id=EDGE_AGENT_ID,
         authenticated_edge_agent_id=EDGE_AGENT_ID,
         mission_id=MISSION_ID,
+        safety_state=SafetyState.NOMINAL,
         network_state=profile(network_profile),
         geofence_state=GeofenceState(geofence_id=GEOFENCE_ID, inside=True),
+        human_operator_available=True,
     )
     state.signature = key.sign(state)
     return state
@@ -114,6 +119,13 @@ def sign_command(command: Command, key: DemoKeyPair) -> Command:
     return command
 
 
+def sign_attestation(attestation: AgentAttestation, key: DemoKeyPair) -> AgentAttestation:
+    attestation.authenticated_agent_id = attestation.agent_id
+    attestation.signature = None
+    attestation.signature = key.sign(attestation)
+    return attestation
+
+
 def make_command(command_id_prefix: str, key: DemoKeyPair) -> Command:
     command = Command(
         correlation_id=CORRELATION_ID,
@@ -123,7 +135,7 @@ def make_command(command_id_prefix: str, key: DemoKeyPair) -> Command:
         robot_id=ROBOT_ID,
         mission_id=MISSION_ID,
         capability=Capability.REMOTE_ASSIST.value,
-        payload={"intent": "start_remote_assist", "max_speed_mps": 0.6},
+        payload={},
     )
     return sign_command(command, key)
 
@@ -139,6 +151,70 @@ def sign_revocation(revocation: LeaseRevocation, key: DemoKeyPair) -> LeaseRevoc
     revocation.signature = None
     revocation.signature = key.sign(revocation)
     return revocation
+
+
+def audit_capability_decision(
+    log: AuditLog,
+    decision: CapabilityDecision,
+    *,
+    request: CapabilityRequest,
+    state: RobotStateAssertion,
+    policy_digest_value: str,
+) -> str:
+    lease = decision.lease
+    payload = {
+        "capability_decision": decision.model_dump(mode="json"),
+        "request_id": decision.request_id,
+        "state_assertion_id": state.message_id,
+        "central_agent_id": request.requesting_agent_id,
+        "edge_agent_id": request.edge_agent_id,
+        "robot_id": request.robot_id,
+        "mission_id": request.mission_id,
+        "requested_capability": request.capability.value,
+        "decision": decision.decision,
+        "reason_code": decision.reason_code,
+        "safe_alternatives": decision.safe_alternatives,
+        "policy_id": decision.policy_id,
+        "policy_digest": decision.policy_digest,
+        "constraints": lease.constraints.model_dump(mode="json") if lease is not None else None,
+        "network_state": state.network_state.model_dump(mode="json"),
+        "geofence_state": state.geofence_state.model_dump(mode="json"),
+    }
+    related_message_ids = [request.message_id, state.message_id]
+    if lease is not None:
+        payload.update(
+            {
+                "lease_id": lease.lease_id,
+                "lease_message_id": lease.message_id,
+                "lease_nonce": lease.nonce,
+                "lease_expires_at": lease.expires_at.isoformat(),
+                "lease_signature": lease.signature,
+                "lease_digest": stable_json_hash(lease.model_dump(mode="json")),
+            }
+        )
+        related_message_ids.append(lease.message_id)
+
+    event = log.append(
+        AuditCommit(
+            audit_id=decision.audit_id,
+            correlation_id=request.correlation_id,
+            event_type={
+                Decision.ALLOW: AuditEventType.CAPABILITY_ALLOWED,
+                Decision.DENY: AuditEventType.CAPABILITY_DENIED,
+                Decision.DEGRADE: AuditEventType.CAPABILITY_DEGRADED,
+            }[decision.decision],
+            actor_id=decision.deciding_actor_id,
+            robot_id=request.robot_id,
+            mission_id=request.mission_id,
+            summary=f"{decision.decision.value} {request.capability.value}: {decision.reason_code}",
+            payload=payload,
+            policy_id=decision.policy_id,
+            policy_digest=policy_digest_value,
+            state_refs=[state.message_id],
+            related_message_ids=related_message_ids,
+        )
+    )
+    return event.audit_id
 
 
 def main(impaired_network_profile: str = "degraded_teleop") -> None:
@@ -180,17 +256,23 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
     )
     impaired_profile_state = profile(impaired_network_profile)
 
-    central_identity = AgentAttestation(
-        agent_id=CENTRAL_AGENT_ID,
-        kind="central_agent",
-        manifest_digest="sha256:demo-central-agent-v0.1",
-        public_key_id="demo-central-ed25519-non-production",
+    central_identity = sign_attestation(
+        AgentAttestation(
+            agent_id=CENTRAL_AGENT_ID,
+            kind="central_agent",
+            manifest_digest="sha256:demo-central-agent-v0.1",
+            public_key_id="demo-central-ed25519-non-production",
+        ),
+        central_key,
     )
-    edge_identity = AgentAttestation(
-        agent_id=EDGE_AGENT_ID,
-        kind="edge_agent",
-        manifest_digest="sha256:demo-edge-agent-v0.1",
-        public_key_id="demo-edge-ed25519-non-production",
+    edge_identity = sign_attestation(
+        AgentAttestation(
+            agent_id=EDGE_AGENT_ID,
+            kind="edge_agent",
+            manifest_digest="sha256:demo-edge-agent-v0.1",
+            public_key_id="demo-edge-ed25519-non-production",
+        ),
+        edge_key,
     )
     robot = RobotIdentity(
         robot_id=ROBOT_ID,
@@ -267,11 +349,12 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
         "normal network state observed for remote_assist request",
         normal_state.model_dump(mode="json"),
     )
-    decision, reason, alternatives, constraints, decision_audit = evaluate_policy(
+    policy_evaluation_log = AuditLog()
+    decision, reason, alternatives, constraints, _ = evaluate_policy(
         request,
         normal_state,
         policy,
-        audit_log=log,
+        audit_log=policy_evaluation_log,
         deciding_actor_id=ISSUER_ID,
         agent_public_keys_by_id=agent_public_keys_by_id,
         edge_public_keys_by_id=edge_public_keys_by_id,
@@ -301,7 +384,14 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
         policy_digest=active_policy_digest,
         lease=lease,
         safe_alternatives=alternatives,
-        audit_id=decision_audit.audit_id,
+        audit_id=f"audit_{uuid4().hex}",
+    )
+    audit_capability_decision(
+        log,
+        cap_decision,
+        request=request,
+        state=normal_state,
+        policy_digest_value=active_policy_digest,
     )
     print_json("normal_network_decision", cap_decision)
 

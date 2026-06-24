@@ -161,6 +161,44 @@ def test_audit_log_rejects_authority_event_type_demoted_to_diagnostic_grade():
         log.append(event)
 
 
+def test_load_jsonl_rejects_demoted_authority_event_without_explicit_diagnostic_import(
+    tmp_path,
+):
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.CAPABILITY_ALLOWED,
+        actor_id="issuer",
+        robot_id="robot",
+        mission_id="mission",
+        summary="allow",
+        payload={"reason_code": "POLICY_SATISFIED"},
+    )
+    demoted = log.events[0].model_dump(mode="json")
+    demoted.update(
+        {
+            "event_type": AuditEventType.DIAGNOSTIC.value,
+            "authority_relevant": False,
+            "robot_id": None,
+            "mission_id": None,
+            "summary": "diagnostic-looking imported event",
+        }
+    )
+    demoted_event = AuditCommit.model_validate(demoted)
+    demoted["integrity_proof"] = AuditLog()._integrity_proof(demoted_event, None)
+    path = tmp_path / "demoted-authority.jsonl"
+    path.write_text(json.dumps(demoted) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="trusted audit chain head required"):
+        load_jsonl(path)
+    with pytest.raises(ValueError, match="trusted audit chain head"):
+        load_jsonl(path, trusted_chain_head=log.chain_head)
+
+    loaded = load_jsonl(path, import_profile="diagnostic_only")
+    assert loaded[0].event_type == AuditEventType.DIAGNOSTIC
+    assert loaded[0].authority_relevant is False
+
+
 def test_load_jsonl_rejects_tampered_chain(tmp_path):
     log = AuditLog()
     log.record(
@@ -251,6 +289,30 @@ def test_load_jsonl_rejects_missing_payload_hash(tmp_path):
 
     with pytest.raises(ValueError, match="payload_hash"):
         load_jsonl(path)
+
+
+@pytest.mark.parametrize("required_field", ["payload_hash", "integrity_proof"])
+def test_load_jsonl_rejects_null_required_integrity_field_before_model_repair(
+    tmp_path,
+    required_field,
+):
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.COMMAND_REJECTED,
+        actor_id="edge",
+        robot_id="robot",
+        mission_id="mission",
+        summary="reject",
+        payload={"reason_code": "NO_LEASE"},
+    )
+    event = log.events[0].model_dump(mode="json")
+    event[required_field] = None
+    path = tmp_path / f"null-{required_field}.jsonl"
+    path.write_text(json.dumps(event) + "\n")
+
+    with pytest.raises(ValueError, match=required_field):
+        load_jsonl(path, trusted_chain_head=log.chain_head)
 
 
 def test_load_jsonl_rejects_missing_common_envelope_fields(tmp_path):

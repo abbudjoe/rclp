@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import datetime, timedelta, timezone
 
 from rclp_core.crypto import verify_with_public_key_b64
@@ -9,6 +9,7 @@ from rclp_core.models import RobotStateAssertion
 
 DEFAULT_STATE_MAX_AGE_SECONDS = 30
 STATE_CLOCK_SKEW_SECONDS = 30
+ROBOT_STATE_REQUIRED_WIRE_FIELDS = frozenset({"safety_state"})
 
 
 def state_time_violation(
@@ -38,7 +39,11 @@ def state_time_violation(
 def state_auth_violation(
     state: RobotStateAssertion,
     edge_public_keys_by_id: Mapping[str, str],
+    *,
+    required_wire_fields: Collection[str] = ROBOT_STATE_REQUIRED_WIRE_FIELDS,
 ) -> str | None:
+    if not set(required_wire_fields).issubset(state.model_fields_set):
+        return "STATE_REQUIRED_FIELD_MISSING"
     if state.authenticated_edge_agent_id is None:
         return "STATE_AUTHENTICATED_EDGE_MISSING"
     if state.authenticated_edge_agent_id != state.edge_agent_id:

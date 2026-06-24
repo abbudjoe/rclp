@@ -5,7 +5,7 @@ use crate::crypto::{
     verify_dev_hmac_sha256, verify_dev_hmac_sha256_command, verify_dev_hmac_sha256_local_context,
     DEV_HMAC_SHA256_ALG,
 };
-use crate::replay::ReplayCache;
+use crate::replay::{ReplayCache, ReplayConsumeResult};
 use crate::types::{
     CapabilityConstraintRequirement, CapabilityLeaseClaims, Decision, EdgeCommand,
     LeaseConstraints, NetworkProfile, NetworkViolationAction, ReasonCode, TrustedVerifierContext,
@@ -108,9 +108,7 @@ pub fn verify(
     if numeric_fields_malformed(&input, trusted_context) {
         return deny_untrusted_command(&input, trusted_context, ReasonCode::DenyMalformedInput);
     }
-    if let Some(reason) = policy_digest_violation(trusted_context, claims) {
-        return deny_untrusted_command(&input, trusted_context, reason);
-    }
+    let policy_digest_reason = policy_digest_violation(trusted_context, claims);
     if signed_material_budget_violation(&input) {
         return deny_untrusted_command(
             &input,
@@ -129,8 +127,16 @@ pub fn verify(
         return deny_untrusted_command(&input, trusted_context, ReasonCode::DenyMalformedInput);
     }
 
-    if let Some(reason) = command_auth_violation(&input, trusted_context, replay_cache) {
-        return deny_untrusted_command(&input, trusted_context, reason);
+    if let Some(reason) = command_auth_violation(&input, trusted_context) {
+        return deny_untrusted_command(
+            &input,
+            trusted_context,
+            policy_digest_reason.unwrap_or(reason),
+        );
+    }
+
+    if let Some(reason) = policy_digest_reason {
+        return deny(&input, trusted_context, reason);
     }
 
     if !trusted_context
@@ -222,8 +228,8 @@ pub fn verify(
     }
     if let Some(reason) = network_policy_violation(&input) {
         if reason == ReasonCode::DegradeNetworkPolicy {
-            if !replay_cache.consume_nonce(&claims.nonce) {
-                return deny(&input, trusted_context, ReasonCode::DenyReplayedNonce);
+            if let Some(replay_reason) = final_replay_violation(&input, claims, replay_cache) {
+                return deny(&input, trusted_context, replay_reason);
             }
             return decision(&input, trusted_context, Decision::Degrade, reason);
         }
@@ -233,8 +239,8 @@ pub fn verify(
         return deny(&input, trusted_context, reason);
     }
 
-    if !replay_cache.consume_nonce(&claims.nonce) {
-        return deny(&input, trusted_context, ReasonCode::DenyReplayedNonce);
+    if let Some(reason) = final_replay_violation(&input, claims, replay_cache) {
+        return deny(&input, trusted_context, reason);
     }
     decision(&input, trusted_context, Decision::Allow, ReasonCode::Allow)
 }
@@ -378,7 +384,6 @@ fn numeric_fields_malformed(
 fn command_auth_violation(
     input: &VerificationInput,
     trusted_context: &TrustedVerifierContext,
-    replay_cache: &mut dyn ReplayCache,
 ) -> Option<ReasonCode> {
     let command = &input.command;
     if command.authenticated_agent_id.trim().is_empty() {
@@ -408,6 +413,15 @@ fn command_auth_violation(
     if let Some(reason) = command_time_violation(input, trusted_context) {
         return Some(reason);
     }
+    None
+}
+
+fn final_replay_violation(
+    input: &VerificationInput,
+    claims: &CapabilityLeaseClaims,
+    replay_cache: &mut dyn ReplayCache,
+) -> Option<ReasonCode> {
+    let command = &input.command;
     let command_id_key = format!(
         "command-id:{}:{}",
         command.authenticated_agent_id, command.command_id
@@ -416,12 +430,13 @@ fn command_auth_violation(
         "command-nonce:{}:{}",
         command.authenticated_agent_id, command.command_nonce
     );
-    if !replay_cache.consume_nonce(&command_id_key)
-        || !replay_cache.consume_nonce(&command_nonce_key)
-    {
-        return Some(ReasonCode::DenyReplayedCommand);
+    let lease_nonce_key = claims.nonce.clone();
+    let replay_keys = [command_id_key, command_nonce_key, lease_nonce_key];
+    match replay_cache.consume_nonces(&replay_keys) {
+        ReplayConsumeResult::Consumed => None,
+        ReplayConsumeResult::Rejected { index: 2 } => Some(ReasonCode::DenyReplayedNonce),
+        ReplayConsumeResult::Rejected { .. } => Some(ReasonCode::DenyReplayedCommand),
     }
-    None
 }
 
 fn signed_material_budget_violation(input: &VerificationInput) -> bool {
@@ -660,11 +675,15 @@ fn local_state_auth_violation(
 }
 
 fn command_constraint_violation(input: &VerificationInput) -> Option<ReasonCode> {
-    let max_speed = input.lease.claims.constraints.max_speed_mps?;
     let command_speed = match command_payload_speed(&input.command.payload) {
-        Ok(Some(speed)) => speed,
-        Ok(None) => return Some(ReasonCode::DenyCommandConstraint),
+        Ok(speed) => speed,
         Err(reason) => return Some(reason),
+    };
+    let Some(max_speed) = input.lease.claims.constraints.max_speed_mps else {
+        return command_speed.map(|_| ReasonCode::DenyCommandConstraint);
+    };
+    let Some(command_speed) = command_speed else {
+        return Some(ReasonCode::DenyCommandConstraint);
     };
     if command_speed > max_speed {
         return Some(ReasonCode::DenyCommandConstraint);
@@ -755,7 +774,13 @@ fn capability_constraints_missing(
     constraints: &LeaseConstraints,
     requirement: &CapabilityConstraintRequirement,
 ) -> bool {
-    (requirement.require_geofence_id && constraints.geofence_id.is_none())
+    let geofence_id_missing = constraints
+        .geofence_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty();
+    (requirement.require_geofence_id && geofence_id_missing)
         || (requirement.require_network_thresholds
             && (constraints.max_latency_ms_p95.is_none()
                 || constraints.max_packet_loss_pct.is_none()
@@ -774,6 +799,16 @@ fn geofence_violated(input: &VerificationInput) -> bool {
     let Some(geofence_id) = &input.lease.claims.constraints.geofence_id else {
         return false;
     };
+    if geofence_id.trim().is_empty()
+        || input
+            .local_context
+            .geofence_state
+            .geofence_id
+            .trim()
+            .is_empty()
+    {
+        return true;
+    }
     !input.local_context.geofence_state.inside
         || input.local_context.geofence_state.geofence_id != *geofence_id
 }
@@ -910,6 +945,10 @@ fn decision(
         "robot_id": &input.command.robot_id,
         "mission_id": &input.command.mission_id,
         "capability": &input.command.capability,
+        "accepted_policy_id": &trusted_context.policy_id,
+        "accepted_policy_digest": &trusted_context.policy_digest,
+        "presented_policy_id": &input.lease.claims.policy_id,
+        "presented_policy_digest": &input.lease.claims.policy_digest,
         "local_context_observed_at_unix_ms": input.local_context.observed_at_unix_ms,
     });
     VerificationDecision {

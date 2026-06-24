@@ -14,6 +14,7 @@ from rclp_core.models import (
     CapabilityRequest,
     GeofenceState,
     RobotStateAssertion,
+    SafetyState,
 )
 from rclp_core.network import profile
 from rclp_core.policy import Policy, RequestReplayCache, _evaluate_policy_inputs, policy_digest
@@ -40,6 +41,7 @@ def signed_request(key: DemoKeyPair) -> CapabilityRequest:
         mission_id=MISSION_ID,
         capability=Capability.REMOTE_ASSIST,
         reason="conformance scenario",
+        requested_duration_seconds=600,
     )
     request.signature = key.sign(request)
     return request
@@ -51,8 +53,10 @@ def robot_state(network_profile: str) -> RobotStateAssertion:
         edge_agent_id=EDGE_AGENT_ID,
         authenticated_edge_agent_id=EDGE_AGENT_ID,
         mission_id=MISSION_ID,
+        safety_state=SafetyState.NOMINAL,
         network_state=profile(network_profile),
         geofence_state=GeofenceState(geofence_id="test-zone-a", inside=True),
+        human_operator_available=True,
     )
     state.signature = EDGE_KEY.sign(state)
     return state

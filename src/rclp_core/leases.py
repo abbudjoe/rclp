@@ -14,6 +14,24 @@ from rclp_core.models import (
 )
 
 
+ED25519_SIGNATURE_BYTES = 64
+ED25519_SIGNATURE_B64_MAX_TEXT_BYTES = 4 * ((ED25519_SIGNATURE_BYTES + 2) // 3)
+MAX_SIGNED_TEXT_FIELD_BYTES = 1_024
+MAX_SIGNED_TEXT_TOTAL_BYTES = 16_384
+
+
+class _SignedTextBudget:
+    def __init__(self) -> None:
+        self.total_bytes = 0
+
+    def exceeded(self, value: object | None) -> bool:
+        if value is None:
+            return False
+        size = len(str(value).encode("utf-8"))
+        self.total_bytes += size
+        return size > MAX_SIGNED_TEXT_FIELD_BYTES or self.total_bytes > MAX_SIGNED_TEXT_TOTAL_BYTES
+
+
 def _timestamp_is_naive(value: datetime) -> bool:
     return value.tzinfo is None or value.utcoffset() is None
 
@@ -106,6 +124,49 @@ def verify_lease_signature(lease: CapabilityLease, issuer_public_key_b64: str) -
     if not lease.signature:
         return False
     return verify_with_public_key_b64(lease, lease.signature, issuer_public_key_b64)
+
+
+def lease_signature_material_too_large(lease: CapabilityLease) -> bool:
+    if lease.signature is None:
+        return False
+    return len(lease.signature.encode("utf-8")) > ED25519_SIGNATURE_B64_MAX_TEXT_BYTES
+
+
+def lease_signed_material_too_large(lease: CapabilityLease) -> bool:
+    if lease_signature_material_too_large(lease):
+        return True
+
+    text_budget = _SignedTextBudget()
+    constraints = lease.constraints
+    for value in (
+        lease.protocol_version,
+        lease.message_id,
+        lease.correlation_id,
+        lease.created_at.isoformat(),
+        lease.message_type,
+        lease.lease_id,
+        lease.issuer_id,
+        lease.agent_id,
+        lease.edge_agent_id,
+        lease.robot_id,
+        lease.mission_id,
+        lease.capability,
+        constraints.geofence_id,
+        constraints.max_latency_ms_p95,
+        constraints.max_packet_loss_pct,
+        constraints.min_uplink_mbps,
+        constraints.fallback_on_degrade,
+        constraints.max_speed_mps,
+        lease.issued_at.isoformat(),
+        lease.expires_at.isoformat(),
+        lease.nonce,
+        lease.policy_id,
+        lease.policy_digest,
+        lease.signature,
+    ):
+        if text_budget.exceeded(value):
+            return True
+    return False
 
 
 def lease_matches_context(

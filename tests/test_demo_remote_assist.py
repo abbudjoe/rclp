@@ -21,7 +21,11 @@ def test_demo_remote_assist_outputs_full_local_authority_flow(capsys):
 
     setup = json.loads(_section(output, "setup"))
     assert setup["central_agent"]["agent_id"] == "fleet-agent:v0.1"
+    assert setup["central_agent"]["authenticated_agent_id"] == "fleet-agent:v0.1"
+    assert setup["central_agent"]["signature"]
     assert setup["edge_agent"]["agent_id"] == "edge-agent:rover-001"
+    assert setup["edge_agent"]["authenticated_agent_id"] == "edge-agent:rover-001"
+    assert setup["edge_agent"]["signature"]
     assert setup["robot"]["robot_id"] == "rover-001"
     assert setup["mission"]["mission_id"] == "mission-001"
     assert setup["geofence"]["geofence_id"] == "test-zone-a"
@@ -114,6 +118,22 @@ def test_demo_remote_assist_outputs_full_local_authority_flow(capsys):
     assert all(event["integrity_proof"].startswith("sha256:") for event in audit_events)
     assert audit_events[0]["previous_audit_hash"] is None
     assert audit_events[1]["previous_audit_hash"] == audit_events[0]["integrity_proof"]
+    allow_audits = [event for event in audit_events if event["event_type"] == "capability_allowed"]
+    assert len(allow_audits) == 1
+    assert all(event["payload"]["lease_id"] for event in allow_audits)
+    assert all(event["payload"]["lease_message_id"] for event in allow_audits)
+    assert all(event["payload"]["lease_nonce"] for event in allow_audits)
+    assert all(event["payload"]["lease_digest"].startswith("sha256:") for event in allow_audits)
+    lease_audit = allow_audits[0]
+    assert lease_audit["audit_id"] == normal_decision["audit_id"]
+    assert lease_audit["payload"]["lease_id"] == normal_decision["lease"]["lease_id"]
+    assert lease_audit["payload"]["lease_message_id"] == normal_decision["lease"]["message_id"]
+    assert lease_audit["payload"]["lease_nonce"] == normal_decision["lease"]["nonce"]
+    assert lease_audit["payload"]["lease_signature"] == normal_decision["lease"]["signature"]
+    assert lease_audit["payload"]["lease_digest"].startswith("sha256:")
+    assert lease_audit["payload"]["network_state"]["profile"] == "normal"
+    assert lease_audit["payload"]["geofence_state"]["geofence_id"] == "test-zone-a"
+    assert normal_decision["lease"]["message_id"] in lease_audit["related_message_ids"]
     fallback_payloads = [
         event["payload"] for event in audit_events if event["event_type"] == "fallback_declared"
     ]

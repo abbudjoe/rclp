@@ -4,10 +4,11 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from enum import StrEnum
+from numbers import Real
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 SUPPORTED_PROTOCOL_VERSION = "0.0.1-draft"
@@ -16,6 +17,30 @@ STRICT_MODEL_CONFIG = ConfigDict(extra="forbid")
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _reject_coerced_bool(value: Any) -> Any:
+    if not isinstance(value, bool):
+        raise ValueError("authority boolean fields must be JSON booleans")
+    return value
+
+
+def _reject_coerced_int(value: Any) -> Any:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("authority integer fields must be JSON integers")
+    return value
+
+
+def _reject_coerced_number(value: Any) -> Any:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError("authority numeric fields must be JSON numbers")
+    return value
+
+
+def _reject_coerced_optional_number(value: Any) -> Any:
+    if value is None:
+        return value
+    return _reject_coerced_number(value)
 
 
 class Capability(StrEnum):
@@ -96,11 +121,15 @@ def protocol_version_violation(*messages: BaseMessage) -> str | None:
 class AgentAttestation(BaseMessage):
     message_type: Literal["agent_attestation"] = "agent_attestation"
     agent_id: str
+    authenticated_agent_id: str | None = None
     kind: Literal["central_agent", "edge_agent", "human_operator", "service"]
     manifest_digest: str
     public_key_id: str
     trust_tier: Literal["development", "staging", "production"] = "development"
     revoked: bool = False
+    signature: str | None = None
+
+    _validate_revoked_bool = field_validator("revoked", mode="before")(_reject_coerced_bool)
 
 
 AgentIdentity = AgentAttestation
@@ -117,6 +146,11 @@ class MissionContext(StrictModel):
     mission_type: str = "demo"
     human_operator_available: bool = False
 
+    _validate_human_operator_available_bool = field_validator(
+        "human_operator_available",
+        mode="before",
+    )(_reject_coerced_bool)
+
 
 class NetworkState(StrictModel):
     profile: NetworkProfile = NetworkProfile.UNKNOWN
@@ -126,11 +160,21 @@ class NetworkState(StrictModel):
     uplink_mbps: float = Field(ge=0, allow_inf_nan=False)
     observed_at: datetime = Field(default_factory=utc_now)
 
+    _validate_attached_bool = field_validator("attached", mode="before")(_reject_coerced_bool)
+    _validate_network_numbers = field_validator(
+        "latency_ms_p95",
+        "packet_loss_pct",
+        "uplink_mbps",
+        mode="before",
+    )(_reject_coerced_number)
+
 
 class GeofenceState(StrictModel):
     geofence_id: str
     inside: bool
     verified_at: datetime = Field(default_factory=utc_now)
+
+    _validate_inside_bool = field_validator("inside", mode="before")(_reject_coerced_bool)
 
 
 class RobotStateAssertion(BaseMessage):
@@ -145,6 +189,11 @@ class RobotStateAssertion(BaseMessage):
     observed_at: datetime = Field(default_factory=utc_now)
     human_operator_available: bool = True
     signature: str | None = None
+
+    _validate_human_operator_available_bool = field_validator(
+        "human_operator_available",
+        mode="before",
+    )(_reject_coerced_bool)
 
 
 class NetworkStateAssertion(BaseMessage):
@@ -162,6 +211,18 @@ class NetworkStateAssertion(BaseMessage):
     source: str
     signature: str | None = None
 
+    _validate_attached_bool = field_validator("attached", mode="before")(_reject_coerced_bool)
+    _validate_network_numbers = field_validator(
+        "latency_ms_p95",
+        "packet_loss_pct",
+        "uplink_mbps",
+        mode="before",
+    )(_reject_coerced_number)
+    _validate_measurement_window_seconds_int = field_validator(
+        "measurement_window_seconds",
+        mode="before",
+    )(_reject_coerced_int)
+
 
 class LeaseConstraints(StrictModel):
     geofence_id: str | None = None
@@ -170,6 +231,14 @@ class LeaseConstraints(StrictModel):
     min_uplink_mbps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     fallback_on_degrade: FallbackAction = FallbackAction.LOCAL_AUTONOMY_ONLY
     max_speed_mps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    _validate_constraint_numbers = field_validator(
+        "max_latency_ms_p95",
+        "max_packet_loss_pct",
+        "min_uplink_mbps",
+        "max_speed_mps",
+        mode="before",
+    )(_reject_coerced_optional_number)
 
 
 class CapabilityRequest(BaseMessage):
@@ -186,6 +255,11 @@ class CapabilityRequest(BaseMessage):
     request_nonce: str = Field(default_factory=lambda: f"nonce_{uuid4().hex}")
     signature: str | None = None
 
+    _validate_requested_duration_seconds_int = field_validator(
+        "requested_duration_seconds",
+        mode="before",
+    )(_reject_coerced_int)
+
 
 class CapabilityConstraintRequirement(StrictModel):
     capability: Capability
@@ -193,6 +267,14 @@ class CapabilityConstraintRequirement(StrictModel):
     require_network_thresholds: bool = False
     require_fallback_on_degrade: bool = False
     require_max_speed_mps: bool = False
+
+    _validate_requirement_bools = field_validator(
+        "require_geofence_id",
+        "require_network_thresholds",
+        "require_fallback_on_degrade",
+        "require_max_speed_mps",
+        mode="before",
+    )(_reject_coerced_bool)
 
 
 class CapabilityLease(BaseMessage):
@@ -299,6 +381,11 @@ class AuditCommit(BaseMessage):
     policy_digest: str | None = None
     state_refs: list[str] = Field(default_factory=list)
     related_message_ids: list[str] = Field(default_factory=list)
+
+    _validate_authority_relevant_bool = field_validator(
+        "authority_relevant",
+        mode="before",
+    )(_reject_coerced_bool)
 
     @model_validator(mode="after")
     def commit_payload_hash(self) -> "AuditCommit":

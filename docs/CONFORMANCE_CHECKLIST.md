@@ -25,7 +25,9 @@ the same surface from `src/rclp_core/models.py`.
 
 Minimum v0.0.1 message checklist:
 
-- `AgentAttestation` identifies central and edge software actors.
+- `AgentAttestation` identifies central and edge software actors, binds the
+  claimed `agent_id` to `authenticated_agent_id`, and carries signature material
+  for trust-boundary verification.
 - `RobotStateAssertion` binds robot, edge agent, authenticated edge identity,
   mission, safety state, geofence state, network state, observation time, and
   signature.

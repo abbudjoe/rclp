@@ -9,7 +9,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from rclp_core.audit import AuditLog
 from rclp_core.crypto import verify_with_public_key_b64
@@ -28,6 +28,7 @@ from rclp_core.models import (
 )
 from rclp_core.state import (
     DEFAULT_STATE_MAX_AGE_SECONDS,
+    ROBOT_STATE_REQUIRED_WIRE_FIELDS,
     state_auth_violation,
     state_time_violation,
 )
@@ -35,6 +36,51 @@ from rclp_core.state import (
 
 DEFAULT_REQUEST_MAX_AGE_SECONDS = 300
 REQUEST_CLOCK_SKEW_SECONDS = 30
+ED25519_SIGNATURE_BYTES = 64
+ED25519_SIGNATURE_B64_MAX_TEXT_BYTES = 4 * ((ED25519_SIGNATURE_BYTES + 2) // 3)
+MAX_SIGNED_TEXT_FIELD_BYTES = 1_024
+MAX_SIGNED_TEXT_TOTAL_BYTES = 16_384
+CAPABILITY_REQUEST_REQUIRED_WIRE_FIELDS = frozenset({"requested_duration_seconds"})
+
+
+def _reject_coerced_bool(value: object) -> object:
+    if not isinstance(value, bool):
+        raise ValueError("authority boolean fields must be JSON booleans")
+    return value
+
+
+def _reject_coerced_int(value: object) -> object:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("authority integer fields must be JSON integers")
+    return value
+
+
+def _reject_coerced_number(value: object) -> object:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError("authority numeric fields must be JSON numbers")
+    return value
+
+
+def _reject_coerced_optional_number(value: object) -> object:
+    if value is None:
+        return value
+    return _reject_coerced_number(value)
+
+
+class _SignedTextBudget:
+    def __init__(self) -> None:
+        self.total_bytes = 0
+
+    def exceeded(self, value: object | None) -> bool:
+        if value is None:
+            return False
+        size = len(str(value).encode("utf-8"))
+        self.total_bytes += size
+        return size > MAX_SIGNED_TEXT_FIELD_BYTES or self.total_bytes > MAX_SIGNED_TEXT_TOTAL_BYTES
+
+
+def _required_wire_fields_missing(message: BaseModel, fields: frozenset[str]) -> bool:
+    return not fields.issubset(message.model_fields_set)
 
 
 class RequestReplayCache:
@@ -157,6 +203,16 @@ class NetworkRequirements(BaseModel):
     )
     deny_below_uplink_mbps: float = Field(default=0.8, ge=0, allow_inf_nan=False)
 
+    _validate_network_requirement_numbers = field_validator(
+        "max_latency_ms_p95",
+        "max_packet_loss_pct",
+        "min_uplink_mbps",
+        "deny_above_latency_ms_p95",
+        "deny_above_packet_loss_pct",
+        "deny_below_uplink_mbps",
+        mode="before",
+    )(_reject_coerced_number)
+
     @model_validator(mode="after")
     def validate_degrade_window(self) -> "NetworkRequirements":
         if self.deny_above_latency_ms_p95 < self.max_latency_ms_p95:
@@ -175,10 +231,21 @@ class PolicyRequirements(BaseModel):
     allowed_edge_agents: list[str] = Field(default_factory=list)
     allowed_robots: list[str] = Field(default_factory=list)
     allowed_missions: list[str] = Field(default_factory=list)
+    max_speed_mps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     geofence_required: bool = True
     geofence_allowed: bool = True
     human_operator_available: bool = True
     network: NetworkRequirements = Field(default_factory=NetworkRequirements)
+
+    _validate_max_speed_number = field_validator("max_speed_mps", mode="before")(
+        _reject_coerced_optional_number
+    )
+    _validate_requirement_bools = field_validator(
+        "geofence_required",
+        "geofence_allowed",
+        "human_operator_available",
+        mode="before",
+    )(_reject_coerced_bool)
 
 
 class FallbackPolicy(BaseModel):
@@ -198,6 +265,11 @@ class Policy(BaseModel):
     lease_ttl_seconds: int = Field(default=600, gt=0)
     requirements: PolicyRequirements = Field(default_factory=PolicyRequirements)
     fallback: FallbackPolicy = Field(default_factory=FallbackPolicy)
+
+    _validate_lease_ttl_seconds_int = field_validator(
+        "lease_ttl_seconds",
+        mode="before",
+    )(_reject_coerced_int)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Policy":
@@ -300,14 +372,14 @@ def _maximum_constraint_too_broad(
     requested: float | None,
     allowed: float | None,
 ) -> bool:
-    return requested is not None and allowed is not None and requested > allowed
+    return requested is not None and (allowed is None or requested > allowed)
 
 
 def _minimum_constraint_too_broad(
     requested: float | None,
     allowed: float | None,
 ) -> bool:
-    return requested is not None and allowed is not None and requested < allowed
+    return requested is not None and (allowed is None or requested < allowed)
 
 
 def _apply_requested_constraints(
@@ -348,6 +420,8 @@ def _request_auth_violation(
     request: CapabilityRequest,
     agent_public_keys_by_id: Mapping[str, str],
 ) -> str | None:
+    if _required_wire_fields_missing(request, CAPABILITY_REQUEST_REQUIRED_WIRE_FIELDS):
+        return "REQUEST_REQUIRED_FIELD_MISSING"
     if request.authenticated_agent_id is None:
         return "REQUEST_AUTHENTICATED_AGENT_MISSING"
     if request.authenticated_agent_id != request.requesting_agent_id:
@@ -357,9 +431,52 @@ def _request_auth_violation(
     public_key = agent_public_keys_by_id.get(request.authenticated_agent_id)
     if public_key is None:
         return "AGENT_KEY_NOT_TRUSTED"
+    if _signed_request_material_budget_violation(request):
+        return "REQUEST_SIGNED_MATERIAL_TOO_LARGE"
     if not verify_with_public_key_b64(request, request.signature, public_key):
         return "REQUEST_SIGNATURE_INVALID"
     return None
+
+
+def _request_signature_material_too_large(request: CapabilityRequest) -> bool:
+    return (
+        request.signature is not None
+        and len(request.signature.encode("utf-8")) > ED25519_SIGNATURE_B64_MAX_TEXT_BYTES
+    )
+
+
+def _signed_request_material_budget_violation(request: CapabilityRequest) -> bool:
+    if _request_signature_material_too_large(request):
+        return True
+
+    text_budget = _SignedTextBudget()
+    constraints = request.requested_constraints
+    for value in (
+        request.protocol_version,
+        request.message_id,
+        request.correlation_id,
+        request.created_at.isoformat(),
+        request.message_type,
+        request.requesting_agent_id,
+        request.authenticated_agent_id,
+        request.edge_agent_id,
+        request.robot_id,
+        request.mission_id,
+        request.capability,
+        request.reason,
+        request.requested_duration_seconds,
+        constraints.geofence_id if constraints is not None else None,
+        constraints.max_latency_ms_p95 if constraints is not None else None,
+        constraints.max_packet_loss_pct if constraints is not None else None,
+        constraints.min_uplink_mbps if constraints is not None else None,
+        constraints.fallback_on_degrade if constraints is not None else None,
+        constraints.max_speed_mps if constraints is not None else None,
+        request.request_nonce,
+        request.signature,
+    ):
+        if text_budget.exceeded(value):
+            return True
+    return False
 
 
 def _evaluate_network_requirements(
@@ -455,7 +572,14 @@ def _evaluate_policy_inputs(
         return Decision.DENY, "STATE_ASSERTION_MISMATCH", [policy.fallback.on_deny], None
     if state.mission_id != request.mission_id:
         return Decision.DENY, "MISSION_STATE_MISMATCH", [policy.fallback.on_deny], None
-    if state_auth_reason := state_auth_violation(state, edge_public_keys_by_id):
+    required_state_wire_fields = ROBOT_STATE_REQUIRED_WIRE_FIELDS
+    if req.human_operator_available:
+        required_state_wire_fields = required_state_wire_fields | {"human_operator_available"}
+    if state_auth_reason := state_auth_violation(
+        state,
+        edge_public_keys_by_id,
+        required_wire_fields=required_state_wire_fields,
+    ):
         return Decision.DENY, state_auth_reason, [policy.fallback.on_deny], None
     if state_time_reason := state_time_violation(
         state,
@@ -487,6 +611,7 @@ def _evaluate_policy_inputs(
         max_packet_loss_pct=req.network.max_packet_loss_pct,
         min_uplink_mbps=req.network.min_uplink_mbps,
         fallback_on_degrade=policy.fallback.on_network_degrade,
+        max_speed_mps=req.max_speed_mps,
     )
     if requested_reason := _requested_constraint_violation(
         constraints,

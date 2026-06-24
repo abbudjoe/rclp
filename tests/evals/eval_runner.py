@@ -35,6 +35,7 @@ from rclp_core.models import (
     LeaseRevocation,
     NetworkState,
     RobotStateAssertion,
+    SafetyState,
     SUPPORTED_PROTOCOL_VERSION,
 )
 from rclp_core.network import profile
@@ -307,6 +308,7 @@ def make_state(
             context.get("edge_agent_id", EDGE_AGENT_ID),
         ),
         mission_id=context.get("mission_id", MISSION_ID),
+        safety_state=SafetyState(context.get("safety_state", SafetyState.NOMINAL.value)),
         network_state=NetworkState.model_validate(network.model_dump(mode="python")),
         geofence_state=geofence,
         observed_at=state_observed_at,
@@ -436,7 +438,7 @@ def make_command(
         robot_id=command_spec.get("robot_id", ROBOT_ID),
         mission_id=command_spec.get("mission_id", MISSION_ID),
         capability=command_spec.get("capability", CAPABILITY.value),
-        payload=command_spec.get("payload", {"intent": "start_remote_assist"}),
+        payload=command_spec.get("payload", {}),
     )
     return sign_command(command, central_key)
 

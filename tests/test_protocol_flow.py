@@ -21,6 +21,7 @@ from rclp_core.models import (
     NetworkProfile,
     NetworkState,
     RobotStateAssertion,
+    SafetyState,
 )
 from rclp_core.network import profile, profile_names
 from rclp_core.policy import (
@@ -79,6 +80,7 @@ def make_request(**updates) -> CapabilityRequest:
         mission_id="mission-001",
         capability=Capability.REMOTE_ASSIST,
         reason="test",
+        requested_duration_seconds=600,
     )
     if updates:
         request = request.model_copy(update=updates)
@@ -91,8 +93,10 @@ def make_state(network_profile: str = "normal") -> RobotStateAssertion:
             robot_id="rover-001",
             edge_agent_id=EDGE_AGENT_ID,
             mission_id="mission-001",
+            safety_state=SafetyState.NOMINAL,
             network_state=profile(network_profile),
             geofence_state=GeofenceState(geofence_id="test-zone-a", inside=True),
+            human_operator_available=True,
         )
     )
 

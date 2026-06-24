@@ -13,6 +13,7 @@ def request_remote_assist(signing_key: DemoKeyPair) -> CapabilityRequest:
         mission_id="mission-001",
         capability=Capability.REMOTE_ASSIST,
         reason="central mock requests remote assist",
+        requested_duration_seconds=600,
     )
     request.signature = signing_key.sign(request)
     return request

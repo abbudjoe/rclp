@@ -85,10 +85,28 @@ def _signed_command_material_budget_violation(command: Command) -> bool:
     return _command_payload_budget_violation(command.payload)
 
 
-def _signed_text_field_budget_violation(value: str | None) -> bool:
-    if value is None:
-        return False
-    return len(value.encode("utf-8")) > MAX_SIGNED_TEXT_FIELD_BYTES
+def _signed_revocation_material_budget_violation(revocation: LeaseRevocation) -> bool:
+    text_budget = _SignedTextBudget()
+    for value in (
+        revocation.protocol_version,
+        revocation.message_id,
+        revocation.correlation_id,
+        revocation.created_at.isoformat(),
+        revocation.message_type,
+        revocation.lease_id,
+        revocation.revoked_by,
+        revocation.edge_agent_id,
+        revocation.reason_code,
+        revocation.revoked_at.isoformat(),
+        revocation.fallback_action,
+        revocation.robot_id,
+        revocation.mission_id,
+        revocation.capability,
+        revocation.signature,
+    ):
+        if text_budget.exceeded(str(value) if value is not None else None):
+            return True
+    return False
 
 
 def _command_payload_budget_violation(payload: object) -> bool:
@@ -491,6 +509,33 @@ class CommandReplayCache:
         self._seen_nonces.add(nonce_key)
         return True
 
+    def contains(self, command: Command) -> bool:
+        if command.authenticated_agent_id is None:
+            return False
+        command_id_key = (command.authenticated_agent_id, command.command_id)
+        nonce_key = (command.authenticated_agent_id, command.command_nonce)
+        if self._store_path is not None:
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT 1
+                    FROM command_replay_entries
+                    WHERE authenticated_agent_id = ?
+                      AND (
+                        (replay_kind = 'command_id' AND replay_value = ?)
+                        OR (replay_kind = 'command_nonce' AND replay_value = ?)
+                      )
+                    LIMIT 1
+                    """,
+                    (
+                        command.authenticated_agent_id,
+                        command.command_id,
+                        command.command_nonce,
+                    ),
+                ).fetchone()
+            return row is not None
+        return command_id_key in self._seen_command_ids or nonce_key in self._seen_nonces
+
 
 class CommandGate:
     """ROS-agnostic command gate.
@@ -649,13 +694,14 @@ class CommandGate:
         if lease is None:
             self.audit_log.record(
                 event_type=AuditEventType.DIAGNOSTIC,
-                actor_id=revoked_by,
+                actor_id="local_command_gate",
                 correlation_id=record.correlation_id or record.lease_id,
                 summary="revocation rejected because lease context is required",
                 payload={
                     "lease_id": record.lease_id,
                     "reason_code": "REVOCATION_CONTEXT_REQUIRED",
                     "revocation_id": record.revocation_id,
+                    "claimed_revoked_by": revoked_by,
                 },
                 authority_relevant=False,
                 related_message_ids=[record.revocation_id] if record.revocation_id else [],
@@ -671,10 +717,34 @@ class CommandGate:
             )
             raise ValueError("revocation protocol version is unsupported")
 
+        if (
+            lease.edge_agent_id != self.local_edge_agent_id
+            or revocation.edge_agent_id != self.local_edge_agent_id
+        ):
+            self.audit_log.record(
+                event_type=AuditEventType.REVOCATION_REJECTED,
+                actor_id="local_command_gate",
+                robot_id=lease.robot_id,
+                mission_id=lease.mission_id,
+                correlation_id=record.correlation_id or record.lease_id,
+                summary="revocation rejected because edge context is not local",
+                payload={
+                    "lease_id": record.lease_id,
+                    "revocation_id": record.revocation_id,
+                    "claimed_revoked_by": revoked_by,
+                    "expected_edge_agent_id": self.local_edge_agent_id,
+                    "revocation_edge_agent_id": revocation.edge_agent_id,
+                    "lease_edge_agent_id": lease.edge_agent_id,
+                    "reason_code": "REVOCATION_EDGE_AGENT_MISMATCH",
+                },
+                related_message_ids=[record.revocation_id] if record.revocation_id else [],
+            )
+            raise ValueError("revocation edge_agent_id does not match local edge")
+
         if revoked_by not in self.trusted_revoker_ids:
             self.audit_log.record(
                 event_type=AuditEventType.REVOCATION_REJECTED,
-                actor_id=revoked_by,
+                actor_id="local_command_gate",
                 robot_id=lease.robot_id,
                 mission_id=lease.mission_id,
                 correlation_id=record.correlation_id or record.lease_id,
@@ -682,7 +752,7 @@ class CommandGate:
                 payload={
                     "lease_id": record.lease_id,
                     "revocation_id": record.revocation_id,
-                    "revoked_by": revoked_by,
+                    "claimed_revoked_by": revoked_by,
                     "reason_code": "REVOCATION_ACTOR_NOT_TRUSTED",
                 },
                 related_message_ids=[record.revocation_id] if record.revocation_id else [],
@@ -697,7 +767,7 @@ class CommandGate:
                 summary="revocation rejected because signature is missing",
             )
             raise ValueError("revocation signature is missing")
-        if _signed_text_field_budget_violation(revocation.signature):
+        if _signed_revocation_material_budget_violation(revocation):
             self._record_revocation_rejected(
                 revocation=revocation,
                 lease=lease,
@@ -753,6 +823,7 @@ class CommandGate:
                 lease=lease,
                 reason_code=time_reason,
                 summary=f"revocation rejected because it is not fresh: {time_reason}",
+                authenticated_actor=True,
             )
             raise ValueError("revocation is not fresh")
 
@@ -802,6 +873,7 @@ class CommandGate:
                 lease=lease,
                 reason_code="REVOCATION_REPLAYED",
                 summary="revocation rejected because revocation_id was already accepted",
+                authenticated_actor=True,
             )
             return None
         self.revocations[record.lease_id] = record
@@ -850,10 +922,11 @@ class CommandGate:
                 current_state=current_state,
                 reason=auth_reason,
                 emit_fallback=False,
+                authority_relevant=False,
             )
         if self._local_edge_context_mismatch(command, lease):
             return self._reject_local_edge_mismatch(command=command, lease=lease)
-        if not self.command_replay_cache.remember(command):
+        if self.command_replay_cache.contains(command):
             return self._reject_command(
                 command=command,
                 lease=lease,
@@ -886,6 +959,14 @@ class CommandGate:
             now=now,
         )
         if ok:
+            if not self.command_replay_cache.remember(command):
+                return self._reject_command(
+                    command=command,
+                    lease=lease,
+                    current_state=current_state,
+                    reason="COMMAND_REPLAYED",
+                    emit_fallback=False,
+                )
             payload = {
                 "command_id": command.command_id,
                 "command_message_id": command.message_id,
@@ -917,6 +998,14 @@ class CommandGate:
                 related_message_ids=related_message_ids,
             )
             return GateResult(allowed=True, reason_code=reason, audit_id=event.audit_id)
+        if not self.command_replay_cache.remember(command):
+            return self._reject_command(
+                command=command,
+                lease=lease,
+                current_state=current_state,
+                reason="COMMAND_REPLAYED",
+                emit_fallback=False,
+            )
         return self._reject_command(
             command=command,
             lease=lease,
@@ -971,6 +1060,7 @@ class CommandGate:
         current_state: RobotStateAssertion | None,
         reason: str,
         emit_fallback: bool = True,
+        authority_relevant: bool = True,
     ) -> GateResult:
         revocation = self._matching_authenticated_revocation(command, lease, reason)
         command_correlation_id = self._command_correlation_id(command, lease, revocation)
@@ -1011,15 +1101,15 @@ class CommandGate:
             payload["current_state"] = current_state.model_dump(mode="json")
         event = self.audit_log.record(
             event_type=AuditEventType.COMMAND_REJECTED
-            if emit_fallback
+            if authority_relevant
             else AuditEventType.DIAGNOSTIC,
-            actor_id=command.edge_agent_id if emit_fallback else "local_command_gate",
-            robot_id=command.robot_id if emit_fallback else None,
-            mission_id=command.mission_id if emit_fallback else None,
+            actor_id=command.edge_agent_id if authority_relevant else "local_command_gate",
+            robot_id=command.robot_id if authority_relevant else None,
+            mission_id=command.mission_id if authority_relevant else None,
             correlation_id=command_correlation_id,
             summary=f"command {command.command_id} rejected: {reason}",
             payload=payload,
-            authority_relevant=emit_fallback,
+            authority_relevant=authority_relevant,
             state_refs=state_refs,
             related_message_ids=related_message_ids,
         )
@@ -1126,10 +1216,17 @@ class CommandGate:
         lease: CapabilityLease,
         reason_code: str,
         summary: str,
+        authenticated_actor: bool = False,
     ) -> None:
+        actor_id = revocation.revoked_by if authenticated_actor else "local_command_gate"
+        actor_payload = (
+            {"revoked_by": revocation.revoked_by}
+            if authenticated_actor
+            else {"claimed_revoked_by": revocation.revoked_by}
+        )
         self.audit_log.record(
             event_type=AuditEventType.REVOCATION_REJECTED,
-            actor_id=revocation.revoked_by,
+            actor_id=actor_id,
             robot_id=lease.robot_id,
             mission_id=lease.mission_id,
             correlation_id=revocation.correlation_id or lease.lease_id,
@@ -1137,7 +1234,7 @@ class CommandGate:
             payload={
                 "lease_id": revocation.lease_id,
                 "revocation_id": revocation.message_id,
-                "revoked_by": revocation.revoked_by,
+                **actor_payload,
                 "reason_code": reason_code,
             },
             related_message_ids=[revocation.message_id],

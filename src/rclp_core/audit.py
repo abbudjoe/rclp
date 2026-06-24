@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -235,7 +235,17 @@ class AuditLog:
         )
 
 
-def load_jsonl(path: str | Path, *, trusted_chain_head: str | None = None) -> list[AuditCommit]:
+AuditImportProfile = Literal["authority_chain", "diagnostic_only"]
+
+
+def load_jsonl(
+    path: str | Path,
+    *,
+    trusted_chain_head: str | None = None,
+    import_profile: AuditImportProfile = "authority_chain",
+) -> list[AuditCommit]:
+    if import_profile not in {"authority_chain", "diagnostic_only"}:
+        raise ValueError(f"unsupported audit import profile: {import_profile}")
     events: list[AuditCommit] = []
     audit_ids: set[str] = set()
     previous_hash: str | None = None
@@ -248,6 +258,10 @@ def load_jsonl(path: str | Path, *, trusted_chain_head: str | None = None) -> li
             if missing_fields:
                 missing = ", ".join(sorted(missing_fields))
                 raise ValueError(f"audit event missing required fields: {missing}")
+            null_fields = {field for field in LOAD_REQUIRED_FIELDS if raw_event.get(field) is None}
+            if null_fields:
+                null = ", ".join(sorted(null_fields))
+                raise ValueError(f"audit event required fields cannot be null: {null}")
             event = AuditCommit.model_validate(raw_event)
             if event.audit_id in audit_ids:
                 raise ValueError(f"duplicate audit_id: {event.audit_id}")
@@ -262,9 +276,13 @@ def load_jsonl(path: str | Path, *, trusted_chain_head: str | None = None) -> li
             audit_ids.add(event.audit_id)
             events.append(event)
             previous_hash = event.integrity_proof
-    if authority_events:
+    if import_profile == "diagnostic_only":
+        if authority_events:
+            raise ValueError("diagnostic-only audit import cannot include authority events")
+        return events
+    if events:
         if trusted_chain_head is None:
-            raise ValueError("trusted audit chain head required for authority events")
+            raise ValueError("trusted audit chain head required for audit import")
         if trusted_chain_head != previous_hash:
             raise ValueError("trusted audit chain head does not match audit chain")
     return events

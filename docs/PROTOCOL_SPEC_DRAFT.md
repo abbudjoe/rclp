@@ -107,6 +107,8 @@ Required fields:
 - `public_key_id`
 - `trust_tier`
 - `created_at`
+- `authenticated_agent_id`
+- `signature` or equivalent authenticated envelope
 
 Optional fields:
 
@@ -119,6 +121,8 @@ Rejection conditions:
 - attestation is stale for the active profile
 - manifest digest does not match the referenced implementation manifest
 - authenticated identity does not match `agent_id`
+- signature is missing, malformed, or invalid
+- authenticated identity key is not trusted for the active profile
 - agent is revoked or outside the accepted trust tier
 
 Audit impact:

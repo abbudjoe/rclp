@@ -15,6 +15,8 @@ contract that conformance tests should check against the Pydantic models.
 ## Minimum conformance cases
 
 - valid remote-assist request allowed
+- missing, invalid-signature, untrusted-key, or actor-mismatched
+  `AgentAttestation` rejected before trust-boundary identity bootstrap
 - soft degraded network degrades authority
 - hard network failure denied
 - no lease rejected
