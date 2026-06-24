@@ -277,6 +277,24 @@ class CapabilityConstraintRequirement(StrictModel):
     )(_reject_coerced_bool)
 
 
+class CapabilityConstraintBounds(StrictModel):
+    capability: Capability
+    geofence_id: str | None = None
+    max_latency_ms_p95: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    max_packet_loss_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    min_uplink_mbps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    fallback_on_degrade: FallbackAction | None = None
+    max_speed_mps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    _validate_bound_numbers = field_validator(
+        "max_latency_ms_p95",
+        "max_packet_loss_pct",
+        "min_uplink_mbps",
+        "max_speed_mps",
+        mode="before",
+    )(_reject_coerced_optional_number)
+
+
 class CapabilityLease(BaseMessage):
     protocol_version: str
     message_id: str

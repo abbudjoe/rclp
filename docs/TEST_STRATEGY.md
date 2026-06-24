@@ -57,6 +57,8 @@ contract that conformance tests should check against the Pydantic models.
 - signed lease policy id/digest mismatch rejected by the Rust verifier
 - Python command gate rejects signed leases whose policy id/digest is missing
   or not accepted by the local policy pin
+- Python command gate and Rust verifier reject signed lease constraints that
+  exceed accepted local policy-bound constraint values
 - Rust verifier rejects non-durable replay caches before authority decisions
   and preserves replay state across verifier restart when using a shared store
 - Rust verifier rejects oversized signed command scalar fields and oversized or

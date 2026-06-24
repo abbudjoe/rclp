@@ -7,9 +7,9 @@ use crate::crypto::{
 };
 use crate::replay::{ReplayCache, ReplayConsumeResult};
 use crate::types::{
-    CapabilityConstraintRequirement, CapabilityLeaseClaims, Decision, EdgeCommand,
-    LeaseConstraints, NetworkProfile, NetworkViolationAction, ReasonCode, TrustedVerifierContext,
-    VerificationDecision, VerificationInput,
+    CapabilityConstraintBounds, CapabilityConstraintRequirement, CapabilityLeaseClaims, Decision,
+    EdgeCommand, LeaseConstraints, NetworkProfile, NetworkViolationAction, ReasonCode,
+    TrustedVerifierContext, VerificationDecision, VerificationInput,
 };
 
 const CLOCK_SKEW_MS: i64 = 30_000;
@@ -217,6 +217,13 @@ pub fn verify(
     if required_constraints_missing(claims, trusted_context) {
         return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
     }
+    if lease_constraints_exceed_policy(claims, trusted_context) {
+        return deny(
+            &input,
+            trusted_context,
+            ReasonCode::DenyLeaseConstraintsExceedPolicy,
+        );
+    }
     if let Some(reason) = local_state_auth_violation(&input, trusted_context) {
         return deny(&input, trusted_context, reason);
     }
@@ -261,6 +268,7 @@ fn trusted_scope_malformed(trusted_context: &TrustedVerifierContext) -> bool {
         || trusted_context
             .capability_constraint_requirements
             .is_empty()
+        || trusted_context.capability_constraint_bounds.is_empty()
         || string_list_missing(&trusted_context.trusted_command_agent_ids)
         || trusted_context
             .issuer_capability_scopes
@@ -282,9 +290,24 @@ fn trusted_scope_malformed(trusted_context: &TrustedVerifierContext) -> bool {
                     != 1
             })
         || trusted_context
+            .accepted_capabilities
+            .iter()
+            .any(|capability| {
+                trusted_context
+                    .capability_constraint_bounds
+                    .iter()
+                    .filter(|bounds| bounds.capability == *capability)
+                    .count()
+                    != 1
+            })
+        || trusted_context
             .capability_constraint_requirements
             .iter()
             .any(|requirement| requirement.capability.trim().is_empty())
+        || trusted_context
+            .capability_constraint_bounds
+            .iter()
+            .any(|bounds| bounds.capability.trim().is_empty())
 }
 
 fn string_list_missing(values: &[String]) -> bool {
@@ -379,6 +402,10 @@ fn numeric_fields_malformed(
         || option_malformed_packet_loss(constraints.max_packet_loss_pct)
         || option_malformed_nonnegative(constraints.min_uplink_mbps)
         || option_malformed_nonnegative(constraints.max_speed_mps)
+        || trusted_context
+            .capability_constraint_bounds
+            .iter()
+            .any(constraint_bounds_malformed)
 }
 
 fn command_auth_violation(
@@ -738,6 +765,21 @@ fn option_malformed_packet_loss(value: Option<f64>) -> bool {
     value.is_some_and(|value| !finite_nonnegative(value) || value > 100.0)
 }
 
+fn constraint_bounds_malformed(bounds: &CapabilityConstraintBounds) -> bool {
+    bounds
+        .geofence_id
+        .as_deref()
+        .is_some_and(|value| value.trim().is_empty())
+        || option_malformed_nonnegative(bounds.max_latency_ms_p95)
+        || option_malformed_packet_loss(bounds.max_packet_loss_pct)
+        || option_malformed_nonnegative(bounds.min_uplink_mbps)
+        || option_malformed_nonnegative(bounds.max_speed_mps)
+        || bounds
+            .fallback_on_degrade
+            .as_deref()
+            .is_some_and(|value| value.trim().is_empty())
+}
+
 fn context_robot_matches(
     command: &EdgeCommand,
     claims: &CapabilityLeaseClaims,
@@ -793,6 +835,47 @@ fn capability_constraints_missing(
                 .trim()
                 .is_empty())
         || (requirement.require_max_speed_mps && constraints.max_speed_mps.is_none())
+}
+
+fn lease_constraints_exceed_policy(
+    claims: &CapabilityLeaseClaims,
+    trusted_context: &TrustedVerifierContext,
+) -> bool {
+    let Some(bounds) = trusted_context
+        .capability_constraint_bounds
+        .iter()
+        .find(|bounds| bounds.capability == claims.capability)
+    else {
+        return true;
+    };
+    let constraints = &claims.constraints;
+    bounds
+        .geofence_id
+        .as_ref()
+        .is_some_and(|bound| constraints.geofence_id.as_ref() != Some(bound))
+        || max_field_exceeds_policy(constraints.max_latency_ms_p95, bounds.max_latency_ms_p95)
+        || max_field_exceeds_policy(constraints.max_packet_loss_pct, bounds.max_packet_loss_pct)
+        || min_field_exceeds_policy(constraints.min_uplink_mbps, bounds.min_uplink_mbps)
+        || max_field_exceeds_policy(constraints.max_speed_mps, bounds.max_speed_mps)
+        || option_field_exceeds_policy(
+            constraints.fallback_on_degrade.as_ref(),
+            bounds.fallback_on_degrade.as_ref(),
+        )
+        || constraints
+            .network_violation_action
+            .is_some_and(|action| bounds.network_violation_action != Some(action))
+}
+
+fn max_field_exceeds_policy(value: Option<f64>, bound: Option<f64>) -> bool {
+    value.is_some_and(|value| bound.is_none_or(|bound| value > bound))
+}
+
+fn min_field_exceeds_policy(value: Option<f64>, bound: Option<f64>) -> bool {
+    value.is_some_and(|value| bound.is_none_or(|bound| value < bound))
+}
+
+fn option_field_exceeds_policy(value: Option<&String>, bound: Option<&String>) -> bool {
+    value.is_some_and(|value| bound.is_none_or(|bound| value != bound))
 }
 
 fn geofence_violated(input: &VerificationInput) -> bool {

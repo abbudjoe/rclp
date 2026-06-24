@@ -1,5 +1,71 @@
 # Assembly Ledger
 
+## CAND-0006-001 Policy-Bound Constraint Remediation - 2026-06-24
+
+Status: successful
+
+Source contract:
+
+- User request: commit/push the previous checkpoint, then fix the current
+  Codex Security finding using `assembly`.
+- Finding `CAND-0006-001`: Edge verification trusts signed lease constraints
+  without policy-bound value checks.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/c09f959c361229eb963551d21534bcfb949677a4_20260624T184210Z_fojofzs8/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- The checkpoint commit `fdcee45 Harden RCLP authority controls` was pushed to
+  `origin/main` before this remediation began.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute were required
+  or mutated.
+- Multi-agent tooling was discovered, but its active rule forbids spawning
+  subagents unless the user explicitly asks for subagents/delegation. Assembly
+  spec-conformance review was therefore performed locally and this limitation
+  is recorded here.
+
+Target contract:
+
+Signed lease constraints are not authority by themselves. The edge verifier
+must compare every signed constraint value to an explicit local, typed,
+per-capability policy-bound contract. A lease may narrow authority, but it must
+not add a speed ceiling, relax network thresholds, or choose fallback/network
+actions that the accepted local policy bounds do not grant.
+
+Success criterion:
+
+The original PoC overbroad signed lease no longer authorizes, Python
+`CommandGate` and the Rust edge verifier both enforce policy-bound constraints,
+legitimate narrowed speed-limited leases still exercise command-payload
+validation, evals remain green, and repository validation passes.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Reproduce `CAND-0006-001` before changes. | met | Pre-fix PoC output showed `overbroad_result.allowed: true` with `reason_code: LEASE_VALID` for a signed `max_speed_mps: 100.0` lease under a policy with no speed grant. |
+| Add a typed policy-bound constraint contract visible to edge verifiers. | met | `CapabilityConstraintBounds` was added to Python models and Rust trusted verifier context; `policy_constraint_bounds()` derives bounds from accepted policy; all Rust vectors now include `trusted_context.capability_constraint_bounds`. |
+| Python command gate rejects signed lease constraints broader than accepted policy bounds. | met | `validate_lease_for_command()` now calls `capability_constraint_bound_violation()` after malformed checks. Regressions cover absent speed grants and relaxed network thresholds returning `LEASE_CONSTRAINTS_EXCEED_POLICY`; legitimate policy-owned speed limits still pass payload validation. |
+| Rust edge verifier rejects the same overbroad signed constraint pattern. | met | Rust `lease_constraints_exceed_policy()` denies signed constraints exceeding `CapabilityConstraintBounds`. Regression `signed_lease_constraints_cannot_expand_absent_policy_speed_bound` returns `DENY_LEASE_CONSTRAINTS_EXCEED_POLICY`. |
+| Positive/narrowed behavior remains valid. | met | Existing and updated speed tests verify policy-owned `max_speed_mps: 0.5` leases still allow valid speed aliases and reject too-high, malformed, or conflicting command speeds with command-specific reasons. Eval scenarios now declare their policy speed bounds explicitly. |
+| Normative docs and conformance contract describe the invariant. | met | `docs/PROTOCOL_SPEC_DRAFT.md`, `docs/THREAT_MODEL.md`, and `docs/TEST_STRATEGY.md` now state that signed lease constraints must not exceed local policy-bound constraint values. |
+| Required validation commands and focused evidence pass. | met | `python -m compileall src tests` passed; `.venv/bin/python -m compileall src tests` passed; `.venv/bin/python -m pytest` passed, 230 tests; `.venv/bin/python tests/evals/eval_runner.py` passed, 33 evals; `cargo fmt --manifest-path crates/rclp-edge-verifier/Cargo.toml --check` passed; `cargo test --manifest-path crates/rclp-edge-verifier/Cargo.toml` passed, 3 unit tests and 44 vector tests; `.venv/bin/ruff format --check .` passed; `.venv/bin/ruff check .` passed; `git diff --check` passed. |
+| Original issue no longer reproduces. | met | Post-fix original PoC reports `overbroad_result.allowed: false` with `reason_code: LEASE_CONSTRAINTS_EXCEED_POLICY`; baseline no-speed command remains denied with `COMMAND_PAYLOAD_SCHEMA_VIOLATION`. |
+
+Review notes:
+
+- Local spec-conformance review checked the changed Python/Rust verifier
+  boundary against the source contract and confirmed the new invariant is
+  enforced at the command-gate/verifier layer rather than only at policy
+  issuance.
+- Bare `python tests/evals/eval_runner.py` still fails in this shell because
+  the system interpreter lacks `yaml`; the repository `.venv` runner passes.
+
 ## Post-Scan 4-Finding Security Remediation - 2026-06-24 (scan 52c0d522)
 
 Status: successful

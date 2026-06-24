@@ -28,6 +28,7 @@
 | Stale command | command arrives after network partition | request age, lease age, expiry, and fresh local state checks |
 | Unauthenticated command triggers fallback | unsigned or invalid command is sent only to force local fallback hooks | command authentication failures are audited without emitting `FallbackDeclaration` side effects |
 | Command exceeds lease constraints | speed-limited lease used for faster command | command gate enforces `max_speed_mps` from command payload |
+| Signed lease exceeds local policy bounds | compromised issuer signs `max_speed_mps` or relaxed network thresholds not granted by accepted policy | edge verifier compares signed lease constraints to typed local constraint bounds and rejects overbroad leases |
 | Wrong robot | lease for robot A used on robot B | robot_id binding in lease |
 | Wrong mission or capability | lease for mission/capability A used for B | mission_id and capability binding in lease |
 | Policy downgrade | permissive policy pushed mid-mission or unknown policy fields hidden before digesting | strict policy schema plus accepted policy digest pin; future: signed policy bundles |

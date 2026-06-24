@@ -49,7 +49,16 @@
     "trusted_state_edge_ids": [
       "edge-agent:rover-001"
     ],
-    "state_hmac_secret": "state-dev-test-secret"
+    "state_hmac_secret": "state-dev-test-secret",
+    "capability_constraint_bounds": [
+      {
+        "capability": "remote_assist",
+        "max_latency_ms_p95": 80.0,
+        "max_packet_loss_pct": 1.0,
+        "min_uplink_mbps": 3.0,
+        "fallback_on_degrade": "crawl_to_safe_zone"
+      }
+    ]
   },
   "seen_nonces": [
     "nonce-replay"

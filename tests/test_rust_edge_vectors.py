@@ -69,6 +69,7 @@ EXPECTED_REASON_CODES = {
     "DENY_STALE_COMMAND",
     "DENY_REPLAYED_COMMAND",
     "DENY_COMMAND_CONSTRAINT",
+    "DENY_LEASE_CONSTRAINTS_EXCEED_POLICY",
     "DENY_POLICY_DIGEST_REQUIRED",
     "DENY_POLICY_DIGEST_NOT_ACCEPTED",
     "DENY_TTL_TOO_LONG",
@@ -141,6 +142,7 @@ def test_rust_edge_vector_directory_is_well_formed():
             "accepted_capabilities",
             "issuer_capability_scopes",
             "capability_constraint_requirements",
+            "capability_constraint_bounds",
             "trusted_command_agent_ids",
             "command_hmac_secret",
             "dev_hmac_secret",
@@ -181,6 +183,22 @@ def test_rust_edge_vector_directory_is_well_formed():
                 "require_max_speed_mps": False,
             }
         ]
+        bounds = vector["trusted_context"]["capability_constraint_bounds"]
+        assert len(bounds) == 1
+        assert bounds[0]["capability"] == "remote_assist"
+        assert bounds[0]["max_latency_ms_p95"] == 80.0
+        assert bounds[0]["max_packet_loss_pct"] == 1.0
+        assert bounds[0]["min_uplink_mbps"] == 3.0
+        assert bounds[0]["fallback_on_degrade"] == "crawl_to_safe_zone"
+        assert set(bounds[0]) <= {
+            "capability",
+            "max_latency_ms_p95",
+            "max_packet_loss_pct",
+            "min_uplink_mbps",
+            "fallback_on_degrade",
+            "max_speed_mps",
+            "network_violation_action",
+        }
         assert vector["trusted_context"]["trusted_command_agent_ids"] == ["fleet-agent:v0.1"]
         assert vector["trusted_context"]["command_hmac_secret"] == "command-dev-test-secret"
         assert vector["trusted_context"]["dev_hmac_secret"] == "dev-test-secret"

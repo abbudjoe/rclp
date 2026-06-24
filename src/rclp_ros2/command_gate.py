@@ -18,6 +18,7 @@ from rclp_core.leases import lease_matches_context
 from rclp_core.models import (
     AuditEventType,
     BaseMessage,
+    CapabilityConstraintBounds,
     CapabilityConstraintRequirement,
     CapabilityLease,
     FallbackAction,
@@ -557,6 +558,7 @@ class CommandGate:
         capability_constraint_requirements: (
             Mapping[str, CapabilityConstraintRequirement] | None
         ) = None,
+        capability_constraint_bounds: Mapping[str, CapabilityConstraintBounds] | None = None,
         agent_public_keys_by_id: Mapping[str, str] | None = None,
         issuer_public_keys_by_id: Mapping[str, str] | None = None,
         revoker_public_keys_by_id: Mapping[str, str] | None = None,
@@ -591,6 +593,8 @@ class CommandGate:
             raise ValueError("issuer_capability_scopes is required")
         if capability_constraint_requirements is None:
             raise ValueError("capability_constraint_requirements is required")
+        if capability_constraint_bounds is None:
+            raise ValueError("capability_constraint_bounds is required")
         if not agent_public_keys_by_id:
             raise ValueError("agent_public_keys_by_id must name at least one command agent key")
         if command_replay_cache is None or not command_replay_cache.durable:
@@ -610,6 +614,7 @@ class CommandGate:
             for issuer_id, capabilities in issuer_capability_scopes.items()
         }
         self.capability_constraint_requirements = dict(capability_constraint_requirements)
+        self.capability_constraint_bounds = dict(capability_constraint_bounds)
         for issuer_id in self.trusted_issuer_ids:
             if not self.issuer_capability_scopes.get(issuer_id):
                 raise ValueError("issuer_capability_scopes must scope every trusted issuer")
@@ -618,6 +623,11 @@ class CommandGate:
             if requirement is None or str(requirement.capability) != capability:
                 raise ValueError(
                     "capability_constraint_requirements must cover every accepted capability"
+                )
+            bounds = self.capability_constraint_bounds.get(capability)
+            if bounds is None or str(bounds.capability) != capability:
+                raise ValueError(
+                    "capability_constraint_bounds must cover every accepted capability"
                 )
         self.agent_public_keys_by_id = dict(agent_public_keys_by_id)
         self.issuer_public_keys_by_id = dict(
@@ -944,6 +954,7 @@ class CommandGate:
             accepted_policy_digests=self.accepted_policy_digests,
             issuer_capability_scopes=self.issuer_capability_scopes,
             capability_constraint_requirements=self.capability_constraint_requirements,
+            capability_constraint_bounds=self.capability_constraint_bounds,
             agent_id=command.agent_id,
             edge_agent_id=command.edge_agent_id,
             robot_id=command.robot_id,

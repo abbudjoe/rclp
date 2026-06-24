@@ -29,6 +29,7 @@ from rclp_core.policy import (
     RequestReplayCache,
     _evaluate_policy_inputs,
     evaluate_policy,
+    policy_constraint_bounds,
     policy_digest,
 )
 from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache, RevocationStore
@@ -176,6 +177,7 @@ def make_gate(key: DemoKeyPair, **kwargs) -> CommandGate:
             )
         },
     )
+    kwargs.setdefault("capability_constraint_bounds", policy_constraint_bounds(policy))
     kwargs.setdefault(
         "agent_public_keys_by_id",
         {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},

@@ -39,7 +39,13 @@ from rclp_core.models import (
     SUPPORTED_PROTOCOL_VERSION,
 )
 from rclp_core.network import profile
-from rclp_core.policy import Policy, RequestReplayCache, evaluate_policy, policy_digest
+from rclp_core.policy import (
+    Policy,
+    RequestReplayCache,
+    evaluate_policy,
+    policy_constraint_bounds,
+    policy_digest,
+)
 from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache, RevocationStore
 
 
@@ -218,8 +224,14 @@ def sign_revocation(revocation: LeaseRevocation, key: DemoKeyPair) -> LeaseRevoc
     return revocation
 
 
-def make_policy() -> Policy:
-    return Policy.from_yaml(POLICY_PATH)
+def make_policy(scenario_input: dict[str, Any] | None = None) -> Policy:
+    policy = Policy.from_yaml(POLICY_PATH)
+    policy_spec = (scenario_input or {}).get("policy", {})
+    requirements_spec = policy_spec.get("requirements", {})
+    if "max_speed_mps" in requirements_spec:
+        policy = policy.model_copy(deep=True)
+        policy.requirements.max_speed_mps = requirements_spec["max_speed_mps"]
+    return policy
 
 
 def make_request(
@@ -448,8 +460,9 @@ def make_gate(
     edge_key: DemoKeyPair,
     audit_log: AuditLog,
     central_key: DemoKeyPair,
+    policy: Policy | None = None,
 ) -> CommandGate:
-    policy = make_policy()
+    policy = policy or make_policy()
     return CommandGate(
         issuer_key.public_key_b64,
         local_edge_agent_id=EDGE_AGENT_ID,
@@ -467,6 +480,7 @@ def make_gate(
                 require_fallback_on_degrade=True,
             )
         },
+        capability_constraint_bounds=policy_constraint_bounds(policy),
         agent_public_keys_by_id={CENTRAL_AGENT_ID: central_key.public_key_b64},
         revoker_public_keys_by_id={EDGE_AGENT_ID: edge_key.public_key_b64},
         state_public_keys_by_edge_id={EDGE_AGENT_ID: edge_key.public_key_b64},
@@ -495,7 +509,7 @@ def run_policy_decision(scenario: dict[str, Any]) -> EvalOutcome:
     scenario_input = scenario.get("input", {})
     central_key = DemoKeyPair()
     edge_key = DemoKeyPair()
-    policy = make_policy()
+    policy = make_policy(scenario_input)
     log = AuditLog()
     request = make_request(scenario_input, now=now, central_key=central_key)
     state = make_state(scenario_input, now=now, edge_key=edge_key)
@@ -532,7 +546,7 @@ def run_command_gate(scenario: dict[str, Any]) -> EvalOutcome:
     central_key = DemoKeyPair()
     edge_key = DemoKeyPair()
     issuer_key = DemoKeyPair()
-    policy = make_policy()
+    policy = make_policy(scenario_input)
     log = AuditLog()
     request = make_request(scenario_input, now=now, central_key=central_key)
     lease = make_lease(
@@ -543,7 +557,7 @@ def run_command_gate(scenario: dict[str, Any]) -> EvalOutcome:
         policy=policy,
     )
     command = make_command(scenario_input, now=now, central_key=central_key)
-    gate = make_gate(issuer_key, edge_key, log, central_key)
+    gate = make_gate(issuer_key, edge_key, log, central_key, policy=policy)
 
     if lease is not None and scenario_input.get("revocation", {}).get("present", False):
         revocation_spec = scenario_input.get("revocation", {})

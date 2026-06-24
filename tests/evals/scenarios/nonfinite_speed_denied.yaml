@@ -3,6 +3,9 @@ description: Non-finite command speed under a speed-limited lease fails closed.
 kind: command_gate
 now_unix_ms: 1760000000000
 input:
+  policy:
+    requirements:
+      max_speed_mps: 0.5
   include_current_state: true
   lease:
     constraints:

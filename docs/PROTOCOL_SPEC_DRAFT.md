@@ -314,6 +314,10 @@ Required constraint semantics:
 - The signed lease material MUST bind `policy_id` and `policy_digest`; edge
   verifier profiles MUST reject leases whose signed policy reference is missing
   or not accepted.
+- Edge verifier profiles MUST compare signed lease constraints to an explicit
+  local policy-bound constraint contract for the lease capability. Signed
+  constraints MAY narrow authority, but MUST NOT claim broader authority than
+  the accepted local policy bounds.
 
 Rejection conditions:
 
@@ -329,6 +333,8 @@ Rejection conditions:
 - lease is not bound to the requesting command's agent, edge agent, robot,
   mission, or capability
 - lease constraints are violated by current local state
+- signed lease constraints exceed the accepted local policy-bound constraint
+  contract for the capability
 - a state-constrained capability lacks fresh edge-local current state
 - a `max_speed_mps` constraint is present and the command payload omits,
   malforms, or exceeds the requested speed

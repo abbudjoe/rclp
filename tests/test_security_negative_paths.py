@@ -19,6 +19,7 @@ from rclp_core.models import (
     AuditCommit,
     AuditEventType,
     Capability,
+    CapabilityConstraintBounds,
     CapabilityConstraintRequirement,
     CapabilityLease,
     CapabilityRequest,
@@ -40,6 +41,7 @@ from rclp_core.policy import (
     RequestReplayCache,
     _evaluate_policy_inputs,
     evaluate_policy,
+    policy_constraint_bounds,
     policy_digest,
 )
 import rclp_ros2.command_gate as command_gate_module
@@ -64,6 +66,12 @@ def remote_assist_constraint_requirements() -> dict[str, CapabilityConstraintReq
             require_fallback_on_degrade=True,
         )
     }
+
+
+def remote_assist_constraint_bounds(
+    policy: Policy | None = None,
+) -> dict[str, CapabilityConstraintBounds]:
+    return policy_constraint_bounds(policy or make_policy())
 
 
 def sign_request(request: CapabilityRequest, key: DemoKeyPair = CENTRAL_KEY) -> CapabilityRequest:
@@ -227,6 +235,10 @@ def make_gate(key: DemoKeyPair, **kwargs) -> CommandGate:
         remote_assist_constraint_requirements(),
     )
     kwargs.setdefault(
+        "capability_constraint_bounds",
+        remote_assist_constraint_bounds(),
+    )
+    kwargs.setdefault(
         "agent_public_keys_by_id",
         {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
     )
@@ -262,10 +274,27 @@ def issue_valid_lease(key: DemoKeyPair, issuer_id: str = TRUSTED_ISSUER_ID) -> C
     )
 
 
-def issue_speed_limited_lease(key: DemoKeyPair, max_speed_mps: float = 0.5) -> CapabilityLease:
-    lease = issue_valid_lease(key)
-    constraints = lease.constraints.model_copy(update={"max_speed_mps": max_speed_mps})
-    return resign(lease.model_copy(update={"constraints": constraints, "signature": None}), key)
+def issue_speed_limited_lease(
+    key: DemoKeyPair,
+    max_speed_mps: float = 0.5,
+    *,
+    policy: Policy | None = None,
+) -> CapabilityLease:
+    policy = policy or make_policy().model_copy(deep=True)
+    policy.requirements.max_speed_mps = max_speed_mps
+    request = make_request()
+    _, _, _, constraints = evaluate_inputs(request, make_state(), policy)
+    assert constraints is not None
+    assert constraints.max_speed_mps == max_speed_mps
+    return issue_lease(
+        request,
+        constraints,
+        TRUSTED_ISSUER_ID,
+        key,
+        ttl_seconds=600,
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
+    )
 
 
 def resign(lease: CapabilityLease, key: DemoKeyPair) -> CapabilityLease:
@@ -673,6 +702,11 @@ def test_nonfinite_network_and_constraint_models_are_rejected():
         NetworkState(latency_ms_p95=float("inf"), packet_loss_pct=0.0, uplink_mbps=1.0)
     with pytest.raises(ValueError):
         LeaseConstraints(max_speed_mps=float("inf"))
+    with pytest.raises(ValueError):
+        CapabilityConstraintBounds(
+            capability=Capability.REMOTE_ASSIST,
+            max_speed_mps=float("inf"),
+        )
 
 
 def test_nonfinite_lease_constraint_is_denied_at_runtime():
@@ -861,6 +895,13 @@ def test_authority_models_reject_string_numeric_and_boolean_scalars_at_boundary(
     }
     with pytest.raises(ValidationError, match="JSON booleans"):
         CapabilityConstraintRequirement.model_validate(raw_requirement)
+
+    raw_bounds = {
+        "capability": Capability.REMOTE_ASSIST.value,
+        "max_speed_mps": "0.5",
+    }
+    with pytest.raises(ValidationError, match="JSON numbers"):
+        CapabilityConstraintBounds.model_validate(raw_bounds)
 
     raw_audit = AuditCommit(
         correlation_id="corr_scalar",
@@ -1510,6 +1551,38 @@ def test_no_speed_lease_rejects_nonempty_command_payload_schema(payload):
     assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
 
 
+def test_signed_lease_cannot_expand_policy_absent_speed_ceiling():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    constraints = lease.constraints.model_copy(update={"max_speed_mps": 100.0})
+    lease = resign(lease.model_copy(update={"constraints": constraints, "signature": None}), key)
+
+    result = make_gate(key).evaluate(
+        make_command(payload={"max_speed_mps": 99.0}),
+        lease,
+        current_state=make_state(),
+    )
+
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_CONSTRAINTS_EXCEED_POLICY"
+    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+
+
+def test_signed_lease_cannot_relax_policy_network_thresholds():
+    key = DemoKeyPair()
+    policy = make_policy()
+    lease = issue_valid_lease(key)
+    constraints = lease.constraints.model_copy(
+        update={"max_latency_ms_p95": policy.requirements.network.max_latency_ms_p95 + 1}
+    )
+    lease = resign(lease.model_copy(update={"constraints": constraints, "signature": None}), key)
+
+    result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_CONSTRAINTS_EXCEED_POLICY"
+
+
 @pytest.mark.parametrize(
     ("payload", "expected_allowed", "expected_reason"),
     [
@@ -1543,10 +1616,15 @@ def test_max_speed_constraint_is_enforced_against_command_payload(
     expected_reason,
 ):
     key = DemoKeyPair()
-    lease = issue_speed_limited_lease(key, max_speed_mps=0.5)
+    policy = make_policy().model_copy(deep=True)
+    lease = issue_speed_limited_lease(key, max_speed_mps=0.5, policy=policy)
     command = make_command(payload=payload)
 
-    result = make_gate(key).evaluate(command, lease, current_state=make_state())
+    result = make_gate(
+        key,
+        **gate_policy_kwargs(policy),
+        capability_constraint_bounds=remote_assist_constraint_bounds(policy),
+    ).evaluate(command, lease, current_state=make_state())
 
     assert result.allowed is expected_allowed
     assert result.reason_code == expected_reason
@@ -2014,6 +2092,7 @@ def test_command_gate_requires_durable_command_replay_cache():
             **gate_policy_kwargs(),
             issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
             capability_constraint_requirements=remote_assist_constraint_requirements(),
+            capability_constraint_bounds=remote_assist_constraint_bounds(),
             agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
             revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
             state_public_keys_by_edge_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
@@ -2035,6 +2114,7 @@ def test_command_gate_requires_durable_revocation_store():
             **gate_policy_kwargs(),
             issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
             capability_constraint_requirements=remote_assist_constraint_requirements(),
+            capability_constraint_bounds=remote_assist_constraint_bounds(),
             agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
             revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
             state_public_keys_by_edge_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
@@ -2193,6 +2273,16 @@ def mission_continue_constraint_requirements() -> dict[str, CapabilityConstraint
     return requirements
 
 
+def mission_continue_constraint_bounds() -> dict[str, CapabilityConstraintBounds]:
+    bounds = remote_assist_constraint_bounds()
+    bounds[Capability.MISSION_CONTINUE.value] = CapabilityConstraintBounds(
+        capability=Capability.MISSION_CONTINUE,
+        geofence_id="test-zone-a",
+        max_speed_mps=0.5,
+    )
+    return bounds
+
+
 def issue_mission_continue_lease(
     key: DemoKeyPair,
     constraints: LeaseConstraints,
@@ -2235,6 +2325,7 @@ def test_accepted_non_remote_capability_requires_declared_constraints():
             }
         },
         capability_constraint_requirements=mission_continue_constraint_requirements(),
+        capability_constraint_bounds=mission_continue_constraint_bounds(),
     )
     lease = issue_mission_continue_lease(key, LeaseConstraints())
     command = make_command(
@@ -2263,6 +2354,7 @@ def test_accepted_non_remote_capability_allows_declared_constraints():
             }
         },
         capability_constraint_requirements=mission_continue_constraint_requirements(),
+        capability_constraint_bounds=mission_continue_constraint_bounds(),
     )
     lease = issue_mission_continue_lease(
         key,
@@ -2299,6 +2391,13 @@ def test_required_fallback_constraint_must_be_explicit():
             }
         },
         capability_constraint_requirements=requirements,
+        capability_constraint_bounds={
+            **remote_assist_constraint_bounds(),
+            Capability.MISSION_CONTINUE.value: CapabilityConstraintBounds(
+                capability=Capability.MISSION_CONTINUE,
+                fallback_on_degrade=FallbackAction.CRAWL_TO_SAFE_ZONE,
+            ),
+        },
     )
     implicit_default_lease = issue_mission_continue_lease(key, LeaseConstraints())
     explicit_fallback_lease = issue_mission_continue_lease(
@@ -2611,6 +2710,7 @@ def test_nonlocal_lease_edge_revocation_rejects_before_side_effects():
         **gate_policy_kwargs(),
         issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
         capability_constraint_requirements=remote_assist_constraint_requirements(),
+        capability_constraint_bounds=remote_assist_constraint_bounds(),
         agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
         revoker_public_keys_by_id={scoped_revoker_id: scoped_revoker_key.public_key_b64},
         revoker_edge_scopes_by_id={scoped_revoker_id: {nonlocal_edge_id}},
@@ -2657,6 +2757,7 @@ def test_cross_edge_trusted_revoker_cannot_revoke_victim_lease():
         **gate_policy_kwargs(),
         issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
         capability_constraint_requirements=remote_assist_constraint_requirements(),
+        capability_constraint_bounds=remote_assist_constraint_bounds(),
         agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
         revoker_public_keys_by_id={
             EDGE_AGENT_ID: EDGE_KEY.public_key_b64,
@@ -2702,6 +2803,7 @@ def test_explicit_revoker_edge_scope_can_revoke_target_lease():
         **gate_policy_kwargs(),
         issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
         capability_constraint_requirements=remote_assist_constraint_requirements(),
+        capability_constraint_bounds=remote_assist_constraint_bounds(),
         agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
         revoker_public_keys_by_id={scoped_revoker_id: scoped_revoker_key.public_key_b64},
         revoker_edge_scopes_by_id={scoped_revoker_id: {EDGE_AGENT_ID}},
@@ -2844,6 +2946,7 @@ def test_lease_issuer_identity_must_match_verification_key():
             "issuer:privileged": {Capability.REMOTE_ASSIST.value},
         },
         capability_constraint_requirements=remote_assist_constraint_requirements(),
+        capability_constraint_bounds=remote_assist_constraint_bounds(),
         agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
         revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
         state_public_keys_by_edge_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
@@ -2873,6 +2976,7 @@ def test_multiple_trusted_issuers_require_key_registry():
                 "issuer:privileged": {Capability.REMOTE_ASSIST.value},
             },
             capability_constraint_requirements=remote_assist_constraint_requirements(),
+            capability_constraint_bounds=remote_assist_constraint_bounds(),
             agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
             command_replay_cache=durable_command_replay_cache(),
             revocation_store=durable_revocation_store(),

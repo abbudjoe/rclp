@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use hmac::{Hmac, Mac};
 use rclp_edge_verifier::canonical_json::canonical_json;
 use rclp_edge_verifier::{
-    verify_json_value, CapabilityConstraintRequirement, CapabilityLeaseClaims, EdgeCommand,
-    FileReplayCache, GeofenceState, LocalContext, NetworkState, ReplayCache, ReplayConsumeResult,
-    TrustedVerifierContext, VerificationDecision,
+    verify_json_value, CapabilityConstraintBounds, CapabilityConstraintRequirement,
+    CapabilityLeaseClaims, EdgeCommand, FileReplayCache, GeofenceState, LocalContext, NetworkState,
+    ReplayCache, ReplayConsumeResult, TrustedVerifierContext, VerificationDecision,
 };
 use serde::Deserialize;
 use serde::Serialize;
@@ -486,6 +486,18 @@ fn accepted_non_remote_capability_requires_declared_constraints() {
             require_fallback_on_degrade: false,
             require_max_speed_mps: true,
         });
+    trusted_context
+        .capability_constraint_bounds
+        .push(CapabilityConstraintBounds {
+            capability: "mission_continue".to_string(),
+            geofence_id: Some("test-zone-a".to_string()),
+            max_latency_ms_p95: None,
+            max_packet_loss_pct: None,
+            min_uplink_mbps: None,
+            fallback_on_degrade: None,
+            max_speed_mps: Some(0.5),
+            network_violation_action: None,
+        });
     input["lease"]["claims"]["lease_id"] = Value::from("lease-empty-mission-continue");
     input["lease"]["claims"]["nonce"] = Value::from("nonce-empty-mission-continue");
     input["lease"]["claims"]["capability"] = Value::from("mission_continue");
@@ -569,6 +581,32 @@ fn speed_limited_payload_accepts_supported_speed_aliases() {
         assert_eq!(decision.decision.as_str(), "allow");
         assert_eq!(decision.reason_code.as_str(), "ALLOW");
     }
+}
+
+#[test]
+fn signed_lease_constraints_cannot_expand_absent_policy_speed_bound() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["lease"]["claims"]["lease_id"] = Value::from("lease-overbroad-speed-bound");
+    input["lease"]["claims"]["nonce"] = Value::from("nonce-overbroad-speed-bound");
+    input["lease"]["claims"]["constraints"]["max_speed_mps"] = Value::from(100.0);
+    input["command"]["payload"] = json!({"max_speed_mps": 99.0});
+    resign_command_value(
+        &mut input,
+        "cmd-overbroad-speed-bound",
+        "cmd-nonce-overbroad-speed-bound",
+        &vector.trusted_context.command_hmac_secret,
+    );
+    resign_lease_value(&mut input, &vector.trusted_context.dev_hmac_secret);
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_LEASE_CONSTRAINTS_EXCEED_POLICY"
+    );
 }
 
 #[test]

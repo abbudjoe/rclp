@@ -17,6 +17,7 @@ from rclp_core.models import (
     AuditCommit,
     AuditEventType,
     Capability,
+    CapabilityConstraintBounds,
     CapabilityRequest,
     Decision,
     FallbackAction,
@@ -620,6 +621,20 @@ def _evaluate_policy_inputs(
         return Decision.DENY, requested_reason, [policy.fallback.on_deny], None
     constraints = _apply_requested_constraints(constraints, request.requested_constraints)
     return Decision.ALLOW, "POLICY_SATISFIED", [], constraints
+
+
+def policy_constraint_bounds(policy: Policy) -> dict[str, CapabilityConstraintBounds]:
+    req = policy.requirements
+    return {
+        policy.capability.value: CapabilityConstraintBounds(
+            capability=policy.capability,
+            max_latency_ms_p95=req.network.max_latency_ms_p95,
+            max_packet_loss_pct=req.network.max_packet_loss_pct,
+            min_uplink_mbps=req.network.min_uplink_mbps,
+            fallback_on_degrade=policy.fallback.on_network_degrade,
+            max_speed_mps=req.max_speed_mps,
+        )
+    }
 
 
 def evaluate_policy(

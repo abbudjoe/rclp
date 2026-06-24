@@ -3,6 +3,9 @@ description: Conflicting command speed aliases under a speed-limited lease fail 
 kind: command_gate
 now_unix_ms: 1760000000000
 input:
+  policy:
+    requirements:
+      max_speed_mps: 0.5
   include_current_state: true
   lease:
     constraints:

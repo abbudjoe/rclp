@@ -28,7 +28,13 @@ from rclp_core.models import (
     stable_json_hash,
 )
 from rclp_core.network import profile, profile_names
-from rclp_core.policy import Policy, RequestReplayCache, evaluate_policy, policy_digest
+from rclp_core.policy import (
+    Policy,
+    RequestReplayCache,
+    evaluate_policy,
+    policy_constraint_bounds,
+    policy_digest,
+)
 from rclp_ros2.command_gate import (
     Command,
     CommandGate,
@@ -247,6 +253,7 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
                 require_fallback_on_degrade=True,
             )
         },
+        capability_constraint_bounds=policy_constraint_bounds(policy),
         agent_public_keys_by_id=agent_public_keys_by_id,
         revoker_public_keys_by_id=edge_public_keys_by_id,
         state_public_keys_by_edge_id=edge_public_keys_by_id,

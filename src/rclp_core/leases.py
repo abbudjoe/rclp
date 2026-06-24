@@ -7,6 +7,7 @@ from uuid import uuid4
 from rclp_core.crypto import DemoKeyPair, verify_with_public_key_b64
 from rclp_core.models import (
     CapabilityConstraintRequirement,
+    CapabilityConstraintBounds,
     CapabilityLease,
     CapabilityRequest,
     LeaseConstraints,
@@ -201,6 +202,20 @@ def capability_constraint_requirement_violation(
     return None
 
 
+def capability_constraint_bound_violation(
+    lease: CapabilityLease,
+    capability_constraint_bounds: Mapping[str, CapabilityConstraintBounds] | None,
+) -> str | None:
+    if capability_constraint_bounds is None:
+        return "CAPABILITY_CONSTRAINT_BOUNDS_REQUIRED"
+    bounds = capability_constraint_bounds.get(str(lease.capability))
+    if bounds is None or str(bounds.capability) != str(lease.capability):
+        return "CAPABILITY_CONSTRAINT_BOUNDS_REQUIRED"
+    if capability_constraints_exceed_bounds(lease.constraints, bounds):
+        return "LEASE_CONSTRAINTS_EXCEED_POLICY"
+    return None
+
+
 def required_constraints_missing(
     lease: CapabilityLease,
     capability_constraint_requirements: Mapping[str, CapabilityConstraintRequirement] | None,
@@ -236,4 +251,55 @@ def capability_constraints_missing(
             )
         )
         or (requirement.require_max_speed_mps and constraints.max_speed_mps is None)
+    )
+
+
+def capability_constraints_exceed_bounds(
+    constraints: LeaseConstraints,
+    bounds: CapabilityConstraintBounds,
+) -> bool:
+    if bounds.geofence_id is not None and constraints.geofence_id != bounds.geofence_id:
+        return True
+    return (
+        _max_field_exceeds_policy(
+            constraints.max_latency_ms_p95,
+            bounds.max_latency_ms_p95,
+        )
+        or _max_field_exceeds_policy(
+            constraints.max_packet_loss_pct,
+            bounds.max_packet_loss_pct,
+        )
+        or _min_field_exceeds_policy(
+            constraints.min_uplink_mbps,
+            bounds.min_uplink_mbps,
+        )
+        or _max_field_exceeds_policy(
+            constraints.max_speed_mps,
+            bounds.max_speed_mps,
+        )
+        or _fallback_exceeds_policy(constraints, bounds)
+    )
+
+
+def _max_field_exceeds_policy(value: float | None, bound: float | None) -> bool:
+    if value is None:
+        return False
+    return bound is None or value > bound
+
+
+def _min_field_exceeds_policy(value: float | None, bound: float | None) -> bool:
+    if value is None:
+        return False
+    return bound is None or value < bound
+
+
+def _fallback_exceeds_policy(
+    constraints: LeaseConstraints,
+    bounds: CapabilityConstraintBounds,
+) -> bool:
+    if "fallback_on_degrade" not in constraints.model_fields_set:
+        return False
+    return (
+        bounds.fallback_on_degrade is None
+        or constraints.fallback_on_degrade != bounds.fallback_on_degrade
     )

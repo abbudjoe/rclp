@@ -6,6 +6,7 @@ from math import isfinite
 from numbers import Real
 
 from rclp_core.leases import (
+    capability_constraint_bound_violation,
     capability_constraint_requirement_violation,
     lease_matches_context,
     lease_signed_material_too_large,
@@ -14,6 +15,7 @@ from rclp_core.leases import (
 )
 from rclp_core.models import (
     Capability,
+    CapabilityConstraintBounds,
     CapabilityConstraintRequirement,
     CapabilityLease,
     NetworkProfile,
@@ -46,6 +48,7 @@ def validate_lease_for_command(
     capability_constraint_requirements: (
         Mapping[str, CapabilityConstraintRequirement] | None
     ) = None,
+    capability_constraint_bounds: Mapping[str, CapabilityConstraintBounds] | None = None,
     agent_id: str,
     edge_agent_id: str,
     robot_id: str,
@@ -109,6 +112,11 @@ def validate_lease_for_command(
         return False, constraint_reason
     if lease_constraints_malformed(lease):
         return False, "LEASE_CONSTRAINT_MALFORMED"
+    if constraint_bound_reason := capability_constraint_bound_violation(
+        lease,
+        capability_constraint_bounds,
+    ):
+        return False, constraint_bound_reason
     if not lease_matches_context(
         lease,
         agent_id=agent_id,

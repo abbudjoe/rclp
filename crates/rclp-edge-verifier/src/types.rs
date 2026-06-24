@@ -137,6 +137,7 @@ pub struct TrustedVerifierContext {
     pub accepted_capabilities: Vec<String>,
     pub issuer_capability_scopes: Vec<IssuerCapabilityScope>,
     pub capability_constraint_requirements: Vec<CapabilityConstraintRequirement>,
+    pub capability_constraint_bounds: Vec<CapabilityConstraintBounds>,
     pub trusted_command_agent_ids: Vec<String>,
     #[serde(skip_serializing)]
     pub command_hmac_secret: String,
@@ -186,6 +187,10 @@ impl fmt::Debug for TrustedVerifierContext {
                 "capability_constraint_requirements",
                 &self.capability_constraint_requirements,
             )
+            .field(
+                "capability_constraint_bounds",
+                &self.capability_constraint_bounds,
+            )
             .field("trusted_command_agent_ids", &self.trusted_command_agent_ids)
             .field("command_hmac_secret", &"<redacted>")
             .field("dev_hmac_secret", &"<redacted>")
@@ -227,6 +232,26 @@ pub struct CapabilityConstraintRequirement {
     pub require_fallback_on_degrade: bool,
     #[serde(default)]
     pub require_max_speed_mps: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CapabilityConstraintBounds {
+    pub capability: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geofence_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_latency_ms_p95: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_packet_loss_pct: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_uplink_mbps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_on_degrade: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_speed_mps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_violation_action: Option<NetworkViolationAction>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -322,6 +347,7 @@ pub enum ReasonCode {
     DenyStaleCommand,
     DenyReplayedCommand,
     DenyCommandConstraint,
+    DenyLeaseConstraintsExceedPolicy,
     DenyPolicyDigestRequired,
     DenyPolicyDigestNotAccepted,
     DegradeNetworkPolicy,
@@ -367,6 +393,7 @@ impl ReasonCode {
             Self::DenyStaleCommand => "DENY_STALE_COMMAND",
             Self::DenyReplayedCommand => "DENY_REPLAYED_COMMAND",
             Self::DenyCommandConstraint => "DENY_COMMAND_CONSTRAINT",
+            Self::DenyLeaseConstraintsExceedPolicy => "DENY_LEASE_CONSTRAINTS_EXCEED_POLICY",
             Self::DenyPolicyDigestRequired => "DENY_POLICY_DIGEST_REQUIRED",
             Self::DenyPolicyDigestNotAccepted => "DENY_POLICY_DIGEST_NOT_ACCEPTED",
             Self::DegradeNetworkPolicy => "DEGRADE_NETWORK_POLICY",
