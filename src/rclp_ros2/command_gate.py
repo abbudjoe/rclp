@@ -1090,20 +1090,36 @@ class CommandGate:
                 lease_id=lease.lease_id if lease else None,
                 revocation_id=revocation.revocation_id if revocation else None,
             )
-        payload = {
-            "command_id": command.command_id,
-            "command_message_id": command.message_id,
-            "agent_id": command.agent_id,
-            "authenticated_agent_id": command.authenticated_agent_id,
-            "edge_agent_id": command.edge_agent_id,
-            "robot_id": command.robot_id,
-            "mission_id": command.mission_id,
-            "capability": command.capability,
-            "command_nonce": command.command_nonce,
-            "lease_id": lease.lease_id if lease else None,
-            "reason_code": reason,
-            "fallback_action": fallback,
-        }
+        if authority_relevant:
+            payload = {
+                "command_id": command.command_id,
+                "command_message_id": command.message_id,
+                "agent_id": command.agent_id,
+                "authenticated_agent_id": command.authenticated_agent_id,
+                "edge_agent_id": command.edge_agent_id,
+                "robot_id": command.robot_id,
+                "mission_id": command.mission_id,
+                "capability": command.capability,
+                "command_nonce": command.command_nonce,
+                "lease_id": lease.lease_id if lease else None,
+                "reason_code": reason,
+                "fallback_action": fallback,
+            }
+        else:
+            payload = {
+                "claimed_command_id": command.command_id,
+                "claimed_command_message_id": command.message_id,
+                "claimed_agent_id": command.agent_id,
+                "claimed_authenticated_agent_id": command.authenticated_agent_id,
+                "claimed_edge_agent_id": command.edge_agent_id,
+                "claimed_robot_id": command.robot_id,
+                "claimed_mission_id": command.mission_id,
+                "claimed_capability": command.capability,
+                "claimed_command_nonce": command.command_nonce,
+                "claimed_lease_id": lease.lease_id if lease else None,
+                "reason_code": reason,
+                "fallback_action": fallback,
+            }
         state_refs = []
         related_message_ids = [command.message_id]
         if current_state is not None:

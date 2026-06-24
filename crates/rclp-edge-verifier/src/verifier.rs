@@ -1,4 +1,5 @@
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::audit::{AuditEvent, AuditSubject};
 use crate::crypto::{
@@ -18,6 +19,7 @@ const LEASE_MESSAGE_TYPE: &str = "capability_lease";
 const COMMAND_MESSAGE_TYPE: &str = "edge_command";
 const MAX_SIGNED_TEXT_FIELD_BYTES: usize = 1_024;
 const MAX_SIGNED_TEXT_TOTAL_BYTES: usize = 16_384;
+const MAX_DIAGNOSTIC_TEXT_BYTES: usize = 256;
 const MAX_COMMAND_PAYLOAD_DEPTH: usize = 32;
 const MAX_COMMAND_PAYLOAD_NODES: usize = 2_048;
 const MAX_COMMAND_PAYLOAD_ESTIMATED_BYTES: usize = 65_536;
@@ -875,7 +877,10 @@ fn min_field_exceeds_policy(value: Option<f64>, bound: Option<f64>) -> bool {
 }
 
 fn option_field_exceeds_policy(value: Option<&String>, bound: Option<&String>) -> bool {
-    value.is_some_and(|value| bound.is_none_or(|bound| value != bound))
+    match bound {
+        Some(bound) => value.is_none_or(|value| value != bound),
+        None => value.is_some(),
+    }
 }
 
 fn geofence_violated(input: &VerificationInput) -> bool {
@@ -974,14 +979,14 @@ fn deny_untrusted_command(
     let payload = serde_json::json!({
         "decision": Decision::Deny.as_str(),
         "reason_code": reason_code.as_str(),
-        "claimed_lease_id": &input.lease.claims.lease_id,
-        "claimed_command_id": &input.command.command_id,
-        "claimed_command_agent_id": &input.command.agent_id,
-        "claimed_authenticated_command_agent_id": &input.command.authenticated_agent_id,
-        "claimed_edge_agent_id": &input.command.edge_agent_id,
-        "claimed_robot_id": &input.command.robot_id,
-        "claimed_mission_id": &input.command.mission_id,
-        "claimed_capability": &input.command.capability,
+        "claimed_lease_id": bounded_diagnostic_text(&input.lease.claims.lease_id),
+        "claimed_command_id": bounded_diagnostic_text(&input.command.command_id),
+        "claimed_command_agent_id": bounded_diagnostic_text(&input.command.agent_id),
+        "claimed_authenticated_command_agent_id": bounded_diagnostic_text(&input.command.authenticated_agent_id),
+        "claimed_edge_agent_id": bounded_diagnostic_text(&input.command.edge_agent_id),
+        "claimed_robot_id": bounded_diagnostic_text(&input.command.robot_id),
+        "claimed_mission_id": bounded_diagnostic_text(&input.command.mission_id),
+        "claimed_capability": bounded_diagnostic_text(&input.command.capability),
     });
     VerificationDecision {
         decision: Decision::Deny,
@@ -1008,6 +1013,19 @@ fn deny_untrusted_command(
             },
         ),
     }
+}
+
+fn bounded_diagnostic_text(value: &str) -> Value {
+    let byte_length = value.len();
+    if byte_length <= MAX_DIAGNOSTIC_TEXT_BYTES {
+        return Value::String(value.to_string());
+    }
+    let digest = Sha256::digest(value.as_bytes());
+    serde_json::json!({
+        "byte_length": byte_length,
+        "sha256": format!("sha256:{}", hex::encode(digest)),
+        "truncated": true,
+    })
 }
 
 fn decision(

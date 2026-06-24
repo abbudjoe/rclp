@@ -53,6 +53,7 @@
     "capability_constraint_bounds": [
       {
         "capability": "remote_assist",
+        "geofence_id": "test-zone-a",
         "max_latency_ms_p95": 80.0,
         "max_packet_loss_pct": 1.0,
         "min_uplink_mbps": 3.0,

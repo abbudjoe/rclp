@@ -234,6 +234,7 @@ class PolicyRequirements(BaseModel):
     allowed_missions: list[str] = Field(default_factory=list)
     max_speed_mps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     geofence_required: bool = True
+    geofence_id: str | None = None
     geofence_allowed: bool = True
     human_operator_available: bool = True
     network: NetworkRequirements = Field(default_factory=NetworkRequirements)
@@ -247,6 +248,14 @@ class PolicyRequirements(BaseModel):
         "human_operator_available",
         mode="before",
     )(_reject_coerced_bool)
+
+    @model_validator(mode="after")
+    def validate_geofence_identity(self) -> "PolicyRequirements":
+        if self.geofence_id is not None and not self.geofence_id.strip():
+            raise ValueError("geofence_id must be non-empty when provided")
+        if self.geofence_required and self.geofence_id is None:
+            raise ValueError("geofence_id is required when geofence_required is true")
+        return self
 
 
 class FallbackPolicy(BaseModel):
@@ -328,6 +337,10 @@ def _network_requirements_malformed(req: NetworkRequirements) -> bool:
         or req.deny_above_packet_loss_pct < req.max_packet_loss_pct
         or req.deny_below_uplink_mbps > req.min_uplink_mbps
     )
+
+
+def _geofence_requirements_malformed(req: PolicyRequirements) -> bool:
+    return req.geofence_required and (req.geofence_id is None or not req.geofence_id.strip())
 
 
 def _requested_constraint_violation(
@@ -597,7 +610,17 @@ def _evaluate_policy_inputs(
         )
     if _network_state_malformed(net):
         return Decision.DENY, "NETWORK_STATE_MALFORMED", [policy.fallback.on_deny], None
-    if req.geofence_required and state.geofence_state.inside != req.geofence_allowed:
+    if _geofence_requirements_malformed(req):
+        return (
+            Decision.DENY,
+            "POLICY_GEOFENCE_REQUIREMENTS_MALFORMED",
+            [policy.fallback.on_deny],
+            None,
+        )
+    if req.geofence_required and (
+        state.geofence_state.geofence_id != req.geofence_id
+        or state.geofence_state.inside != req.geofence_allowed
+    ):
         return Decision.DENY, "GEOFENCE_NOT_SATISFIED", [policy.fallback.on_deny], None
     if req.human_operator_available and not state.human_operator_available:
         return Decision.DENY, "HUMAN_OPERATOR_NOT_AVAILABLE", [policy.fallback.on_deny], None
@@ -628,6 +651,7 @@ def policy_constraint_bounds(policy: Policy) -> dict[str, CapabilityConstraintBo
     return {
         policy.capability.value: CapabilityConstraintBounds(
             capability=policy.capability,
+            geofence_id=req.geofence_id if req.geofence_required else None,
             max_latency_ms_p95=req.network.max_latency_ms_p95,
             max_packet_loss_pct=req.network.max_packet_loss_pct,
             min_uplink_mbps=req.network.min_uplink_mbps,

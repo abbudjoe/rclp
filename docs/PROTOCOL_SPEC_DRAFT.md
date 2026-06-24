@@ -318,6 +318,12 @@ Required constraint semantics:
   local policy-bound constraint contract for the lease capability. Signed
   constraints MAY narrow authority, but MUST NOT claim broader authority than
   the accepted local policy bounds.
+- When geofence membership is policy-relevant, the policy-bound constraint
+  contract MUST include the specific `geofence_id`; a signed lease geofence
+  constraint for any other geofence MUST be rejected locally.
+- When a local policy bound specifies `fallback_on_degrade`, verifiers MUST
+  compare the lease's effective fallback value to that bound even if the lease
+  omitted the field and the model default supplied the effective value.
 
 Rejection conditions:
 
@@ -396,6 +402,9 @@ Audit impact:
 - Command-authentication failure audits MUST NOT treat claimed command robot,
   mission, edge, or actor fields as trusted authority subject fields; if
   recorded, they MUST be labeled as claimed/untrusted diagnostic context.
+- Command-authentication failure diagnostics MUST bound untrusted claimed text
+  fields before audit storage, either by truncating, hashing, or recording
+  lengths instead of copying oversized attacker-controlled values.
 - Rejections after command authentication MAY emit a `FallbackDeclaration`
   chosen by local fallback policy.
 - Command rejection audit MUST include the command identity, authenticated

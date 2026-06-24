@@ -1583,6 +1583,32 @@ def test_signed_lease_cannot_relax_policy_network_thresholds():
     assert result.reason_code == "LEASE_CONSTRAINTS_EXCEED_POLICY"
 
 
+def test_policy_derived_bounds_include_required_geofence_identity():
+    bounds = remote_assist_constraint_bounds()
+
+    assert bounds[Capability.REMOTE_ASSIST.value].geofence_id == "test-zone-a"
+
+
+def test_policy_required_geofence_identity_must_be_explicit():
+    raw_policy = make_policy().model_dump(mode="json")
+    raw_policy["requirements"].pop("geofence_id")
+
+    with pytest.raises(ValidationError, match="geofence_id is required"):
+        Policy.model_validate(raw_policy)
+
+
+def test_signed_lease_cannot_expand_policy_geofence_identity():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    constraints = lease.constraints.model_copy(update={"geofence_id": "wrong-zone"})
+    lease = resign(lease.model_copy(update={"constraints": constraints, "signature": None}), key)
+
+    result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_CONSTRAINTS_EXCEED_POLICY"
+
+
 @pytest.mark.parametrize(
     ("payload", "expected_allowed", "expected_reason"),
     [
@@ -1977,7 +2003,28 @@ def test_command_auth_denials_do_not_emit_fallback_side_effects(case_name, expec
     assert [event.event_type for event in gate.audit_log.events] == [AuditEventType.DIAGNOSTIC]
     assert gate.audit_log.events[0].authority_relevant is False
     assert gate.audit_log.events[0].actor_id == "local_command_gate"
-    assert gate.audit_log.events[0].payload["fallback_action"] is None
+    payload = gate.audit_log.events[0].payload
+    assert payload["fallback_action"] is None
+    for trusted_key in [
+        "command_id",
+        "command_message_id",
+        "agent_id",
+        "authenticated_agent_id",
+        "edge_agent_id",
+        "robot_id",
+        "mission_id",
+        "capability",
+        "command_nonce",
+        "lease_id",
+    ]:
+        assert trusted_key not in payload
+    assert payload["claimed_command_id"] == command.command_id
+    assert payload["claimed_agent_id"] == command.agent_id
+    assert payload["claimed_edge_agent_id"] == command.edge_agent_id
+    assert payload["claimed_robot_id"] == command.robot_id
+    assert payload["claimed_mission_id"] == command.mission_id
+    assert payload["claimed_capability"] == command.capability
+    assert payload["claimed_lease_id"] == lease.lease_id
 
 
 def test_replayed_signed_command_is_rejected_before_second_authorization():
@@ -2426,6 +2473,17 @@ def test_required_fallback_constraint_must_be_explicit():
     assert implicit_result.reason_code == "LEASE_CONSTRAINTS_MISSING"
     assert explicit_result.allowed is True
     assert explicit_result.reason_code == "LEASE_VALID"
+
+
+def test_implicit_fallback_default_cannot_bypass_policy_bounds():
+    constraints = LeaseConstraints()
+    bounds = CapabilityConstraintBounds(
+        capability=Capability.MISSION_CONTINUE,
+        fallback_on_degrade=FallbackAction.CRAWL_TO_SAFE_ZONE,
+    )
+
+    assert "fallback_on_degrade" not in constraints.model_fields_set
+    assert leases_module.capability_constraints_exceed_bounds(constraints, bounds) is True
 
 
 def test_expired_lease_is_rejected():

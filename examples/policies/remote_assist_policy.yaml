@@ -11,6 +11,7 @@ requirements:
   allowed_missions:
     - mission-001
   geofence_required: true
+  geofence_id: test-zone-a
   geofence_allowed: true
   human_operator_available: true
   network:

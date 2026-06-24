@@ -186,12 +186,14 @@ def test_rust_edge_vector_directory_is_well_formed():
         bounds = vector["trusted_context"]["capability_constraint_bounds"]
         assert len(bounds) == 1
         assert bounds[0]["capability"] == "remote_assist"
+        assert bounds[0]["geofence_id"] == "test-zone-a"
         assert bounds[0]["max_latency_ms_p95"] == 80.0
         assert bounds[0]["max_packet_loss_pct"] == 1.0
         assert bounds[0]["min_uplink_mbps"] == 3.0
         assert bounds[0]["fallback_on_degrade"] == "crawl_to_safe_zone"
         assert set(bounds[0]) <= {
             "capability",
+            "geofence_id",
             "max_latency_ms_p95",
             "max_packet_loss_pct",
             "min_uplink_mbps",

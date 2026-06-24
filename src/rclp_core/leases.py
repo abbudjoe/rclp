@@ -297,9 +297,6 @@ def _fallback_exceeds_policy(
     constraints: LeaseConstraints,
     bounds: CapabilityConstraintBounds,
 ) -> bool:
-    if "fallback_on_degrade" not in constraints.model_fields_set:
-        return False
-    return (
-        bounds.fallback_on_degrade is None
-        or constraints.fallback_on_degrade != bounds.fallback_on_degrade
-    )
+    if bounds.fallback_on_degrade is None:
+        return "fallback_on_degrade" in constraints.model_fields_set
+    return constraints.fallback_on_degrade != bounds.fallback_on_degrade

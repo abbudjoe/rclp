@@ -1,5 +1,87 @@
 # Assembly Ledger
 
+## Post-Scan 4-Finding Security Remediation - 2026-06-24 (scan 72e1cd1f)
+
+Status: successful
+
+Source contract:
+
+- User request: commit/push the current checkpoint, then fix all four findings
+  from Codex Security scan `72e1cd1f-641c-4e46-9792-2c2739931ca5`
+  using `assembly`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/fdcee457e95913f3f53d4a3d83a935ac5db6bdb8_20260624T203102Z_gb4b8vpk/report.md`
+- Findings:
+  `RCLP-SHARD-72E1CD1F-GEOFENCE-BOUNDS-001`,
+  `72e1cd1f-conformance-fallback-bound-001`,
+  `RCLP-EDGE-VERIFIER-AUDIT-DOS-002`, and
+  `RCLP-PY-COMMAND-DIAGNOSTIC-LABEL-001`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- The checkpoint commit `37e7f74 Harden RCLP authority verification` was
+  pushed to `origin/main` before this remediation began.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this remediation, and none will be launched, stopped, resized, deleted,
+  or otherwise mutated.
+
+Target contract:
+
+Close the four validated findings at their root authority/audit contracts:
+policy-derived capability bounds must include explicit geofence identity when
+geofence policy is required; effective lease fallback defaults must still be
+bounded by local policy; unauthenticated command diagnostics must label subject
+fields as claimed data; and Rust pre-auth audit diagnostics must bound
+over-budget claimed text before storing it.
+
+Success criterion:
+
+The original vulnerable paths no longer reproduce, focused regressions prove
+each invariant and legitimate behavior, assembly spec-conformance review is
+clean, and full repository validation passes.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| `RCLP-SHARD-72E1CD1F-GEOFENCE-BOUNDS-001`: policy-derived bounds carry explicit geofence identity and wrong-zone signed leases are rejected locally. | met | `PolicyRequirements.geofence_id` is required when geofence enforcement is enabled, `policy_constraint_bounds()` derives it into `CapabilityConstraintBounds`, Rust vectors now include the explicit local geofence bound, and regressions `test_policy_derived_bounds_include_required_geofence_identity`, `test_policy_required_geofence_identity_must_be_explicit`, and `test_signed_lease_cannot_expand_policy_geofence_identity` passed. |
+| `72e1cd1f-conformance-fallback-bound-001`: effective fallback defaults cannot bypass local fallback bounds. | met | Python `capability_constraints_exceed_bounds()` compares the effective fallback value even when the field was omitted; Rust `option_field_exceeds_policy()` now rejects omitted values when a local fallback bound exists. Regressions `test_implicit_fallback_default_cannot_bypass_policy_bounds` and `omitted_fallback_cannot_bypass_local_fallback_bound` passed. |
+| `RCLP-EDGE-VERIFIER-AUDIT-DOS-002`: Rust pre-auth denials bound claimed diagnostic text before audit storage. | met | Rust `deny_untrusted_command()` now passes claimed text through `bounded_diagnostic_text()`, storing hash/length metadata for oversized values. Regression `oversized_signed_command_field_is_rejected_before_hmac_canonicalization` asserts bounded payload length and no copied oversized value. |
+| `RCLP-PY-COMMAND-DIAGNOSTIC-LABEL-001`: Python command-auth diagnostics expose subject values only as claimed/untrusted fields. | met | `CommandGate._reject_command()` now emits unprefixed subject payload fields only for authority-relevant denials; non-authoritative command-auth diagnostics use `claimed_*` fields. Regression `test_command_auth_denials_do_not_emit_fallback_side_effects` asserts no trusted-looking subject keys are present. |
+| Focused and full validation gates pass after review. | met | Focused gates passed: `.venv/bin/python -m pytest tests/test_security_negative_paths.py -q -k 'geofence_identity or fallback_default or command_auth_denials'`, `.venv/bin/python -m pytest tests/test_security_negative_paths.py tests/test_rust_edge_vectors.py -q`, and `cargo test -p rclp-edge-verifier --test vector_tests`. Full gates passed: `.venv/bin/python -m compileall src tests`, `.venv/bin/python -m pytest -q` (234 tests), `.venv/bin/python tests/evals/eval_runner.py` (33/33), `cargo test --workspace` (3 unit tests and 45 vector tests), `.venv/bin/ruff check .`, `.venv/bin/ruff format --check .`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `git diff --check`. |
+
+Changed files:
+
+- `src/rclp_core/policy.py`
+- `src/rclp_core/leases.py`
+- `src/rclp_ros2/command_gate.py`
+- `crates/rclp-edge-verifier/src/verifier.rs`
+- `examples/policies/remote_assist_policy.yaml`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+- `tests/test_security_negative_paths.py`
+- `tests/test_rust_edge_vectors.py`
+- `crates/rclp-edge-verifier/tests/vector_tests.rs`
+- `tests/vectors/edge_verifier/*.json`
+
+Review notes:
+
+- Local assembly spec-conformance review found the four remediation contracts
+  satisfied and added one sibling hardening fix so Rust fallback bounds cannot
+  be bypassed by omitted fallback values.
+- Multi-agent tooling was available, but its active rule forbids spawning
+  subagents unless the user explicitly asks for subagents/delegation. Assembly
+  spec-conformance review was therefore performed locally and this limitation
+  is recorded here.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute were launched,
+  stopped, resized, deleted, or otherwise mutated.
+
 ## CAND-0006-001 Policy-Bound Constraint Remediation - 2026-06-24
 
 Status: successful

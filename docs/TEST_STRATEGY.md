@@ -58,11 +58,16 @@ contract that conformance tests should check against the Pydantic models.
 - Python command gate rejects signed leases whose policy id/digest is missing
   or not accepted by the local policy pin
 - Python command gate and Rust verifier reject signed lease constraints that
-  exceed accepted local policy-bound constraint values
+  exceed accepted local policy-bound constraint values, including wrong
+  geofence identity and effective fallback defaults
 - Rust verifier rejects non-durable replay caches before authority decisions
   and preserves replay state across verifier restart when using a shared store
 - Rust verifier rejects oversized signed command scalar fields and oversized or
   deeply nested command payloads before command HMAC canonicalization
+- Rust verifier bounds oversized untrusted command-auth diagnostic fields before
+  audit storage
+- Python command gate labels pre-auth command diagnostic subject identifiers as
+  claimed data and does not expose unprefixed trusted-looking subject keys
 - Python command gate rejects oversized command and revocation signatures before
   base64 decode or signature verification
 - audit event created for allow

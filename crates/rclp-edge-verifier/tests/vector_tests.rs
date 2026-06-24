@@ -522,6 +522,64 @@ fn accepted_non_remote_capability_requires_declared_constraints() {
 }
 
 #[test]
+fn omitted_fallback_cannot_bypass_local_fallback_bound() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    let mut trusted_context = vector.trusted_context;
+    trusted_context
+        .accepted_capabilities
+        .push("mission_continue".to_string());
+    trusted_context.issuer_capability_scopes[0]
+        .capabilities
+        .push("mission_continue".to_string());
+    trusted_context
+        .capability_constraint_requirements
+        .push(CapabilityConstraintRequirement {
+            capability: "mission_continue".to_string(),
+            require_geofence_id: false,
+            require_network_thresholds: false,
+            require_fallback_on_degrade: false,
+            require_max_speed_mps: false,
+        });
+    trusted_context
+        .capability_constraint_bounds
+        .push(CapabilityConstraintBounds {
+            capability: "mission_continue".to_string(),
+            geofence_id: None,
+            max_latency_ms_p95: None,
+            max_packet_loss_pct: None,
+            min_uplink_mbps: None,
+            fallback_on_degrade: Some("crawl_to_safe_zone".to_string()),
+            max_speed_mps: None,
+            network_violation_action: None,
+        });
+    input["lease"]["claims"]["lease_id"] = Value::from("lease-implicit-fallback");
+    input["lease"]["claims"]["nonce"] = Value::from("nonce-implicit-fallback");
+    input["lease"]["claims"]["capability"] = Value::from("mission_continue");
+    input["lease"]["claims"]["constraints"] = Value::Object(Default::default());
+    input["command"]["capability"] = Value::from("mission_continue");
+    input["command"]["command_id"] = Value::from("cmd-implicit-fallback");
+    input["command"]["command_nonce"] = Value::from("cmd-nonce-implicit-fallback");
+    input["command"]["signature"] = Value::from(sign_command(
+        &serde_json::from_value(input["command"].clone()).expect("command is well formed"),
+        &trusted_context.command_hmac_secret,
+    ));
+    let claims: CapabilityLeaseClaims =
+        serde_json::from_value(input["lease"]["claims"].clone()).expect("claims are well formed");
+    input["lease"]["signature"] =
+        Value::from(sign_claims(&claims, &trusted_context.dev_hmac_secret));
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(input, &trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_LEASE_CONSTRAINTS_EXCEED_POLICY"
+    );
+}
+
+#[test]
 fn authenticated_command_actor_mismatch_is_rejected_before_lease_checks() {
     let vector = load_vector("valid_remote_assist_lease");
     let mut input = vector.input;
@@ -693,6 +751,21 @@ fn oversized_signed_command_field_is_rejected_before_hmac_canonicalization() {
     );
     assert_eq!(decision.audit_event.event_type, "diagnostic");
     assert!(!decision.audit_event.authority_relevant);
+    let claimed_command_id = decision.audit_event.payload["claimed_command_id"]
+        .as_object()
+        .expect("oversized claimed command ID is stored as bounded metadata");
+    assert_eq!(claimed_command_id["byte_length"].as_u64(), Some(70_000));
+    assert_eq!(claimed_command_id["truncated"].as_bool(), Some(true));
+    assert!(claimed_command_id["sha256"]
+        .as_str()
+        .is_some_and(|value| value.starts_with("sha256:")));
+    assert!(claimed_command_id.get("value").is_none());
+    assert!(
+        serde_json::to_string(&decision.audit_event.payload)
+            .expect("audit payload serializes")
+            .len()
+            < 2_000
+    );
 }
 
 #[test]
