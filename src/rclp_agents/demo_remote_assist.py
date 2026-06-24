@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from argparse import ArgumentParser
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from rclp_core.audit import AuditLog
@@ -24,7 +26,13 @@ from rclp_core.models import (
 )
 from rclp_core.network import profile, profile_names
 from rclp_core.policy import Policy, RequestReplayCache, evaluate_policy, policy_digest
-from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache, GateResult
+from rclp_ros2.command_gate import (
+    Command,
+    CommandGate,
+    CommandReplayCache,
+    GateResult,
+    RevocationStore,
+)
 
 CORRELATION_ID = "corr_demo_remote_assist"
 CENTRAL_AGENT_ID = "fleet-agent:v0.1"
@@ -141,14 +149,19 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
     policy = Policy.from_yaml(POLICY_PATH)
     agent_public_keys_by_id = {CENTRAL_AGENT_ID: central_key.public_key_b64}
     edge_public_keys_by_id = {EDGE_AGENT_ID: edge_key.public_key_b64}
-    replay_cache = RequestReplayCache.temporary()
+    runtime_store_dir = TemporaryDirectory(prefix="rclp-demo-stores-")
+    runtime_store_path = Path(runtime_store_dir.name)
+    replay_cache = RequestReplayCache(runtime_store_path / "request_replay.sqlite3")
     active_policy_digest = policy_digest(policy)
     accepted_policy_digests = {active_policy_digest}
     gate = CommandGate(
         issuer_public_key_b64=issuer_key.public_key_b64,
+        local_edge_agent_id=EDGE_AGENT_ID,
         trusted_issuer_ids={ISSUER_ID},
         trusted_revoker_ids={EDGE_AGENT_ID},
         accepted_capabilities={Capability.REMOTE_ASSIST.value},
+        accepted_policy_id=policy.policy_id,
+        accepted_policy_digests=accepted_policy_digests,
         issuer_capability_scopes={ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
         capability_constraint_requirements={
             Capability.REMOTE_ASSIST.value: CapabilityConstraintRequirement(
@@ -161,7 +174,8 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
         agent_public_keys_by_id=agent_public_keys_by_id,
         revoker_public_keys_by_id=edge_public_keys_by_id,
         state_public_keys_by_edge_id=edge_public_keys_by_id,
-        command_replay_cache=CommandReplayCache.temporary(),
+        command_replay_cache=CommandReplayCache(runtime_store_path / "command_replay.sqlite3"),
+        revocation_store=RevocationStore(runtime_store_path / "revocations.sqlite3"),
         audit_log=log,
     )
     impaired_profile_state = profile(impaired_network_profile)
@@ -265,7 +279,15 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
         replay_cache=replay_cache,
     )
     if decision == Decision.ALLOW and constraints:
-        lease = issue_lease(request, constraints, ISSUER_ID, issuer_key, policy.lease_ttl_seconds)
+        lease = issue_lease(
+            request,
+            constraints,
+            ISSUER_ID,
+            issuer_key,
+            policy.lease_ttl_seconds,
+            policy_id=policy.policy_id,
+            policy_digest=active_policy_digest,
+        )
     else:
         lease = None
 

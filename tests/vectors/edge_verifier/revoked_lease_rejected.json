@@ -74,9 +74,16 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760000500000,
-        "nonce": "nonce-revoked"
+        "nonce": "nonce-revoked",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-revoked",
+        "correlation_id": "corr-revoked_lease_rejected",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "d8295f9ee7f281181c944ba96b09b701b0d030a2ede3fd6a12b8318bda4a6de6"
+      "signature": "f0ed2acfc3946aae327faaafdc8fe8f94d426b604036276181e35f359c352f37"
     },
     "command": {
       "command_id": "cmd-revoked",
@@ -88,7 +95,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-revoked-lease-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "88bde3894f9e0a026757f0911b67eb9fd5471202e5d5fd479e82e855b2132aca"
+      "signature": "9028b278688d4c5711f5cd108b851db7edbe20658f535c28b5689aac09bcf9dc",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-revoked",
+      "correlation_id": "corr-revoked_lease_rejected",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

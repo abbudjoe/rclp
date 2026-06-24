@@ -81,7 +81,7 @@ message names are `AuditCommit` and `AgentAttestation`.
 | `NetworkStateAssertion` | `NetworkStateAssertion` | `network_state_assertion` |
 | `CapabilityRequest` | `CapabilityRequest` | `capability_request` |
 | `CapabilityDecision` | `CapabilityDecision` | `capability_decision` |
-| `CapabilityLease` | `CapabilityLease` | embedded signed lease object |
+| `CapabilityLease` | `CapabilityLease` | `capability_lease` |
 | `EdgeCommand` | `rclp_ros2.command_gate.EdgeCommand` | `edge_command` |
 | `LeaseRevocation` | `LeaseRevocation` | `lease_revocation` |
 | `FallbackDeclaration` | `FallbackDeclaration` | `fallback_declaration` |
@@ -200,6 +200,8 @@ Normative behavior:
   enforced by the receiver.
 - Requested constraints MAY narrow authority. They MUST NOT expand authority
   beyond policy or robot-local state.
+- Unknown top-level request fields or unknown nested `requested_constraints`
+  fields MUST be rejected at trust boundaries before signature acceptance.
 
 Rejection conditions:
 
@@ -278,6 +280,8 @@ capability against one robot through one edge agent in one mission.
 
 Required fields:
 
+- common protocol envelope fields: `protocol_version`, `message_id`,
+  `correlation_id`, `created_at`, `message_type`
 - `lease_id`
 - `issuer_id`
 - `agent_id`
@@ -289,6 +293,8 @@ Required fields:
 - `issued_at`
 - `expires_at`
 - `nonce`
+- `policy_id`
+- `policy_digest`
 - `signature`
 
 Required constraint semantics:
@@ -301,9 +307,17 @@ Required constraint semantics:
   hooks when those inputs are policy-relevant.
 - A lease MUST be verifiable by the edge agent without contacting a cloud
   service during command enforcement.
+- The signed lease material MUST bind `policy_id` and `policy_digest`; edge
+  verifier profiles MUST reject leases whose signed policy reference is missing
+  or not accepted.
 
 Rejection conditions:
 
+- unsupported `protocol_version`, missing `message_type`, or unknown top-level
+  lease fields at a trust boundary
+- unknown nested lease constraint fields at a trust boundary
+- missing, unaccepted, or mismatched signed `policy_id`/`policy_digest` in a
+  verifier profile that pins policy provenance
 - signature is invalid or missing
 - `issuer_id` is unknown, revoked, or not authorized for the capability
 - current time is before `issued_at` or after `expires_at`, allowing only the
@@ -333,8 +347,7 @@ authorization under a matching capability lease.
 Required fields:
 
 - common protocol envelope fields: `protocol_version`, `message_id`,
-  `correlation_id`, and `created_at`
-- `message_type`
+  `correlation_id`, `created_at`, and `message_type`
 - `command_id`
 - `agent_id`
 - `authenticated_agent_id`
@@ -351,6 +364,13 @@ Rejection conditions:
 - protocol version is unsupported
 - `authenticated_agent_id` is missing or does not match `agent_id`
 - command signature is missing, invalid, or signed by an untrusted command key
+- command `payload` is missing or was changed after signing
+- command `payload` contains members outside the accepted capability's typed
+  payload schema; in the MVP speed-constrained profile, executable speed
+  intent MUST be represented only by top-level `max_speed_mps` and/or
+  `speed_mps`
+- signed command material exceeds the verifier profile's pre-auth scalar,
+  payload-size, node-count, or nesting-depth budget
 - command is stale or not yet valid outside the receiver's explicit clock-skew
   tolerance
 - `command_id` or `command_nonce` has already been accepted in the replay
@@ -361,6 +381,13 @@ Rejection conditions:
 Audit impact:
 
 - Accepted and rejected commands MUST create or reference an `AuditCommit`.
+- Command-authentication failures MUST NOT emit fallback declarations or call
+  fallback hooks.
+- Command-authentication failure audits MUST NOT treat claimed command robot,
+  mission, edge, or actor fields as trusted authority subject fields; if
+  recorded, they MUST be labeled as claimed/untrusted diagnostic context.
+- Rejections after command authentication MAY emit a `FallbackDeclaration`
+  chosen by local fallback policy.
 - Command rejection audit MUST include the command identity, authenticated
   command actor, lease reference when present, reason code, and policy-relevant
   state references.
@@ -394,6 +421,11 @@ Normative behavior:
   referenced lease for the referenced `edge_agent_id`.
 - An edge agent that knows a valid revocation MUST reject future use of the
   revoked lease.
+- Accepted revocations MUST be recorded in durable edge-local authority state
+  for the lease freshness window so command-gate restart cannot make the lease
+  usable again.
+- Replayed signed revocation messages MUST be idempotent: they MAY be audited
+  as replayed or duplicate revocations, but MUST NOT re-emit fallback hooks.
 - A revocation SHOULD include enough context for an edge agent to reject wrong
   robot, wrong mission, or wrong capability propagation mistakes.
 - `edge_agent_id` MUST match the referenced lease. If `robot_id`,
@@ -410,6 +442,8 @@ Normative behavior:
 Rejection conditions:
 
 - invalid signature or authenticated identity mismatch
+- signed revocation material exceeds the receiver's pre-auth text budget before
+  signature decoding or verification
 - missing signature or untrusted revoker key
 - `revoked_by` is not authorized to revoke leases for the referenced
   `edge_agent_id`
@@ -611,6 +645,7 @@ Rejection conditions:
 - `payload_hash` does not match the referenced payload
 - integrity proof is missing or invalid for an authority-changing event
 - event type is unknown to the audit profile in use
+- unknown top-level audit fields are present outside the integrity proof
 - actor identity is missing, revoked, or inconsistent with the referenced
   message
 - required robot, mission, policy, state, or related-message references are
@@ -644,7 +679,11 @@ An edge agent MUST reject a physical command if:
 - current local state is unauthenticated or signed by an untrusted edge key
 - local state violates hard constraints
 - command payload constraints such as `max_speed_mps` are missing, malformed,
-  exceeded, or carried in conflicting aliases
+  exceeded, carried in conflicting aliases, or carried outside the accepted
+  typed payload schema
+- signed command material exceeds the verifier profile's pre-auth scalar,
+  payload-size, node-count, or nesting-depth budget before command
+  authentication can canonicalize untrusted input
 - required audit behavior cannot be satisfied for an authority-changing path
 
 ## Network-State Policy

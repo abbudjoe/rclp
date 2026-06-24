@@ -72,9 +72,16 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760000500000,
-        "nonce": "nonce-geofence"
+        "nonce": "nonce-geofence",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-geofence",
+        "correlation_id": "corr-geofence_violation_rejected",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "3acc5e110aa5c432393a0cf8921ed1e015d4adfed77b541bd946b583ff14bbf7"
+      "signature": "c1a694ed5e01f040c80e84941542700c1718fd6069795dc6b5d2b9442302231b"
     },
     "command": {
       "command_id": "cmd-geofence",
@@ -86,7 +93,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-geofence-violation-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "f84b0be08b4657483cbd67ccde862e3981007d2ffb29c43215ace30465880ecd"
+      "signature": "8e15468baa7082fc8994a7cd7315baa546f0fc9ebcb1067fc8958bbc82a331b3",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-geofence",
+      "correlation_id": "corr-geofence_violation_rejected",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

@@ -9,7 +9,7 @@ pub mod types;
 pub mod verifier;
 
 pub use audit::AuditEvent;
-pub use replay::ReplayCache;
+pub use replay::{FileReplayCache, ReplayCache, ReplayCacheDurability};
 pub use types::{
     CapabilityConstraintRequirement, CapabilityLeaseClaims, CapabilityLeaseEnvelope, Decision,
     EdgeCommand, GeofenceState, IssuerCapabilityScope, LeaseConstraints, LocalContext,

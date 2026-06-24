@@ -13,6 +13,14 @@ use crate::types::{
 };
 
 const CLOCK_SKEW_MS: i64 = 30_000;
+const SUPPORTED_PROTOCOL_VERSION: &str = "0.0.1-draft";
+const LEASE_MESSAGE_TYPE: &str = "capability_lease";
+const COMMAND_MESSAGE_TYPE: &str = "edge_command";
+const MAX_SIGNED_TEXT_FIELD_BYTES: usize = 1_024;
+const MAX_SIGNED_TEXT_TOTAL_BYTES: usize = 16_384;
+const MAX_COMMAND_PAYLOAD_DEPTH: usize = 32;
+const MAX_COMMAND_PAYLOAD_NODES: usize = 2_048;
+const MAX_COMMAND_PAYLOAD_ESTIMATED_BYTES: usize = 65_536;
 
 pub fn verify_json_value(
     input: Value,
@@ -22,6 +30,12 @@ pub fn verify_json_value(
     if !audit_chain_head_well_formed(trusted_context) {
         return malformed_decision(
             "trusted audit_chain_head is missing or malformed".to_string(),
+            trusted_context,
+        );
+    }
+    if !replay_cache.durability().is_durable() {
+        return malformed_decision(
+            "durable replay cache is required for verifier authority decisions".to_string(),
             trusted_context,
         );
     }
@@ -40,10 +54,17 @@ pub fn verify(
     replay_cache: &mut dyn ReplayCache,
 ) -> VerificationDecision {
     let claims = &input.lease.claims;
+    if !replay_cache.durability().is_durable() {
+        return deny_untrusted_command(&input, trusted_context, ReasonCode::DenyMalformedInput);
+    }
 
     if required_text_missing(&[
         &input.lease.alg,
         &input.lease.signature,
+        &claims.protocol_version,
+        &claims.message_id,
+        &claims.correlation_id,
+        &claims.message_type,
         &claims.lease_id,
         &claims.issuer_id,
         &claims.agent_id,
@@ -52,6 +73,12 @@ pub fn verify(
         &claims.mission_id,
         &claims.capability,
         &claims.nonce,
+        &claims.policy_id,
+        &claims.policy_digest,
+        &input.command.protocol_version,
+        &input.command.message_id,
+        &input.command.correlation_id,
+        &input.command.message_type,
         &input.command.command_id,
         &input.command.agent_id,
         &input.command.edge_agent_id,
@@ -73,27 +100,37 @@ pub fn verify(
         || trusted_context.trusted_state_edge_ids.is_empty()
         || trusted_context.trusted_command_agent_ids.is_empty()
     {
-        return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
+        return deny_untrusted_command(&input, trusted_context, ReasonCode::DenyMalformedInput);
+    }
+    if envelope_violation(&input) {
+        return deny_untrusted_command(&input, trusted_context, ReasonCode::DenyMalformedInput);
     }
     if numeric_fields_malformed(&input, trusted_context) {
-        return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
+        return deny_untrusted_command(&input, trusted_context, ReasonCode::DenyMalformedInput);
     }
-    if let Some(reason) = policy_digest_violation(trusted_context) {
-        return deny(&input, trusted_context, reason);
+    if let Some(reason) = policy_digest_violation(trusted_context, claims) {
+        return deny_untrusted_command(&input, trusted_context, reason);
+    }
+    if signed_material_budget_violation(&input) {
+        return deny_untrusted_command(
+            &input,
+            trusted_context,
+            ReasonCode::DenyCommandSignedMaterialTooLarge,
+        );
     }
 
     if input.lease.alg != DEV_HMAC_SHA256_ALG {
-        return deny(&input, trusted_context, ReasonCode::DenyUnknownAlgorithm);
+        return deny_untrusted_command(&input, trusted_context, ReasonCode::DenyUnknownAlgorithm);
     }
     if trusted_context.trusted_issuer_ids.len() != 1
         || trusted_context.trusted_command_agent_ids.len() != 1
         || trusted_context.trusted_state_edge_ids.len() != 1
     {
-        return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
+        return deny_untrusted_command(&input, trusted_context, ReasonCode::DenyMalformedInput);
     }
 
     if let Some(reason) = command_auth_violation(&input, trusted_context, replay_cache) {
-        return deny(&input, trusted_context, reason);
+        return deny_untrusted_command(&input, trusted_context, reason);
     }
 
     if !trusted_context
@@ -138,10 +175,7 @@ pub fn verify(
     let Some(lease_ttl_ms) = claims.expires_at.checked_sub(claims.issued_at) else {
         return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
     };
-    let Some(max_ttl_ms) = trusted_context.max_lease_ttl_ms.checked_add(30_000) else {
-        return deny(&input, trusted_context, ReasonCode::DenyMalformedInput);
-    };
-    if lease_ttl_ms > max_ttl_ms {
+    if lease_ttl_ms > trusted_context.max_lease_ttl_ms {
         return deny(&input, trusted_context, ReasonCode::DenyTtlTooLong);
     }
     let Some(lease_age_ms) = trusted_context.now_unix_ms.checked_sub(claims.issued_at) else {
@@ -271,11 +305,28 @@ fn capability_allowed_for_issuer(
             })
 }
 
-fn policy_digest_violation(trusted_context: &TrustedVerifierContext) -> Option<ReasonCode> {
+fn envelope_violation(input: &VerificationInput) -> bool {
+    input.lease.claims.protocol_version != SUPPORTED_PROTOCOL_VERSION
+        || input.lease.claims.message_type != LEASE_MESSAGE_TYPE
+        || input.command.protocol_version != SUPPORTED_PROTOCOL_VERSION
+        || input.command.message_type != COMMAND_MESSAGE_TYPE
+}
+
+fn policy_digest_violation(
+    trusted_context: &TrustedVerifierContext,
+    claims: &CapabilityLeaseClaims,
+) -> Option<ReasonCode> {
     if trusted_context.policy_id.trim().is_empty()
         || trusted_context.policy_digest.trim().is_empty()
+        || claims.policy_id.trim().is_empty()
+        || claims.policy_digest.trim().is_empty()
     {
         return Some(ReasonCode::DenyPolicyDigestRequired);
+    }
+    if claims.policy_id != trusted_context.policy_id
+        || claims.policy_digest != trusted_context.policy_digest
+    {
+        return Some(ReasonCode::DenyPolicyDigestNotAccepted);
     }
     if !trusted_context.accepted_policies.iter().any(|policy| {
         policy.policy_id == trusted_context.policy_id
@@ -294,6 +345,7 @@ fn numeric_fields_malformed(
     if trusted_context.now_unix_ms < 0
         || claims.issued_at < 0
         || claims.expires_at < 0
+        || claims.created_at_unix_ms < 0
         || claims.not_before.is_some_and(|value| value < 0)
         || trusted_context.max_lease_ttl_ms <= 0
         || trusted_context.max_lease_age_ms <= 0
@@ -303,14 +355,6 @@ fn numeric_fields_malformed(
         || input.local_context.observed_at_unix_ms < 0
         || input.local_context.network_state.observed_at_unix_ms < 0
         || input.local_context.geofence_state.verified_at_unix_ms < 0
-    {
-        return true;
-    }
-
-    if input
-        .command
-        .max_speed_mps
-        .is_some_and(|value| !finite_nonnegative(value))
     {
         return true;
     }
@@ -378,6 +422,148 @@ fn command_auth_violation(
         return Some(ReasonCode::DenyReplayedCommand);
     }
     None
+}
+
+fn signed_material_budget_violation(input: &VerificationInput) -> bool {
+    let mut text_budget = SignedTextBudget::new();
+    for value in [
+        &input.lease.alg,
+        &input.lease.signature,
+        &input.lease.claims.protocol_version,
+        &input.lease.claims.message_id,
+        &input.lease.claims.correlation_id,
+        &input.lease.claims.message_type,
+        &input.lease.claims.lease_id,
+        &input.lease.claims.issuer_id,
+        &input.lease.claims.agent_id,
+        &input.lease.claims.edge_agent_id,
+        &input.lease.claims.robot_id,
+        &input.lease.claims.mission_id,
+        &input.lease.claims.capability,
+        &input.lease.claims.nonce,
+        &input.lease.claims.policy_id,
+        &input.lease.claims.policy_digest,
+        &input.command.protocol_version,
+        &input.command.message_id,
+        &input.command.correlation_id,
+        &input.command.message_type,
+        &input.command.command_id,
+        &input.command.agent_id,
+        &input.command.authenticated_agent_id,
+        &input.command.edge_agent_id,
+        &input.command.robot_id,
+        &input.command.mission_id,
+        &input.command.capability,
+        &input.command.command_nonce,
+        &input.local_context.robot_id,
+        &input.local_context.edge_agent_id,
+        &input.local_context.mission_id,
+        &input.local_context.geofence_state.geofence_id,
+    ] {
+        if text_budget.add(value) {
+            return true;
+        }
+    }
+    for value in [
+        input.lease.claims.constraints.geofence_id.as_deref(),
+        input
+            .lease
+            .claims
+            .constraints
+            .fallback_on_degrade
+            .as_deref(),
+        input.command.signature.as_deref(),
+        input.local_context.authenticated_edge_agent_id.as_deref(),
+        input.local_context.signature.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if text_budget.add(value) {
+            return true;
+        }
+    }
+
+    command_payload_budget_violation(&input.command.payload)
+}
+
+struct SignedTextBudget {
+    total_bytes: usize,
+}
+
+impl SignedTextBudget {
+    fn new() -> Self {
+        Self { total_bytes: 0 }
+    }
+
+    fn add(&mut self, value: &str) -> bool {
+        if value.len() > MAX_SIGNED_TEXT_FIELD_BYTES {
+            return true;
+        }
+        self.total_bytes = match self.total_bytes.checked_add(value.len()) {
+            Some(total) if total <= MAX_SIGNED_TEXT_TOTAL_BYTES => total,
+            _ => return true,
+        };
+        false
+    }
+}
+
+fn command_payload_budget_violation(payload: &Value) -> bool {
+    let mut stack = vec![(payload, 1usize)];
+    let mut node_count = 0usize;
+    let mut estimated_bytes = 0usize;
+
+    while let Some((value, depth)) = stack.pop() {
+        if depth > MAX_COMMAND_PAYLOAD_DEPTH {
+            return true;
+        }
+        node_count = match node_count.checked_add(1) {
+            Some(value) if value <= MAX_COMMAND_PAYLOAD_NODES => value,
+            _ => return true,
+        };
+        estimated_bytes = match estimated_payload_bytes(estimated_bytes, value) {
+            Some(value) if value <= MAX_COMMAND_PAYLOAD_ESTIMATED_BYTES => value,
+            _ => return true,
+        };
+        match value {
+            Value::Array(values) => {
+                for child in values {
+                    stack.push((child, depth + 1));
+                }
+            }
+            Value::Object(map) => {
+                for child in map.values() {
+                    stack.push((child, depth + 1));
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
+
+    false
+}
+
+fn estimated_payload_bytes(current: usize, value: &Value) -> Option<usize> {
+    let increment = match value {
+        Value::Null => 4,
+        Value::Bool(value) => {
+            if *value {
+                4
+            } else {
+                5
+            }
+        }
+        Value::Number(value) => value.to_string().len(),
+        Value::String(value) => value.len().saturating_add(2),
+        Value::Array(values) => values.len().saturating_add(2),
+        Value::Object(map) => map
+            .keys()
+            .map(|key| key.len().saturating_add(3))
+            .sum::<usize>()
+            .saturating_add(map.len())
+            .saturating_add(2),
+    };
+    current.checked_add(increment)
 }
 
 fn command_time_violation(
@@ -475,13 +661,50 @@ fn local_state_auth_violation(
 
 fn command_constraint_violation(input: &VerificationInput) -> Option<ReasonCode> {
     let max_speed = input.lease.claims.constraints.max_speed_mps?;
-    let Some(command_speed) = input.command.max_speed_mps else {
-        return Some(ReasonCode::DenyCommandConstraint);
+    let command_speed = match command_payload_speed(&input.command.payload) {
+        Ok(Some(speed)) => speed,
+        Ok(None) => return Some(ReasonCode::DenyCommandConstraint),
+        Err(reason) => return Some(reason),
     };
     if command_speed > max_speed {
         return Some(ReasonCode::DenyCommandConstraint);
     }
     None
+}
+
+fn command_payload_speed(payload: &Value) -> Result<Option<f64>, ReasonCode> {
+    let Some(payload) = payload.as_object() else {
+        return Err(ReasonCode::DenyMalformedInput);
+    };
+    for field_name in payload.keys() {
+        if field_name != "max_speed_mps" && field_name != "speed_mps" {
+            return Err(ReasonCode::DenyCommandConstraint);
+        }
+    }
+    let max_speed = payload_number_field(payload, "max_speed_mps")?;
+    let speed = payload_number_field(payload, "speed_mps")?;
+    if let (Some(max_speed), Some(speed)) = (max_speed, speed) {
+        if max_speed != speed {
+            return Err(ReasonCode::DenyCommandConstraint);
+        }
+    }
+    Ok(max_speed.or(speed))
+}
+
+fn payload_number_field(
+    payload: &serde_json::Map<String, Value>,
+    field_name: &str,
+) -> Result<Option<f64>, ReasonCode> {
+    let Some(value) = payload.get(field_name) else {
+        return Ok(None);
+    };
+    let Some(number) = value.as_f64() else {
+        return Err(ReasonCode::DenyMalformedInput);
+    };
+    if !finite_nonnegative(number) {
+        return Err(ReasonCode::DenyMalformedInput);
+    }
+    Ok(Some(number))
 }
 
 fn finite_nonnegative(value: f64) -> bool {
@@ -625,6 +848,50 @@ fn deny(
     decision(input, trusted_context, Decision::Deny, reason_code)
 }
 
+fn deny_untrusted_command(
+    input: &VerificationInput,
+    trusted_context: &TrustedVerifierContext,
+    reason_code: ReasonCode,
+) -> VerificationDecision {
+    let payload = serde_json::json!({
+        "decision": Decision::Deny.as_str(),
+        "reason_code": reason_code.as_str(),
+        "claimed_lease_id": &input.lease.claims.lease_id,
+        "claimed_command_id": &input.command.command_id,
+        "claimed_command_agent_id": &input.command.agent_id,
+        "claimed_authenticated_command_agent_id": &input.command.authenticated_agent_id,
+        "claimed_edge_agent_id": &input.command.edge_agent_id,
+        "claimed_robot_id": &input.command.robot_id,
+        "claimed_mission_id": &input.command.mission_id,
+        "claimed_capability": &input.command.capability,
+    });
+    VerificationDecision {
+        decision: Decision::Deny,
+        reason_code,
+        audit_event: AuditEvent::new(
+            Decision::Deny,
+            reason_code,
+            AuditSubject {
+                lease_id: None,
+                command_id: None,
+                robot_id: None,
+                edge_agent_id: None,
+                mission_id: None,
+                actor_id: "local_edge_verifier".to_string(),
+                correlation_id: "untrusted_command_auth".to_string(),
+                payload,
+                policy_id: Some(trusted_context.policy_id.clone()),
+                policy_digest: Some(trusted_context.policy_digest.clone()),
+                previous_audit_hash: audit_chain_head(trusted_context),
+                state_refs: Vec::new(),
+                related_message_ids: Vec::new(),
+                observed_at_unix_ms: trusted_context.now_unix_ms,
+                authority_relevant: false,
+            },
+        ),
+    }
+}
+
 fn decision(
     input: &VerificationInput,
     trusted_context: &TrustedVerifierContext,
@@ -672,6 +939,7 @@ fn decision(
                     input.lease.claims.lease_id.clone(),
                 ],
                 observed_at_unix_ms: trusted_context.now_unix_ms,
+                authority_relevant: true,
             },
         ),
     }
@@ -710,6 +978,7 @@ fn malformed_decision(
                 state_refs: Vec::new(),
                 related_message_ids: Vec::new(),
                 observed_at_unix_ms: trusted_context.now_unix_ms,
+                authority_relevant: false,
             },
         ),
     }

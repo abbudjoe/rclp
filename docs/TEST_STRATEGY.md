@@ -23,30 +23,54 @@ contract that conformance tests should check against the Pydantic models.
 - expired lease rejected
 - stale request rejected
 - stale but not-yet-expired lease rejected
+- unsupported or future-field `CapabilityLease` rejected before authority allow
 - unsigned or stale robot state assertion rejected before policy allow
 - policy issuance without replay protection rejected
 - missing, unsigned, or stale current edge state rejected at command gate
 - missing, unsigned, stale, replayed, or actor-mismatched edge commands
   rejected at command gate before lease validation can allow
-- command payload exceeding `max_speed_mps` or carrying conflicting speed
-  aliases rejected
+- unauthenticated command denials audited without fallback declarations or
+  fallback sink calls
+- command payload exceeding `max_speed_mps`, carrying conflicting speed aliases,
+  or carrying speed-constrained motion intent outside the accepted typed
+  payload schema rejected
 - wrong robot rejected
 - wrong agent rejected
 - revoked lease rejected
+- accepted revocation remains enforced after command-gate restart
 - invalid signature rejected
 - unknown requesting agent rejected
 - unknown lease issuer rejected
 - unknown revocation actor rejected
-- unsigned, invalid-signature, stale, and context-conflicting revocation
-  rejected
+- unsigned, over-budget-signature, invalid-signature, stale, and
+  context-conflicting revocation rejected
 - replayed context rejected
 - replayed request nonce rejected
+- policy input with unknown top-level or nested future authority fields rejected
+  before policy digest acceptance
+- temporary request replay, command replay, and revocation stores rejected as
+  non-durable at authority boundaries
 - policy authority-scope downgrade rejected
 - permissive policy digest downgrade rejected
+- signed lease policy id/digest mismatch rejected by the Rust verifier
+- Python command gate rejects signed leases whose policy id/digest is missing
+  or not accepted by the local policy pin
+- Rust verifier rejects non-durable replay caches before authority decisions
+  and preserves replay state across verifier restart when using a shared store
+- Rust verifier rejects oversized signed command scalar fields and oversized or
+  deeply nested command payloads before command HMAC canonicalization
+- Python command gate rejects oversized command and revocation signatures before
+  base64 decode or signature verification
 - audit event created for allow
 - audit event created for deny
 - audit event created for fallback
 - audit replay rejects top-level context tampering
+- audit JSONL import rejects appended unknown context outside the integrity
+  proof
+- replayed signed revocation does not re-emit fallback hooks, including after a
+  command-gate restart
+- Rust verifier malformed pre-parse audit records are diagnostic/non-authority
+  and repeated malformed decisions have unique audit identities
 
 ## Commands
 

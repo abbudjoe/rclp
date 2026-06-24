@@ -71,9 +71,16 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760000500000,
-        "nonce": "nonce-network-missing-fallback"
+        "nonce": "nonce-network-missing-fallback",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-network-missing-fallback",
+        "correlation_id": "corr-network_missing_fallback_rejected",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "d54bce60275bdf0e30fbc0fe27728272f8de416e36156695cddc8bcdcf828c25"
+      "signature": "61b733da3da2c9dba7c66056568ac4267b92798ca4d58d3f7eb949ee8440c819"
     },
     "command": {
       "command_id": "cmd-network-missing-fallback",
@@ -85,7 +92,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-network-missing-fallback-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "8e8fde0b3fe030d495514e6ece1a23c4e2727a01e0951456743afb3d58191ff3"
+      "signature": "f102c49cd273fdcdec708461853c0265ad1eba5c5eaebffffe0cc22f0960f16a",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-network-missing-fallback",
+      "correlation_id": "corr-network_missing_fallback_rejected",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

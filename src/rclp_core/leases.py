@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from rclp_core.crypto import DemoKeyPair, verify_with_public_key_b64
 from rclp_core.models import (
@@ -9,6 +10,7 @@ from rclp_core.models import (
     CapabilityLease,
     CapabilityRequest,
     LeaseConstraints,
+    SUPPORTED_PROTOCOL_VERSION,
 )
 
 
@@ -22,14 +24,24 @@ def issue_lease(
     issuer_id: str,
     issuer_key: DemoKeyPair,
     ttl_seconds: int,
+    *,
+    policy_id: str,
+    policy_digest: str,
 ) -> CapabilityLease:
     if ttl_seconds <= 0:
         raise ValueError("lease ttl must be positive")
     if ttl_seconds > request.requested_duration_seconds:
         raise ValueError("lease ttl cannot exceed requested duration")
+    if not policy_id.strip() or not policy_digest.strip():
+        raise ValueError("lease policy provenance is required")
 
     now = datetime.now(timezone.utc)
     lease = CapabilityLease(
+        protocol_version=SUPPORTED_PROTOCOL_VERSION,
+        message_id=f"msg_{uuid4().hex}",
+        correlation_id=request.correlation_id,
+        created_at=now,
+        message_type="capability_lease",
         issuer_id=issuer_id,
         agent_id=request.requesting_agent_id,
         edge_agent_id=request.edge_agent_id,
@@ -39,6 +51,8 @@ def issue_lease(
         constraints=constraints,
         issued_at=now,
         expires_at=now + timedelta(seconds=ttl_seconds),
+        policy_id=policy_id,
+        policy_digest=policy_digest,
     )
     lease.signature = issuer_key.sign(lease)
     return lease

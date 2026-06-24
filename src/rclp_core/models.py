@@ -7,10 +7,11 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 SUPPORTED_PROTOCOL_VERSION = "0.0.1-draft"
+STRICT_MODEL_CONFIG = ConfigDict(extra="forbid")
 
 
 def utc_now() -> datetime:
@@ -66,7 +67,13 @@ class NetworkProfile(StrEnum):
     PARTITION = "partition"
 
 
+class StrictModel(BaseModel):
+    model_config = STRICT_MODEL_CONFIG
+
+
 class BaseMessage(BaseModel):
+    model_config = STRICT_MODEL_CONFIG
+
     protocol_version: str = SUPPORTED_PROTOCOL_VERSION
     message_id: str = Field(default_factory=lambda: f"msg_{uuid4().hex}")
     correlation_id: str = Field(default_factory=lambda: f"corr_{uuid4().hex}")
@@ -99,19 +106,19 @@ class AgentAttestation(BaseMessage):
 AgentIdentity = AgentAttestation
 
 
-class RobotIdentity(BaseModel):
+class RobotIdentity(StrictModel):
     robot_id: str
     hardware_id: str
     edge_agent_id: str
 
 
-class MissionContext(BaseModel):
+class MissionContext(StrictModel):
     mission_id: str
     mission_type: str = "demo"
     human_operator_available: bool = False
 
 
-class NetworkState(BaseModel):
+class NetworkState(StrictModel):
     profile: NetworkProfile = NetworkProfile.UNKNOWN
     attached: bool = True
     latency_ms_p95: float = Field(ge=0, allow_inf_nan=False)
@@ -120,7 +127,7 @@ class NetworkState(BaseModel):
     observed_at: datetime = Field(default_factory=utc_now)
 
 
-class GeofenceState(BaseModel):
+class GeofenceState(StrictModel):
     geofence_id: str
     inside: bool
     verified_at: datetime = Field(default_factory=utc_now)
@@ -156,6 +163,15 @@ class NetworkStateAssertion(BaseMessage):
     signature: str | None = None
 
 
+class LeaseConstraints(StrictModel):
+    geofence_id: str | None = None
+    max_latency_ms_p95: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    max_packet_loss_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    min_uplink_mbps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    fallback_on_degrade: FallbackAction = FallbackAction.LOCAL_AUTONOMY_ONLY
+    max_speed_mps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
 class CapabilityRequest(BaseMessage):
     message_type: Literal["capability_request"] = "capability_request"
     requesting_agent_id: str
@@ -166,20 +182,12 @@ class CapabilityRequest(BaseMessage):
     capability: Capability
     reason: str
     requested_duration_seconds: int = Field(default=600, gt=0)
+    requested_constraints: LeaseConstraints | None = None
     request_nonce: str = Field(default_factory=lambda: f"nonce_{uuid4().hex}")
     signature: str | None = None
 
 
-class LeaseConstraints(BaseModel):
-    geofence_id: str | None = None
-    max_latency_ms_p95: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    max_packet_loss_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
-    min_uplink_mbps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    fallback_on_degrade: FallbackAction = FallbackAction.LOCAL_AUTONOMY_ONLY
-    max_speed_mps: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-
-
-class CapabilityConstraintRequirement(BaseModel):
+class CapabilityConstraintRequirement(StrictModel):
     capability: Capability
     require_geofence_id: bool = False
     require_network_thresholds: bool = False
@@ -187,7 +195,12 @@ class CapabilityConstraintRequirement(BaseModel):
     require_max_speed_mps: bool = False
 
 
-class CapabilityLease(BaseModel):
+class CapabilityLease(BaseMessage):
+    protocol_version: str
+    message_id: str
+    correlation_id: str
+    created_at: datetime
+    message_type: Literal["capability_lease"]
     lease_id: str = Field(default_factory=lambda: f"lease_{uuid4().hex}")
     issuer_id: str
     agent_id: str
@@ -199,10 +212,14 @@ class CapabilityLease(BaseModel):
     issued_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime
     nonce: str = Field(default_factory=lambda: f"lease_nonce_{uuid4().hex}")
+    policy_id: str
+    policy_digest: str
     signature: str | None = None
 
     @model_validator(mode="after")
     def validate_time_window(self) -> "CapabilityLease":
+        if not self.policy_id.strip() or not self.policy_digest.strip():
+            raise ValueError("lease policy provenance must be non-empty")
         for value in (self.issued_at, self.expires_at):
             if value.tzinfo is None or value.utcoffset() is None:
                 raise ValueError("lease timestamps must be timezone-aware")

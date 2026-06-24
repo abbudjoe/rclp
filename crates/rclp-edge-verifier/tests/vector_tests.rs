@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use hmac::{Hmac, Mac};
 use rclp_edge_verifier::canonical_json::canonical_json;
 use rclp_edge_verifier::{
     verify_json_value, CapabilityConstraintRequirement, CapabilityLeaseClaims, EdgeCommand,
-    ReplayCache, TrustedVerifierContext,
+    FileReplayCache, ReplayCache, TrustedVerifierContext,
 };
 use serde::Deserialize;
 use serde::Serialize;
@@ -15,24 +16,39 @@ use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
 
-#[derive(Clone, Debug, Default)]
-struct TestReplayCache {
+static NEXT_REPLAY_CACHE_ID: AtomicUsize = AtomicUsize::new(1);
+
+fn replay_cache_path(label: &str) -> PathBuf {
+    let id = NEXT_REPLAY_CACHE_ID.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "rclp-edge-verifier-{label}-{}-{id}",
+        std::process::id()
+    ))
+}
+
+fn replay_cache_with_seen<I, S>(nonces: I) -> FileReplayCache
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut cache = FileReplayCache::new(replay_cache_path("durable"))
+        .expect("test replay cache can be created");
+    for nonce in nonces {
+        assert!(cache.consume_nonce(&nonce.into()));
+    }
+    cache
+}
+
+fn fresh_replay_cache() -> FileReplayCache {
+    replay_cache_with_seen(Vec::<String>::new())
+}
+
+#[derive(Default)]
+struct NonDurableReplayCache {
     seen_nonces: HashSet<String>,
 }
 
-impl TestReplayCache {
-    fn with_seen<I, S>(nonces: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        Self {
-            seen_nonces: nonces.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
-impl ReplayCache for TestReplayCache {
+impl ReplayCache for NonDurableReplayCache {
     fn consume_nonce(&mut self, nonce: &str) -> bool {
         self.seen_nonces.insert(nonce.to_string())
     }
@@ -84,7 +100,7 @@ fn edge_verifier_vectors_match_expected_decisions() {
             vector.name
         );
         let input = vector.input;
-        let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+        let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
         let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
 
@@ -107,6 +123,131 @@ fn edge_verifier_vectors_match_expected_decisions() {
             vector.name
         );
     }
+}
+
+#[test]
+fn verifier_rejects_non_durable_replay_cache_before_authority_decision() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut replay_cache = NonDurableReplayCache::default();
+
+    let decision = verify_json_value(vector.input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(decision.reason_code.as_str(), "DENY_MALFORMED_INPUT");
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+    assert!(decision.audit_event.lease_id.is_none());
+    assert!(decision.audit_event.command_id.is_none());
+    assert!(decision
+        .audit_event
+        .payload
+        .get("summary")
+        .and_then(Value::as_str)
+        .is_some_and(|summary| summary.contains("durable replay cache is required")));
+}
+
+#[test]
+fn file_replay_cache_preserves_replay_state_after_verifier_recreation() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let cache_path = replay_cache_path("restart");
+    let mut first_cache =
+        FileReplayCache::new(&cache_path).expect("first replay cache can be created");
+    let first = verify_json_value(
+        vector.input.clone(),
+        &vector.trusted_context,
+        &mut first_cache,
+    );
+    assert_eq!(first.decision.as_str(), "allow");
+
+    let mut restarted_cache =
+        FileReplayCache::new(&cache_path).expect("restarted replay cache can be created");
+    let second = verify_json_value(vector.input, &vector.trusted_context, &mut restarted_cache);
+
+    assert_eq!(second.decision.as_str(), "deny");
+    assert_eq!(second.reason_code.as_str(), "DENY_REPLAYED_COMMAND");
+}
+
+#[test]
+fn file_replay_cache_preserves_lease_nonce_after_verifier_recreation() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let cache_path = replay_cache_path("lease-restart");
+    let mut first_cache =
+        FileReplayCache::new(&cache_path).expect("first replay cache can be created");
+    let first = verify_json_value(
+        vector.input.clone(),
+        &vector.trusted_context,
+        &mut first_cache,
+    );
+    assert_eq!(first.decision.as_str(), "allow");
+
+    let mut restarted_input = vector.input;
+    resign_command_value(
+        &mut restarted_input,
+        "cmd-valid-remote-assist-after-restart",
+        "cmd-nonce-valid-remote-assist-after-restart",
+        &vector.trusted_context.command_hmac_secret,
+    );
+    let mut restarted_cache =
+        FileReplayCache::new(&cache_path).expect("restarted replay cache can be created");
+    let second = verify_json_value(
+        restarted_input,
+        &vector.trusted_context,
+        &mut restarted_cache,
+    );
+
+    assert_eq!(second.decision.as_str(), "deny");
+    assert_eq!(second.reason_code.as_str(), "DENY_REPLAYED_NONCE");
+}
+
+#[test]
+fn file_replay_cache_writes_marker_and_rejects_duplicate_nonce() {
+    let nonce = "nonce-durable-marker";
+    let mut cache = FileReplayCache::new(replay_cache_path("durable-marker"))
+        .expect("file replay cache can be created");
+
+    assert!(cache.consume_nonce(nonce));
+    let digest = Sha256::digest(nonce.as_bytes());
+    let marker_path = cache.store_dir().join(hex::encode(digest));
+    let marker = fs::read_to_string(marker_path).expect("nonce marker is committed");
+
+    assert_eq!(marker, "nonce-durable-marker\n");
+    assert!(!cache.consume_nonce(nonce));
+}
+
+#[test]
+fn lease_ttl_exact_policy_maximum_is_allowed() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(vector.input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "allow");
+    assert_eq!(decision.reason_code.as_str(), "ALLOW");
+}
+
+#[test]
+fn lease_ttl_max_plus_one_is_rejected() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    let issued_at = input["lease"]["claims"]["issued_at"]
+        .as_i64()
+        .expect("vector lease has issued_at");
+    input["lease"]["claims"]["lease_id"] = Value::from("lease-ttl-max-plus-one");
+    input["lease"]["claims"]["nonce"] = Value::from("nonce-ttl-max-plus-one");
+    input["lease"]["claims"]["expires_at"] =
+        Value::from(issued_at + vector.trusted_context.max_lease_ttl_ms + 1);
+    let claims: CapabilityLeaseClaims =
+        serde_json::from_value(input["lease"]["claims"].clone()).expect("claims are well formed");
+    input["lease"]["signature"] = Value::from(sign_claims(
+        &claims,
+        &vector.trusted_context.dev_hmac_secret,
+    ));
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(decision.reason_code.as_str(), "DENY_TTL_TOO_LONG");
 }
 
 #[test]
@@ -133,7 +274,7 @@ fn trusted_verifier_context_redacts_hmac_secrets() {
 #[test]
 fn malformed_json_audit_event_binds_audit_chain_head() {
     let vector = load_vector("valid_remote_assist_lease");
-    let mut replay_cache = TestReplayCache::default();
+    let mut replay_cache = fresh_replay_cache();
 
     let decision = verify_json_value(
         json!({"not": "a verification input"}),
@@ -143,9 +284,37 @@ fn malformed_json_audit_event_binds_audit_chain_head() {
 
     assert_eq!(decision.decision.as_str(), "deny");
     assert_eq!(decision.reason_code.as_str(), "DENY_MALFORMED_INPUT");
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+    assert!(decision.audit_event.lease_id.is_none());
+    assert!(decision.audit_event.command_id.is_none());
     assert_eq!(
         decision.audit_event.previous_audit_hash.as_deref(),
         Some("sha256:trusted-dev-audit-chain-head")
+    );
+}
+
+#[test]
+fn malformed_json_audit_events_have_unique_identities() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut replay_cache = fresh_replay_cache();
+
+    let first = verify_json_value(
+        json!({"not": "a verification input"}),
+        &vector.trusted_context,
+        &mut replay_cache,
+    );
+    let second = verify_json_value(
+        json!({"not": "a verification input"}),
+        &vector.trusted_context,
+        &mut replay_cache,
+    );
+
+    assert_ne!(first.audit_event.audit_id, second.audit_event.audit_id);
+    assert_ne!(first.audit_event.message_id, second.audit_event.message_id);
+    assert_ne!(
+        first.audit_event.identity_nonce,
+        second.audit_event.identity_nonce
     );
 }
 
@@ -165,7 +334,7 @@ fn trusted_context_rejects_malformed_audit_chain_head_on_load() {
 fn replay_cache_rejects_second_use_of_same_lease_nonce() {
     let vector = load_vector("valid_remote_assist_lease");
     let mut input = vector.input;
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let first = verify_json_value(input.clone(), &vector.trusted_context, &mut replay_cache);
     assert_eq!(first.decision.as_str(), "allow");
@@ -186,7 +355,7 @@ fn replay_cache_rejects_second_use_of_same_lease_nonce() {
 fn replay_cache_consumes_nonce_on_degrade_decision() {
     let vector = load_vector("network_degrade_denies_or_revokes");
     let mut input = vector.input;
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let first = verify_json_value(input.clone(), &vector.trusted_context, &mut replay_cache);
     assert_eq!(first.decision.as_str(), "degrade");
@@ -207,7 +376,7 @@ fn replay_cache_consumes_nonce_on_degrade_decision() {
 fn replay_cache_rejects_second_use_of_same_signed_command() {
     let vector = load_vector("valid_remote_assist_lease");
     let input = vector.input;
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let first = verify_json_value(input.clone(), &vector.trusted_context, &mut replay_cache);
     assert_eq!(first.decision.as_str(), "allow");
@@ -239,7 +408,7 @@ fn hmac_valid_unsupported_capability_is_rejected_by_local_scope() {
         &claims,
         &vector.trusted_context.dev_hmac_secret,
     ));
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
 
@@ -282,7 +451,7 @@ fn accepted_non_remote_capability_requires_declared_constraints() {
         serde_json::from_value(input["lease"]["claims"].clone()).expect("claims are well formed");
     input["lease"]["signature"] =
         Value::from(sign_claims(&claims, &trusted_context.dev_hmac_secret));
-    let mut replay_cache = TestReplayCache::default();
+    let mut replay_cache = fresh_replay_cache();
 
     let decision = verify_json_value(input, &trusted_context, &mut replay_cache);
 
@@ -295,7 +464,7 @@ fn authenticated_command_actor_mismatch_is_rejected_before_lease_checks() {
     let vector = load_vector("valid_remote_assist_lease");
     let mut input = vector.input;
     input["command"]["authenticated_agent_id"] = Value::from("fleet-agent:other");
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
 
@@ -304,12 +473,273 @@ fn authenticated_command_actor_mismatch_is_rejected_before_lease_checks() {
         decision.reason_code.as_str(),
         "DENY_COMMAND_AUTHENTICATED_AGENT_MISMATCH"
     );
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+    assert!(decision.audit_event.lease_id.is_none());
+    assert!(decision.audit_event.command_id.is_none());
+    assert!(decision.audit_event.robot_id.is_none());
+    assert_eq!(
+        decision
+            .audit_event
+            .payload
+            .get("claimed_command_id")
+            .and_then(Value::as_str),
+        Some("cmd-valid-remote-assist")
+    );
+}
+
+#[test]
+fn command_payload_tamper_invalidates_command_signature() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["command"]["payload"]["tampered_after_signing"] = Value::Bool(true);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_INVALID_COMMAND_SIGNATURE"
+    );
+}
+
+#[test]
+fn speed_limited_payload_accepts_supported_speed_aliases() {
+    for (payload, command_id) in [
+        (json!({"max_speed_mps": 0.25}), "cmd-speed-schema-max"),
+        (json!({"speed_mps": 0.25}), "cmd-speed-schema-speed"),
+        (
+            json!({"max_speed_mps": 0.25, "speed_mps": 0.25}),
+            "cmd-speed-schema-both",
+        ),
+    ] {
+        let decision = verify_resigned_speed_payload(payload, command_id);
+
+        assert_eq!(decision.decision.as_str(), "allow");
+        assert_eq!(decision.reason_code.as_str(), "ALLOW");
+    }
+}
+
+#[test]
+fn speed_limited_payload_rejects_unknown_motion_fields() {
+    for (payload, command_id) in [
+        (
+            json!({"max_speed_mps": 0.25, "motion": {"max_speed_mps": 99.0}}),
+            "cmd-speed-schema-motion",
+        ),
+        (
+            json!({"max_speed_mps": 0.25, "trajectory": [{"speed_mps": 99.0}]}),
+            "cmd-speed-schema-trajectory",
+        ),
+        (
+            json!({"max_speed_mps": 0.25, "vendor_motion": {"speed_mps": 99.0}}),
+            "cmd-speed-schema-vendor",
+        ),
+    ] {
+        let decision = verify_resigned_speed_payload(payload, command_id);
+
+        assert_eq!(decision.decision.as_str(), "deny");
+        assert_eq!(decision.reason_code.as_str(), "DENY_COMMAND_CONSTRAINT");
+    }
+}
+
+#[test]
+fn oversized_command_payload_is_rejected_before_hmac_canonicalization() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["command"]["payload"] = json!({"blob": "x".repeat(70_000)});
+    input["command"]["signature"] = Value::from("00");
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_COMMAND_SIGNED_MATERIAL_TOO_LARGE"
+    );
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+}
+
+#[test]
+fn oversized_signed_command_field_is_rejected_before_hmac_canonicalization() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["command"]["command_id"] = Value::from("x".repeat(70_000));
+    input["command"]["signature"] = Value::from("00");
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_COMMAND_SIGNED_MATERIAL_TOO_LARGE"
+    );
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+}
+
+#[test]
+fn deeply_nested_command_payload_is_rejected_before_hmac_canonicalization() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    let mut payload = json!({"speed_mps": 0.5});
+    for _ in 0..40 {
+        payload = json!([payload]);
+    }
+    input["command"]["payload"] = payload;
+    input["command"]["signature"] = Value::from("00");
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_COMMAND_SIGNED_MATERIAL_TOO_LARGE"
+    );
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+}
+
+#[test]
+fn command_without_payload_is_malformed() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["command"]
+        .as_object_mut()
+        .expect("command is an object")
+        .remove("payload");
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(decision.reason_code.as_str(), "DENY_MALFORMED_INPUT");
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+}
+
+#[test]
+fn signed_lease_policy_digest_mismatch_is_rejected() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["lease"]["claims"]["policy_digest"] = Value::from("sha256:downgraded-policy");
+    let claims: CapabilityLeaseClaims =
+        serde_json::from_value(input["lease"]["claims"].clone()).expect("claims are well formed");
+    input["lease"]["signature"] = Value::from(sign_claims(
+        &claims,
+        &vector.trusted_context.dev_hmac_secret,
+    ));
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_POLICY_DIGEST_NOT_ACCEPTED"
+    );
+}
+
+#[test]
+fn pre_command_auth_policy_failure_is_diagnostic_non_authority() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["lease"]["claims"]["policy_digest"] = Value::from("sha256:downgraded-policy");
+    input["command"]["signature"] = Value::Null;
+    let claims: CapabilityLeaseClaims =
+        serde_json::from_value(input["lease"]["claims"].clone()).expect("claims are well formed");
+    input["lease"]["signature"] = Value::from(sign_claims(
+        &claims,
+        &vector.trusted_context.dev_hmac_secret,
+    ));
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_POLICY_DIGEST_NOT_ACCEPTED"
+    );
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+    assert!(decision.audit_event.lease_id.is_none());
+    assert!(decision.audit_event.command_id.is_none());
+    assert!(decision.audit_event.robot_id.is_none());
+    assert_eq!(
+        decision
+            .audit_event
+            .payload
+            .get("claimed_command_id")
+            .and_then(Value::as_str),
+        Some("cmd-valid-remote-assist")
+    );
+}
+
+#[test]
+fn command_envelope_tamper_invalidates_command_signature() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["command"]["message_id"] = Value::from("msg-tampered-command-envelope");
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(
+        decision.reason_code.as_str(),
+        "DENY_INVALID_COMMAND_SIGNATURE"
+    );
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+    assert!(decision.audit_event.command_id.is_none());
+}
+
+#[test]
+fn lease_envelope_tamper_invalidates_lease_signature_after_command_auth() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["lease"]["claims"]["message_id"] = Value::from("msg-tampered-lease-envelope");
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(decision.reason_code.as_str(), "DENY_INVALID_SIGNATURE");
+    assert_eq!(decision.audit_event.event_type, "command_rejected");
+    assert!(decision.audit_event.authority_relevant);
+    assert_eq!(
+        decision.audit_event.command_id.as_deref(),
+        Some("cmd-valid-remote-assist")
+    );
+}
+
+#[test]
+fn unsupported_lease_envelope_before_command_auth_is_diagnostic() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let mut input = vector.input;
+    input["lease"]["claims"]["protocol_version"] = Value::from("999.0-unsupported");
+    input["command"]["signature"] = Value::Null;
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(decision.reason_code.as_str(), "DENY_MALFORMED_INPUT");
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+    assert!(decision.audit_event.lease_id.is_none());
+    assert!(decision.audit_event.command_id.is_none());
 }
 
 #[test]
 fn authority_decisions_carry_audit_commit_integrity_fields() {
     let vector = load_vector("valid_remote_assist_lease");
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let decision = verify_json_value(vector.input, &vector.trusted_context, &mut replay_cache);
     let audit_event = &decision.audit_event;
@@ -319,6 +749,8 @@ fn authority_decisions_carry_audit_commit_integrity_fields() {
     assert!(audit_event.authority_relevant);
     assert!(audit_event.audit_id.starts_with("audit_"));
     assert!(audit_event.message_id.starts_with("msg_"));
+    assert!(audit_event.event_sequence > 0);
+    assert!(!audit_event.identity_nonce.is_empty());
     assert_eq!(audit_event.created_at, audit_event.created_at_unix_ms);
     assert_eq!(audit_event.payload_hash, stable_hash(&audit_event.payload));
     assert_eq!(audit_event.integrity_profile, "rclp-dev-sha256-v1");
@@ -352,6 +784,8 @@ fn authority_decisions_carry_audit_commit_integrity_fields() {
         "summary": &audit_event.summary,
         "payload_hash": &audit_event.payload_hash,
         "authority_relevant": audit_event.authority_relevant,
+        "event_sequence": audit_event.event_sequence,
+        "identity_nonce": &audit_event.identity_nonce,
         "integrity_profile": &audit_event.integrity_profile,
         "policy_id": &audit_event.policy_id,
         "policy_digest": &audit_event.policy_digest,
@@ -381,6 +815,8 @@ fn authority_decisions_carry_audit_commit_integrity_fields() {
         "summary": &audit_event.summary,
         "payload_hash": &audit_event.payload_hash,
         "authority_relevant": audit_event.authority_relevant,
+        "event_sequence": audit_event.event_sequence,
+        "identity_nonce": &audit_event.identity_nonce,
         "integrity_profile": &audit_event.integrity_profile,
         "policy_id": &audit_event.policy_id,
         "policy_digest": &audit_event.policy_digest,
@@ -413,6 +849,8 @@ fn authority_decisions_carry_audit_commit_integrity_fields() {
         "summary": &audit_event.summary,
         "payload_hash": &audit_event.payload_hash,
         "authority_relevant": audit_event.authority_relevant,
+        "event_sequence": audit_event.event_sequence,
+        "identity_nonce": &audit_event.identity_nonce,
         "integrity_profile": &audit_event.integrity_profile,
         "policy_id": &audit_event.policy_id,
         "policy_digest": &audit_event.policy_digest,
@@ -445,6 +883,8 @@ fn authority_decisions_carry_audit_commit_integrity_fields() {
         "summary": &audit_event.summary,
         "payload_hash": &audit_event.payload_hash,
         "authority_relevant": audit_event.authority_relevant,
+        "event_sequence": audit_event.event_sequence,
+        "identity_nonce": &audit_event.identity_nonce,
         "integrity_profile": &audit_event.integrity_profile,
         "policy_id": &audit_event.policy_id,
         "policy_digest": &audit_event.policy_digest,
@@ -472,7 +912,7 @@ fn policy_digest_downgrade_is_rejected_before_authorization() {
     let input = vector.input;
     let mut trusted_context = vector.trusted_context;
     trusted_context.policy_digest = "sha256:downgraded-policy".to_string();
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let decision = verify_json_value(input, &trusted_context, &mut replay_cache);
 
@@ -493,7 +933,7 @@ fn accepted_policy_digest_with_mismatched_policy_id_is_rejected() {
     let input = vector.input;
     let mut trusted_context = vector.trusted_context;
     trusted_context.policy_id = "remote-assist-authority-downgraded".to_string();
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let decision = verify_json_value(input, &trusted_context, &mut replay_cache);
 
@@ -513,7 +953,7 @@ fn issuer_capability_scope_mismatch_is_rejected() {
     let vector = load_vector("valid_remote_assist_lease");
     let mut trusted_context = vector.trusted_context;
     trusted_context.issuer_capability_scopes[0].capabilities = vec!["mission_continue".to_string()];
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let decision = verify_json_value(vector.input, &trusted_context, &mut replay_cache);
 
@@ -526,7 +966,7 @@ fn forged_local_context_without_matching_state_signature_is_rejected() {
     let denied_vector = load_vector("network_partition_rejected");
     let valid_vector = load_vector("valid_remote_assist_lease");
     let mut input = denied_vector.input;
-    let mut replay_cache = TestReplayCache::with_seen(denied_vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(denied_vector.seen_nonces);
 
     input["local_context"]["network_state"] =
         valid_vector.input["local_context"]["network_state"].clone();
@@ -550,7 +990,7 @@ fn overflowing_state_freshness_window_fails_closed() {
     let input = vector.input;
     let mut trusted_context = vector.trusted_context;
     trusted_context.max_state_age_ms = i64::MAX;
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
 
     let decision = verify_json_value(input, &trusted_context, &mut replay_cache);
 
@@ -567,7 +1007,7 @@ fn dev_hmac_profile_rejects_multi_principal_trust_sets() {
     multi_issuer_context
         .trusted_issuer_ids
         .push("issuer:second".to_string());
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces.clone());
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces.clone());
     let decision = verify_json_value(input.clone(), &multi_issuer_context, &mut replay_cache);
     assert_eq!(decision.decision.as_str(), "deny");
     assert_eq!(decision.reason_code.as_str(), "DENY_MALFORMED_INPUT");
@@ -576,7 +1016,7 @@ fn dev_hmac_profile_rejects_multi_principal_trust_sets() {
     multi_command_context
         .trusted_command_agent_ids
         .push("fleet-agent:second".to_string());
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces.clone());
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces.clone());
     let decision = verify_json_value(input.clone(), &multi_command_context, &mut replay_cache);
     assert_eq!(decision.decision.as_str(), "deny");
     assert_eq!(decision.reason_code.as_str(), "DENY_MALFORMED_INPUT");
@@ -585,7 +1025,7 @@ fn dev_hmac_profile_rejects_multi_principal_trust_sets() {
     multi_state_context
         .trusted_state_edge_ids
         .push("edge-agent:second".to_string());
-    let mut replay_cache = TestReplayCache::with_seen(vector.seen_nonces);
+    let mut replay_cache = replay_cache_with_seen(vector.seen_nonces);
     let decision = verify_json_value(input, &multi_state_context, &mut replay_cache);
     assert_eq!(decision.decision.as_str(), "deny");
     assert_eq!(decision.reason_code.as_str(), "DENY_MALFORMED_INPUT");
@@ -606,6 +1046,24 @@ fn load_vector_value(name: &str) -> Value {
         .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()))
 }
 
+fn verify_resigned_speed_payload(
+    payload: Value,
+    command_id: &str,
+) -> rclp_edge_verifier::VerificationDecision {
+    let vector = load_vector("max_speed_too_high_rejected");
+    let mut input = vector.input;
+    let trusted_context = vector.trusted_context;
+    input["command"]["payload"] = payload;
+    resign_command_value(
+        &mut input,
+        command_id,
+        &format!("{command_id}-nonce"),
+        &trusted_context.command_hmac_secret,
+    );
+    let mut replay_cache = fresh_replay_cache();
+    verify_json_value(input, &trusted_context, &mut replay_cache)
+}
+
 fn sign_claims(claims: &CapabilityLeaseClaims, secret: &str) -> String {
     let payload = canonical_json(claims).expect("claims canonicalize");
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts secret bytes");
@@ -621,6 +1079,7 @@ fn stable_hash(value: &Value) -> String {
 
 fn resign_command_value(input: &mut Value, command_id: &str, command_nonce: &str, secret: &str) {
     input["command"]["command_id"] = Value::from(command_id);
+    input["command"]["message_id"] = Value::from(format!("msg-{command_id}"));
     input["command"]["command_nonce"] = Value::from(command_nonce);
     let command: EdgeCommand =
         serde_json::from_value(input["command"].clone()).expect("command is well formed");
@@ -629,6 +1088,10 @@ fn resign_command_value(input: &mut Value, command_id: &str, command_nonce: &str
 
 fn sign_command(command: &EdgeCommand, secret: &str) -> String {
     let payload = SignedCommand {
+        protocol_version: &command.protocol_version,
+        message_id: &command.message_id,
+        correlation_id: &command.correlation_id,
+        message_type: &command.message_type,
         command_id: &command.command_id,
         agent_id: &command.agent_id,
         authenticated_agent_id: &command.authenticated_agent_id,
@@ -638,7 +1101,7 @@ fn sign_command(command: &EdgeCommand, secret: &str) -> String {
         capability: &command.capability,
         command_nonce: &command.command_nonce,
         created_at_unix_ms: command.created_at_unix_ms,
-        max_speed_mps: command.max_speed_mps,
+        payload: &command.payload,
     };
     let payload = canonical_json(&payload).expect("command canonicalizes");
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts secret bytes");
@@ -648,6 +1111,10 @@ fn sign_command(command: &EdgeCommand, secret: &str) -> String {
 
 #[derive(Serialize)]
 struct SignedCommand<'a> {
+    protocol_version: &'a str,
+    message_id: &'a str,
+    correlation_id: &'a str,
+    message_type: &'a str,
     command_id: &'a str,
     agent_id: &'a str,
     authenticated_agent_id: &'a str,
@@ -657,6 +1124,5 @@ struct SignedCommand<'a> {
     capability: &'a str,
     command_nonce: &'a str,
     created_at_unix_ms: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_speed_mps: Option<f64>,
+    payload: &'a Value,
 }

@@ -9,12 +9,13 @@ code.
 ## Trust Boundary
 
 The verifier sits at the robot-local command gate. A caller supplies untrusted
-message material (`CapabilityLeaseEnvelope`, `EdgeCommand`, and signed observed
-local robot context) separately from trusted verifier context: issuer trust
-roots, the dev lease HMAC secret, edge-state trust roots, the dev state HMAC
-secret, accepted capabilities, issuer-to-capability scopes, local revocation
-state, explicit verifier time, and local lease/state TTL/age policy limits. The
-caller also supplies a replay cache. The verifier
+message material (`CapabilityLeaseEnvelope`, versioned `EdgeCommand`, and
+signed observed local robot context) separately from trusted verifier context:
+issuer trust roots, the dev lease HMAC secret, edge-state trust roots, the dev
+state HMAC secret, accepted policy references, accepted capabilities,
+issuer-to-capability scopes, local revocation state, explicit verifier time,
+and local lease/state TTL/age policy limits. The caller also supplies a
+durable/shared replay cache. The verifier
 returns `allow`, `deny`, or `degrade` with a machine-readable reason code and an
 audit event.
 
@@ -29,13 +30,21 @@ verification inputs explicit.
 
 The core verifier does not read files, call the system clock, open network
 connections, launch ROS 2 nodes, or talk to Isaac Sim.
+Audit identity generation is the only exception to deterministic input-only
+behavior: each emitted audit event binds a per-event sequence and identity
+nonce so repeated malformed or authority decisions cannot collide on
+`audit_id`/`message_id`.
 
 ## Current Checks
 
 The crate verifies:
 
+- lease claims and commands carry the expected protocol version and message type
 - signature algorithm is known
-- dev HMAC signature matches canonical lease claims
+- dev HMAC signature matches canonical lease claims, including signed
+  `policy_id` and `policy_digest`
+- the lease's signed policy reference matches the current trusted policy
+  reference and is included in accepted policies
 - issuer is trusted by `TrustedVerifierContext`
 - requested capability is locally accepted and included in the trusted issuer's
   explicit capability scope
@@ -52,16 +61,26 @@ The crate verifies:
 - geofence state satisfies the lease constraint
 - network state satisfies lease constraints, or explicitly degrades only when a
   fallback hook is present
-- command speed satisfies `max_speed_mps` when the lease includes that
+- command HMAC covers the command protocol envelope and `payload`
+- signed command material is bounded before HMAC canonicalization can run on
+  untrusted input, including scalar command fields, signature text, and the
+  command `payload` size, node count, and nesting depth
+- command payload speed satisfies `max_speed_mps` when the lease includes that
   constraint
+- the supplied replay cache reports durable/shared semantics before any
+  authority decision can consume command or lease nonce state
+- authority-relevant audit events carry authority context; malformed pre-parse
+  inputs produce diagnostic non-authority audit records
+- command-authentication failures produce diagnostic non-authority audit records
+  with claimed subject values labeled as untrusted payload context
 
 All failures return deny/degrade decisions rather than panicking.
 
 ## What It Does Not Do
 
-This spike does not implement ROS 2, Isaac Sim, PyO3 bindings, persistent replay
-storage, policy issuance, fleet management, teleop media, a dashboard, hosted
-services, carrier integration, or low-level robot safety controls.
+This spike does not implement ROS 2, Isaac Sim, PyO3 bindings, a production
+replay service, policy issuance, fleet management, teleop media, a dashboard,
+hosted services, carrier integration, or low-level robot safety controls.
 
 It is a safety-adjacent authority verifier, not a certified safety system.
 
@@ -88,10 +107,14 @@ requirements. Rust tests execute the vectors. Python tests only validate vector
 shape so pytest does not depend on Cargo.
 
 `ReplayCache::consume_nonce()` is intentionally a single check-and-mark
-operation from the verifier's perspective. The crate does not export a default
-process-local cache; production edge deployments must supply a shared durable
-implementation that preserves the same atomic consume contract across verifier
-instances and restarts.
+operation from the verifier's perspective. `ReplayCache::durability()` must
+report durable/shared semantics or the verifier denies before authority
+evaluation. The crate exports `FileReplayCache` as a small reference
+implementation whose nonce consumption uses atomic per-nonce file creation, so
+tests and local adapters can prove replay state survives verifier recreation.
+Production edge deployments may replace it with a stronger shared durable store
+that preserves the same atomic consume contract across verifier instances and
+restarts.
 
 ## MVP Crypto Status
 
@@ -100,8 +123,9 @@ The current Rust vector profile is `RCLP-DEV-HMAC-SHA256`.
 Rules:
 
 - HMAC-SHA256 is computed over canonical JSON lease claims.
-- Separate dev HMACs are computed over canonical JSON command fields and local
-  context fields, excluding their respective `signature` fields.
+- Separate dev HMACs are computed over canonical JSON command envelope,
+  identity fields, nonce, timestamp, and `payload`, and over local context
+  fields, excluding their respective `signature` fields.
 - Canonical JSON uses sorted object keys and no insignificant whitespace.
 - The signed payload excludes the signature field.
 - Unknown algorithms are rejected.
@@ -134,8 +158,8 @@ Use the repo virtualenv if the system Python does not have pytest installed:
 
 - Stable versioned schemas are still needed for cross-language implementers.
 - The Rust crate does not yet verify Python Ed25519 demo leases.
-- Replay storage is caller-supplied; the crate does not provide persistent
-  storage.
+- The crate provides `FileReplayCache` as a local durable reference cache, not
+  a production replay service for clustered edge deployments.
 - Whether lease nonces are single-use or command/session-scoped needs v0.1
   protocol resolution.
 - Production issuer key rotation is not modeled in the Rust spike.

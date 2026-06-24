@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import binascii
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from rclp_core.audit import AuditLog
 from rclp_core.conformance import validate_lease_for_command
-from rclp_core.crypto import verify_with_public_key_b64
+from rclp_core.crypto import unb64, verify_with_public_key_b64
 from rclp_core.leases import lease_matches_context
 from rclp_core.models import (
     AuditEventType,
@@ -32,6 +33,11 @@ DEFAULT_REVOCATION_MAX_AGE_SECONDS = 300
 REVOCATION_CLOCK_SKEW_SECONDS = 30
 DEFAULT_COMMAND_MAX_AGE_SECONDS = 30
 COMMAND_CLOCK_SKEW_SECONDS = 30
+MAX_SIGNED_TEXT_FIELD_BYTES = 1_024
+MAX_SIGNED_TEXT_TOTAL_BYTES = 16_384
+MAX_COMMAND_PAYLOAD_DEPTH = 32
+MAX_COMMAND_PAYLOAD_NODES = 2_048
+MAX_COMMAND_PAYLOAD_ESTIMATED_BYTES = 65_536
 
 DEFAULT_LOCAL_FALLBACK_ACTIONS_BY_REASON: dict[str, FallbackAction] = {
     "NETWORK_LATENCY_TOO_HIGH": FallbackAction.CRAWL_TO_SAFE_ZONE,
@@ -43,6 +49,86 @@ DEFAULT_LOCAL_FALLBACK_ACTIONS_BY_REASON: dict[str, FallbackAction] = {
     "NETWORK_DEGRADED_REVOKE": FallbackAction.CRAWL_TO_SAFE_ZONE,
     "GEOFENCE_CONSTRAINT_VIOLATED": FallbackAction.HOLD_POSITION,
 }
+
+
+class _SignedTextBudget:
+    def __init__(self) -> None:
+        self.total_bytes = 0
+
+    def exceeded(self, value: str | None) -> bool:
+        if value is None:
+            return False
+        size = len(value.encode("utf-8"))
+        self.total_bytes += size
+        return size > MAX_SIGNED_TEXT_FIELD_BYTES or self.total_bytes > MAX_SIGNED_TEXT_TOTAL_BYTES
+
+
+def _signed_command_material_budget_violation(command: Command) -> bool:
+    text_budget = _SignedTextBudget()
+    for value in (
+        command.protocol_version,
+        command.message_id,
+        command.correlation_id,
+        command.message_type,
+        command.command_id,
+        command.agent_id,
+        command.authenticated_agent_id,
+        command.edge_agent_id,
+        command.robot_id,
+        command.mission_id,
+        command.capability,
+        command.command_nonce,
+        command.signature,
+    ):
+        if text_budget.exceeded(value):
+            return True
+    return _command_payload_budget_violation(command.payload)
+
+
+def _signed_text_field_budget_violation(value: str | None) -> bool:
+    if value is None:
+        return False
+    return len(value.encode("utf-8")) > MAX_SIGNED_TEXT_FIELD_BYTES
+
+
+def _command_payload_budget_violation(payload: object) -> bool:
+    stack: list[tuple[object, int]] = [(payload, 1)]
+    node_count = 0
+    estimated_bytes = 0
+    while stack:
+        value, depth = stack.pop()
+        if depth > MAX_COMMAND_PAYLOAD_DEPTH:
+            return True
+        node_count += 1
+        if node_count > MAX_COMMAND_PAYLOAD_NODES:
+            return True
+        estimated_bytes += _estimated_payload_bytes(value)
+        if estimated_bytes > MAX_COMMAND_PAYLOAD_ESTIMATED_BYTES:
+            return True
+        if isinstance(value, dict):
+            for key, child in value.items():
+                estimated_bytes += _estimated_payload_bytes(str(key))
+                if estimated_bytes > MAX_COMMAND_PAYLOAD_ESTIMATED_BYTES:
+                    return True
+                stack.append((child, depth + 1))
+        elif isinstance(value, list):
+            for child in value:
+                stack.append((child, depth + 1))
+    return False
+
+
+def _estimated_payload_bytes(value: object) -> int:
+    if value is None:
+        return 4
+    if isinstance(value, bool):
+        return 4 if value else 5
+    if isinstance(value, str):
+        return len(value.encode("utf-8")) + 2
+    if isinstance(value, int | float):
+        return len(str(value))
+    if isinstance(value, dict | list):
+        return 2
+    return len(str(value).encode("utf-8"))
 
 
 class EdgeCommand(BaseMessage):
@@ -84,6 +170,201 @@ class RevokedLease(BaseModel):
     correlation_id: str | None = None
 
 
+class RevocationStore:
+    """Durable revocation authority state for command-gate restarts."""
+
+    def __init__(
+        self,
+        store_path: str | Path | None = None,
+        *,
+        durable: bool | None = None,
+    ) -> None:
+        self._store_path = Path(store_path) if store_path is not None else None
+        self._durable = self._store_path is not None if durable is None else durable
+        if self._durable and self._store_path is None:
+            raise ValueError("durable revocation store requires a store path")
+        self._tempdir: TemporaryDirectory[str] | None = None
+        if self._store_path is not None:
+            self._store_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS revoked_leases (
+                        lease_id TEXT PRIMARY KEY,
+                        issuer_id TEXT NOT NULL,
+                        agent_id TEXT NOT NULL,
+                        edge_agent_id TEXT NOT NULL,
+                        robot_id TEXT NOT NULL,
+                        mission_id TEXT NOT NULL,
+                        capability TEXT NOT NULL,
+                        reason_code TEXT NOT NULL,
+                        fallback_action TEXT,
+                        revocation_id TEXT,
+                        correlation_id TEXT,
+                        recorded_at TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS revocation_messages (
+                        revocation_id TEXT PRIMARY KEY,
+                        lease_id TEXT NOT NULL,
+                        recorded_at TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO revocation_messages (
+                        revocation_id,
+                        lease_id,
+                        recorded_at
+                    )
+                    SELECT revocation_id, lease_id, recorded_at
+                    FROM revoked_leases
+                    WHERE revocation_id IS NOT NULL
+                    """
+                )
+
+    @classmethod
+    def temporary(cls) -> "RevocationStore":
+        tempdir = TemporaryDirectory(prefix="rclp-revocations-")
+        store = cls(Path(tempdir.name) / "revocations.sqlite3", durable=False)
+        store._tempdir = tempdir
+        return store
+
+    @property
+    def durable(self) -> bool:
+        return self._durable and self._store_path is not None
+
+    @property
+    def store_path(self) -> Path | None:
+        return self._store_path
+
+    def _connect(self) -> sqlite3.Connection:
+        if self._store_path is None:
+            raise ValueError("revocation store has no durable store")
+        connection = sqlite3.connect(
+            self._store_path,
+            timeout=30,
+            isolation_level="IMMEDIATE",
+        )
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def load_all(self) -> dict[str, RevokedLease]:
+        if self._store_path is None:
+            return {}
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    lease_id,
+                    issuer_id,
+                    agent_id,
+                    edge_agent_id,
+                    robot_id,
+                    mission_id,
+                    capability,
+                    reason_code,
+                    fallback_action,
+                    revocation_id,
+                    correlation_id
+                FROM revoked_leases
+                """
+            ).fetchall()
+        return {
+            row["lease_id"]: RevokedLease(
+                lease_id=row["lease_id"],
+                issuer_id=row["issuer_id"],
+                agent_id=row["agent_id"],
+                edge_agent_id=row["edge_agent_id"],
+                robot_id=row["robot_id"],
+                mission_id=row["mission_id"],
+                capability=row["capability"],
+                reason_code=row["reason_code"],
+                fallback_action=row["fallback_action"],
+                revocation_id=row["revocation_id"],
+                correlation_id=row["correlation_id"],
+            )
+            for row in rows
+        }
+
+    def record(self, revocation: RevokedLease) -> bool:
+        if self._store_path is None:
+            raise ValueError("revocation store has no durable store")
+        if revocation.revocation_id is None:
+            raise ValueError("revocation_id is required for durable revocation records")
+        fallback_action = (
+            revocation.fallback_action.value
+            if isinstance(revocation.fallback_action, FallbackAction)
+            else revocation.fallback_action
+        )
+        recorded_at = datetime.now(timezone.utc).isoformat()
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO revocation_messages (
+                        revocation_id,
+                        lease_id,
+                        recorded_at
+                    )
+                    VALUES (?, ?, ?)
+                    """,
+                    (revocation.revocation_id, revocation.lease_id, recorded_at),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO revoked_leases (
+                        lease_id,
+                        issuer_id,
+                        agent_id,
+                        edge_agent_id,
+                        robot_id,
+                        mission_id,
+                        capability,
+                        reason_code,
+                        fallback_action,
+                        revocation_id,
+                        correlation_id,
+                        recorded_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(lease_id) DO UPDATE SET
+                        issuer_id=excluded.issuer_id,
+                        agent_id=excluded.agent_id,
+                        edge_agent_id=excluded.edge_agent_id,
+                        robot_id=excluded.robot_id,
+                        mission_id=excluded.mission_id,
+                        capability=excluded.capability,
+                        reason_code=excluded.reason_code,
+                        fallback_action=excluded.fallback_action,
+                        revocation_id=excluded.revocation_id,
+                        correlation_id=excluded.correlation_id,
+                        recorded_at=excluded.recorded_at
+                    """,
+                    (
+                        revocation.lease_id,
+                        revocation.issuer_id,
+                        revocation.agent_id,
+                        revocation.edge_agent_id,
+                        revocation.robot_id,
+                        revocation.mission_id,
+                        revocation.capability,
+                        revocation.reason_code,
+                        fallback_action,
+                        revocation.revocation_id,
+                        revocation.correlation_id,
+                        recorded_at,
+                    ),
+                )
+        except sqlite3.IntegrityError:
+            return False
+        return True
+
+
 class CommandReplayCache:
     """Durable replay window for signed edge commands.
 
@@ -91,8 +372,16 @@ class CommandReplayCache:
     by `CommandGate`; it remains useful only for construction-level tests.
     """
 
-    def __init__(self, store_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        store_path: str | Path | None = None,
+        *,
+        durable: bool | None = None,
+    ) -> None:
         self._store_path = Path(store_path) if store_path is not None else None
+        self._durable = self._store_path is not None if durable is None else durable
+        if self._durable and self._store_path is None:
+            raise ValueError("durable command replay cache requires a store path")
         self._tempdir: TemporaryDirectory[str] | None = None
         self._seen_command_ids: set[tuple[str, str]] = set()
         self._seen_nonces: set[tuple[str, str]] = set()
@@ -121,13 +410,13 @@ class CommandReplayCache:
     @classmethod
     def temporary(cls) -> "CommandReplayCache":
         tempdir = TemporaryDirectory(prefix="rclp-command-replay-")
-        cache = cls(Path(tempdir.name) / "command_replay.sqlite3")
+        cache = cls(Path(tempdir.name) / "command_replay.sqlite3", durable=False)
         cache._tempdir = tempdir
         return cache
 
     @property
     def durable(self) -> bool:
-        return self._store_path is not None
+        return self._durable and self._store_path is not None
 
     @property
     def store_path(self) -> Path | None:
@@ -213,9 +502,12 @@ class CommandGate:
         self,
         issuer_public_key_b64: str,
         *,
+        local_edge_agent_id: str,
         trusted_issuer_ids: set[str],
         trusted_revoker_ids: set[str],
         accepted_capabilities: set[str] | None = None,
+        accepted_policy_id: str | None = None,
+        accepted_policy_digests: set[str] | None = None,
         issuer_capability_scopes: Mapping[str, set[str]] | None = None,
         capability_constraint_requirements: (
             Mapping[str, CapabilityConstraintRequirement] | None
@@ -226,6 +518,7 @@ class CommandGate:
         revoker_edge_scopes_by_id: Mapping[str, set[str]] | None = None,
         state_public_keys_by_edge_id: Mapping[str, str] | None = None,
         command_replay_cache: CommandReplayCache | None = None,
+        revocation_store: RevocationStore | None = None,
         fallback_sink: Callable[[FallbackDeclaration], None] | None = None,
         audit_log: AuditLog | None = None,
         fallback_actions_by_reason: Mapping[str, FallbackAction] | None = None,
@@ -235,12 +528,20 @@ class CommandGate:
         max_command_age_seconds: int = DEFAULT_COMMAND_MAX_AGE_SECONDS,
         max_revocation_age_seconds: int = DEFAULT_REVOCATION_MAX_AGE_SECONDS,
     ) -> None:
+        if not local_edge_agent_id.strip():
+            raise ValueError("local_edge_agent_id is required")
         if not trusted_issuer_ids:
             raise ValueError("trusted_issuer_ids must name at least one lease issuer")
         if not trusted_revoker_ids:
             raise ValueError("trusted_revoker_ids must name at least one revocation actor")
         if not accepted_capabilities:
             raise ValueError("accepted_capabilities must name at least one local capability")
+        if not accepted_policy_id or not accepted_policy_id.strip():
+            raise ValueError("accepted_policy_id is required")
+        if not accepted_policy_digests:
+            raise ValueError("accepted_policy_digests must name at least one accepted policy")
+        if any(not digest.strip() for digest in accepted_policy_digests):
+            raise ValueError("accepted_policy_digests must not contain blank digests")
         if issuer_capability_scopes is None:
             raise ValueError("issuer_capability_scopes is required")
         if capability_constraint_requirements is None:
@@ -249,11 +550,16 @@ class CommandGate:
             raise ValueError("agent_public_keys_by_id must name at least one command agent key")
         if command_replay_cache is None or not command_replay_cache.durable:
             raise ValueError("durable command_replay_cache is required")
+        if revocation_store is None or not revocation_store.durable:
+            raise ValueError("durable revocation_store is required")
         if issuer_public_keys_by_id is None and len(trusted_issuer_ids) != 1:
             raise ValueError("issuer_public_keys_by_id is required for multiple lease issuers")
+        self.local_edge_agent_id = local_edge_agent_id
         self.issuer_public_key_b64 = issuer_public_key_b64
         self.trusted_issuer_ids = set(trusted_issuer_ids)
         self.accepted_capabilities = set(accepted_capabilities)
+        self.accepted_policy_id = accepted_policy_id
+        self.accepted_policy_digests = set(accepted_policy_digests)
         self.issuer_capability_scopes = {
             issuer_id: set(capabilities)
             for issuer_id, capabilities in issuer_capability_scopes.items()
@@ -293,7 +599,8 @@ class CommandGate:
         self.max_command_age_seconds = max_command_age_seconds
         self.max_revocation_age_seconds = max_revocation_age_seconds
         self.command_replay_cache = command_replay_cache
-        self.revocations: dict[str, RevokedLease] = {}
+        self.revocation_store = revocation_store
+        self.revocations: dict[str, RevokedLease] = self.revocation_store.load_all()
         self.fallback_events: list[FallbackDeclaration] = []
         self._fallback_sink = fallback_sink
         self.audit_log = audit_log or AuditLog()
@@ -390,6 +697,14 @@ class CommandGate:
                 summary="revocation rejected because signature is missing",
             )
             raise ValueError("revocation signature is missing")
+        if _signed_text_field_budget_violation(revocation.signature):
+            self._record_revocation_rejected(
+                revocation=revocation,
+                lease=lease,
+                reason_code="REVOCATION_SIGNED_MATERIAL_TOO_LARGE",
+                summary="revocation rejected because signed material is too large",
+            )
+            raise ValueError("revocation signed material is too large")
 
         revoker_public_key = self.revoker_public_keys_by_id.get(revoked_by)
         if revoker_public_key is None:
@@ -481,6 +796,14 @@ class CommandGate:
                 related_message_ids=[record.revocation_id] if record.revocation_id else [],
             )
             raise ValueError("revocation context does not match lease")
+        if not self.revocation_store.record(record):
+            self._record_revocation_rejected(
+                revocation=revocation,
+                lease=lease,
+                reason_code="REVOCATION_REPLAYED",
+                summary="revocation rejected because revocation_id was already accepted",
+            )
+            return None
         self.revocations[record.lease_id] = record
         fallback_action = self._local_fallback_action(record.reason_code)
         self.audit_log.record(
@@ -526,6 +849,17 @@ class CommandGate:
                 lease=lease,
                 current_state=current_state,
                 reason=auth_reason,
+                emit_fallback=False,
+            )
+        if self._local_edge_context_mismatch(command, lease):
+            return self._reject_local_edge_mismatch(command=command, lease=lease)
+        if not self.command_replay_cache.remember(command):
+            return self._reject_command(
+                command=command,
+                lease=lease,
+                current_state=current_state,
+                reason="COMMAND_REPLAYED",
+                emit_fallback=False,
             )
         ok, reason = validate_lease_for_command(
             lease,
@@ -533,6 +867,8 @@ class CommandGate:
             issuer_public_keys_by_id=self.issuer_public_keys_by_id,
             trusted_issuer_ids=self.trusted_issuer_ids,
             accepted_capabilities=self.accepted_capabilities,
+            accepted_policy_id=self.accepted_policy_id,
+            accepted_policy_digests=self.accepted_policy_digests,
             issuer_capability_scopes=self.issuer_capability_scopes,
             capability_constraint_requirements=self.capability_constraint_requirements,
             agent_id=command.agent_id,
@@ -588,6 +924,45 @@ class CommandGate:
             reason=reason,
         )
 
+    def _local_edge_context_mismatch(
+        self,
+        command: Command,
+        lease: CapabilityLease | None,
+    ) -> bool:
+        if command.edge_agent_id != self.local_edge_agent_id:
+            return True
+        return lease is not None and lease.edge_agent_id != self.local_edge_agent_id
+
+    def _reject_local_edge_mismatch(
+        self,
+        *,
+        command: Command,
+        lease: CapabilityLease | None,
+    ) -> GateResult:
+        event = self.audit_log.record(
+            event_type=AuditEventType.COMMAND_REJECTED,
+            actor_id=self.local_edge_agent_id,
+            robot_id=command.robot_id,
+            mission_id=command.mission_id,
+            correlation_id=command.correlation_id or command.command_id,
+            summary=f"command {command.command_id} rejected: EDGE_AGENT_MISMATCH",
+            payload={
+                "command_id": command.command_id,
+                "command_message_id": command.message_id,
+                "expected_edge_agent_id": self.local_edge_agent_id,
+                "command_edge_agent_id": command.edge_agent_id,
+                "lease_id": lease.lease_id if lease else None,
+                "lease_edge_agent_id": lease.edge_agent_id if lease else None,
+                "reason_code": "EDGE_AGENT_MISMATCH",
+            },
+            related_message_ids=[command.message_id],
+        )
+        return GateResult(
+            allowed=False,
+            reason_code="EDGE_AGENT_MISMATCH",
+            audit_id=event.audit_id,
+        )
+
     def _reject_command(
         self,
         *,
@@ -595,21 +970,25 @@ class CommandGate:
         lease: CapabilityLease | None,
         current_state: RobotStateAssertion | None,
         reason: str,
+        emit_fallback: bool = True,
     ) -> GateResult:
         revocation = self._matching_authenticated_revocation(command, lease, reason)
-        fallback = self._fallback_action_for_denial(command, lease, reason, revocation)
         command_correlation_id = self._command_correlation_id(command, lease, revocation)
-        declaration = FallbackDeclaration(
-            correlation_id=command_correlation_id,
-            robot_id=command.robot_id,
-            edge_agent_id=command.edge_agent_id,
-            mission_id=command.mission_id,
-            trigger=reason,
-            fallback_action=fallback,
-            declared_by=command.edge_agent_id,
-            lease_id=lease.lease_id if lease else None,
-            revocation_id=revocation.revocation_id if revocation else None,
-        )
+        fallback: FallbackAction | None = None
+        declaration: FallbackDeclaration | None = None
+        if emit_fallback:
+            fallback = self._fallback_action_for_denial(command, lease, reason, revocation)
+            declaration = FallbackDeclaration(
+                correlation_id=command_correlation_id,
+                robot_id=command.robot_id,
+                edge_agent_id=command.edge_agent_id,
+                mission_id=command.mission_id,
+                trigger=reason,
+                fallback_action=fallback,
+                declared_by=command.edge_agent_id,
+                lease_id=lease.lease_id if lease else None,
+                revocation_id=revocation.revocation_id if revocation else None,
+            )
         payload = {
             "command_id": command.command_id,
             "command_message_id": command.message_id,
@@ -631,17 +1010,21 @@ class CommandGate:
             related_message_ids.append(current_state.message_id)
             payload["current_state"] = current_state.model_dump(mode="json")
         event = self.audit_log.record(
-            event_type=AuditEventType.COMMAND_REJECTED,
-            actor_id=command.edge_agent_id,
-            robot_id=command.robot_id,
-            mission_id=command.mission_id,
+            event_type=AuditEventType.COMMAND_REJECTED
+            if emit_fallback
+            else AuditEventType.DIAGNOSTIC,
+            actor_id=command.edge_agent_id if emit_fallback else "local_command_gate",
+            robot_id=command.robot_id if emit_fallback else None,
+            mission_id=command.mission_id if emit_fallback else None,
             correlation_id=command_correlation_id,
             summary=f"command {command.command_id} rejected: {reason}",
             payload=payload,
+            authority_relevant=emit_fallback,
             state_refs=state_refs,
             related_message_ids=related_message_ids,
         )
-        self._emit_fallback(declaration)
+        if declaration is not None:
+            self._emit_fallback(declaration)
         return GateResult(
             allowed=False,
             reason_code=reason,
@@ -671,12 +1054,16 @@ class CommandGate:
             return "COMMAND_AGENT_KEY_NOT_TRUSTED"
         if command.signature is None:
             return "COMMAND_SIGNATURE_MISSING"
+        if _signed_command_material_budget_violation(command):
+            return "COMMAND_SIGNED_MATERIAL_TOO_LARGE"
+        try:
+            unb64(command.signature)
+        except binascii.Error:
+            return "COMMAND_SIGNATURE_INVALID"
         if not verify_with_public_key_b64(command, command.signature, public_key):
             return "COMMAND_SIGNATURE_INVALID"
         if time_reason := self._command_time_violation(command, now=now):
             return time_reason
-        if not self.command_replay_cache.remember(command):
-            return "COMMAND_REPLAYED"
         return None
 
     def _command_time_violation(

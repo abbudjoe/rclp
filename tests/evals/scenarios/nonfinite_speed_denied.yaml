@@ -9,9 +9,7 @@ input:
       max_speed_mps: 0.5
   command:
     payload:
-      intent: start_remote_assist
       max_speed_mps: .nan
 expected:
   decision: deny
   reason_code: COMMAND_SPEED_MALFORMED
-

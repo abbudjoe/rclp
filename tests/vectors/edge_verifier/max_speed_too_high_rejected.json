@@ -73,9 +73,16 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760000500000,
-        "nonce": "nonce-max-speed-too-high"
+        "nonce": "nonce-max-speed-too-high",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-max-speed-too-high",
+        "correlation_id": "corr-max_speed_too_high_rejected",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "0953cac4ab736257b54427817b80d031828c3ae85cec5ff03ffa2831ec1c0152"
+      "signature": "87e3edd07c68c8c2cd916cd162fc455a27b006746afc2c922e29ecb92add44d6"
     },
     "command": {
       "command_id": "cmd-max-speed-too-high",
@@ -84,11 +91,17 @@
       "robot_id": "rover-001",
       "mission_id": "mission-001",
       "capability": "remote_assist",
-      "max_speed_mps": 0.6,
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-max-speed-too-high-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "3f6a9f40794bfc9f5e689d1719d207c188b5b01800e1cb27e8303bb722cac593"
+      "signature": "1cf6acb062fbc100809ee89ce8d051a290d02cfd5895310c5fe445fef00c8b3a",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-max-speed-too-high",
+      "correlation_id": "corr-max_speed_too_high_rejected",
+      "message_type": "edge_command",
+      "payload": {
+        "max_speed_mps": 0.6
+      }
     },
     "local_context": {
       "robot_id": "rover-001",

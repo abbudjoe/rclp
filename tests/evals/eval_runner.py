@@ -8,6 +8,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import yaml
@@ -34,10 +35,11 @@ from rclp_core.models import (
     LeaseRevocation,
     NetworkState,
     RobotStateAssertion,
+    SUPPORTED_PROTOCOL_VERSION,
 )
 from rclp_core.network import profile
 from rclp_core.policy import Policy, RequestReplayCache, evaluate_policy, policy_digest
-from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache
+from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache, RevocationStore
 
 
 DEFAULT_NOW_UNIX_MS = 1_760_000_000_000
@@ -50,6 +52,7 @@ GEOFENCE_ID = "test-zone-a"
 ISSUER_ID = "rclp-demo-issuer"
 POLICY_PATH = REPO_ROOT / "examples/policies/remote_assist_policy.yaml"
 EXPECTED_DECISIONS = {"allow", "deny", "degrade"}
+_EVAL_STORE_DIRS: list[TemporaryDirectory[str]] = []
 REQUIRED_SCENARIO_NAMES = {
     "valid_remote_assist",
     "no_lease_denied",
@@ -85,6 +88,12 @@ REQUIRED_SCENARIO_NAMES = {
     "conflicting_speed_alias_denied",
     "nonfinite_speed_denied",
 }
+
+
+def eval_store_path(filename: str) -> Path:
+    tempdir = TemporaryDirectory(prefix="rclp-eval-stores-")
+    _EVAL_STORE_DIRS.append(tempdir)
+    return Path(tempdir.name) / filename
 
 
 @dataclass
@@ -371,6 +380,11 @@ def make_lease(
         raise ValueError(f"unknown lease validity: {validity}")
 
     lease = CapabilityLease(
+        protocol_version=SUPPORTED_PROTOCOL_VERSION,
+        message_id=f"msg_{lease_spec.get('lease_id', 'lease_eval')}",
+        correlation_id=request.correlation_id,
+        created_at=now,
+        message_type="capability_lease",
         lease_id=lease_spec.get("lease_id", "lease_eval"),
         issuer_id=lease_spec.get("issuer_id", ISSUER_ID),
         agent_id=lease_spec.get("central_agent_id", request.requesting_agent_id),
@@ -382,6 +396,8 @@ def make_lease(
         issued_at=issued_at,
         expires_at=expires_at,
         nonce=lease_spec.get("nonce", "lease_nonce_eval"),
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
     )
     signature_mode = lease_spec.get("signature", "valid")
     if signature_mode == "valid":
@@ -431,11 +447,15 @@ def make_gate(
     audit_log: AuditLog,
     central_key: DemoKeyPair,
 ) -> CommandGate:
+    policy = make_policy()
     return CommandGate(
         issuer_key.public_key_b64,
+        local_edge_agent_id=EDGE_AGENT_ID,
         trusted_issuer_ids={ISSUER_ID},
         trusted_revoker_ids={EDGE_AGENT_ID},
         accepted_capabilities={CAPABILITY.value},
+        accepted_policy_id=policy.policy_id,
+        accepted_policy_digests={policy_digest(policy)},
         issuer_capability_scopes={ISSUER_ID: {CAPABILITY.value}},
         capability_constraint_requirements={
             CAPABILITY.value: CapabilityConstraintRequirement(
@@ -448,7 +468,8 @@ def make_gate(
         agent_public_keys_by_id={CENTRAL_AGENT_ID: central_key.public_key_b64},
         revoker_public_keys_by_id={EDGE_AGENT_ID: edge_key.public_key_b64},
         state_public_keys_by_edge_id={EDGE_AGENT_ID: edge_key.public_key_b64},
-        command_replay_cache=CommandReplayCache.temporary(),
+        command_replay_cache=CommandReplayCache(eval_store_path("command_replay.sqlite3")),
+        revocation_store=RevocationStore(eval_store_path("revocations.sqlite3")),
         audit_log=audit_log,
     )
 
@@ -476,7 +497,7 @@ def run_policy_decision(scenario: dict[str, Any]) -> EvalOutcome:
     log = AuditLog()
     request = make_request(scenario_input, now=now, central_key=central_key)
     state = make_state(scenario_input, now=now, edge_key=edge_key)
-    replay_cache = RequestReplayCache.temporary()
+    replay_cache = RequestReplayCache(eval_store_path("request_replay.sqlite3"))
     for nonce in scenario_input.get("seen_request_nonces", []):
         replay_cache.remember(
             make_request(
@@ -602,7 +623,7 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
     issuer_key = DemoKeyPair()
     policy = make_policy()
     log = AuditLog()
-    replay_cache = RequestReplayCache.temporary()
+    replay_cache = RequestReplayCache(eval_store_path("request_replay.sqlite3"))
     request = make_request(scenario.get("input", {}), now=now, central_key=central_key)
     gate = make_gate(issuer_key, edge_key, log, central_key)
 
@@ -643,6 +664,11 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
     if decision != Decision.ALLOW or constraints is None:
         raise ValueError("network degradation scenario could not establish initial lease")
     lease = CapabilityLease(
+        protocol_version=SUPPORTED_PROTOCOL_VERSION,
+        message_id="msg_lease_eval_network_degrade",
+        correlation_id=request.correlation_id,
+        created_at=now,
+        message_type="capability_lease",
         lease_id="lease_eval_network_degrade",
         issuer_id=ISSUER_ID,
         agent_id=request.requesting_agent_id,
@@ -654,6 +680,8 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
         issued_at=now - timedelta(seconds=60),
         expires_at=now + timedelta(seconds=540),
         nonce="lease_nonce_eval_network_degrade",
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
     )
     lease.signature = issuer_key.sign(lease)
     gate.evaluate(
@@ -760,7 +788,7 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
     issuer_key = DemoKeyPair()
     policy = make_policy()
     log = AuditLog()
-    replay_cache = RequestReplayCache.temporary()
+    replay_cache = RequestReplayCache(eval_store_path("request_replay.sqlite3"))
     request = make_request(scenario.get("input", {}), now=now, central_key=central_key)
     gate = make_gate(issuer_key, edge_key, log, central_key)
     log.record(
@@ -801,6 +829,11 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
         raise ValueError("cloud partition scenario could not establish initial lease")
 
     lease = CapabilityLease(
+        protocol_version=SUPPORTED_PROTOCOL_VERSION,
+        message_id="msg_lease_eval_cloud_partition",
+        correlation_id=request.correlation_id,
+        created_at=now,
+        message_type="capability_lease",
         lease_id="lease_eval_cloud_partition",
         issuer_id=ISSUER_ID,
         agent_id=request.requesting_agent_id,
@@ -812,6 +845,8 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
         issued_at=now - timedelta(seconds=1),
         expires_at=now + timedelta(seconds=60),
         nonce="lease_nonce_eval_cloud_partition",
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
     )
     lease.signature = issuer_key.sign(lease)
     gate.evaluate(

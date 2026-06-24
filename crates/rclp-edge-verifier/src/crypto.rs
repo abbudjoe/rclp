@@ -4,6 +4,8 @@ use sha2::Sha256;
 
 use crate::canonical_json::canonical_json;
 use crate::errors::VerifierError;
+use serde_json::Value;
+
 use crate::types::{CapabilityLeaseClaims, EdgeCommand, GeofenceState, LocalContext, NetworkState};
 
 pub const DEV_HMAC_SHA256_ALG: &str = "RCLP-DEV-HMAC-SHA256";
@@ -41,6 +43,10 @@ pub fn verify_dev_hmac_sha256_command(
     secret: &str,
 ) -> Result<(), VerifierError> {
     let payload = SignedEdgeCommand {
+        protocol_version: &command.protocol_version,
+        message_id: &command.message_id,
+        correlation_id: &command.correlation_id,
+        message_type: &command.message_type,
         command_id: &command.command_id,
         agent_id: &command.agent_id,
         authenticated_agent_id: &command.authenticated_agent_id,
@@ -50,7 +56,7 @@ pub fn verify_dev_hmac_sha256_command(
         capability: &command.capability,
         command_nonce: &command.command_nonce,
         created_at_unix_ms: command.created_at_unix_ms,
-        max_speed_mps: command.max_speed_mps,
+        payload: &command.payload,
     };
     verify_hmac_sha256(&payload, signature_hex, secret)
 }
@@ -82,6 +88,10 @@ struct SignedLocalContext<'a> {
 
 #[derive(Serialize)]
 struct SignedEdgeCommand<'a> {
+    protocol_version: &'a str,
+    message_id: &'a str,
+    correlation_id: &'a str,
+    message_type: &'a str,
     command_id: &'a str,
     agent_id: &'a str,
     authenticated_agent_id: &'a str,
@@ -91,6 +101,5 @@ struct SignedEdgeCommand<'a> {
     capability: &'a str,
     command_nonce: &'a str,
     created_at_unix_ms: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_speed_mps: Option<f64>,
+    payload: &'a Value,
 }

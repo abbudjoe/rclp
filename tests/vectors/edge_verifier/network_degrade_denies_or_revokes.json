@@ -73,9 +73,16 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760000500000,
-        "nonce": "nonce-network-degrade"
+        "nonce": "nonce-network-degrade",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-network-degrade",
+        "correlation_id": "corr-network_degrade_denies_or_revokes",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "8ab2e189e3e8af87471516fd0d1fc07606cbec77b981ed37795e2515d90920dc"
+      "signature": "198447175ff92adda816980b8d1731b1e14c8135c7bfea909bdc7d4f84582da9"
     },
     "command": {
       "command_id": "cmd-network-degrade",
@@ -87,7 +94,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-network-degrade-denies-or-revokes",
       "created_at_unix_ms": 1760000000000,
-      "signature": "f8233a5321ce7fec510ab020940840c7d526a49ebbf587f67ec303de7c9d308c"
+      "signature": "68d3c4ecd2a0ba35d848df1aa12e041be759ab77d2c988000ed9684590fb802a",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-network-degrade",
+      "correlation_id": "corr-network_degrade_denies_or_revokes",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

@@ -1,9 +1,13 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
+from pydantic import ValidationError
 
 from rclp_agents.edge_agent_daemon import EdgeAgentDaemon
 from rclp_agents.central_agent_mock import request_remote_assist
+import rclp_core.crypto as crypto
 from rclp_core.audit import AuditLog
 from rclp_core.crypto import DemoKeyPair
 from rclp_core.leases import issue_lease
@@ -21,6 +25,7 @@ from rclp_core.models import (
     NetworkProfile,
     NetworkState,
     RobotStateAssertion,
+    SUPPORTED_PROTOCOL_VERSION,
 )
 from rclp_core.network import profile
 from rclp_core.policy import (
@@ -30,7 +35,8 @@ from rclp_core.policy import (
     evaluate_policy,
     policy_digest,
 )
-from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache
+import rclp_ros2.command_gate as command_gate_module
+from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache, RevocationStore
 
 
 CENTRAL_AGENT_ID = "fleet-agent:v0.1"
@@ -39,6 +45,7 @@ TRUSTED_ISSUER_ID = "issuer"
 CENTRAL_KEY = DemoKeyPair()
 EDGE_KEY = DemoKeyPair()
 _REPLAY_CACHE_DEFAULT = object()
+_TEST_STORE_DIRS: list[TemporaryDirectory[str]] = []
 
 
 def remote_assist_constraint_requirements() -> dict[str, CapabilityConstraintRequirement]:
@@ -128,6 +135,24 @@ def make_policy() -> Policy:
     return Policy.from_yaml("examples/policies/remote_assist_policy.yaml")
 
 
+def _test_store_path(filename: str) -> Path:
+    tempdir = TemporaryDirectory(prefix="rclp-test-stores-")
+    _TEST_STORE_DIRS.append(tempdir)
+    return Path(tempdir.name) / filename
+
+
+def durable_request_replay_cache() -> RequestReplayCache:
+    return RequestReplayCache(_test_store_path("request_replay.sqlite3"))
+
+
+def durable_command_replay_cache() -> CommandReplayCache:
+    return CommandReplayCache(_test_store_path("command_replay.sqlite3"))
+
+
+def durable_revocation_store() -> RevocationStore:
+    return RevocationStore(_test_store_path("revocations.sqlite3"))
+
+
 def policy_trust_kwargs(
     policy: Policy,
     accepted_policy: Policy | None = None,
@@ -137,9 +162,17 @@ def policy_trust_kwargs(
         "agent_public_keys_by_id": {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
         "edge_public_keys_by_id": {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
         "accepted_policy_digests": {policy_digest(accepted_policy or policy)},
-        "replay_cache": RequestReplayCache.temporary()
+        "replay_cache": durable_request_replay_cache()
         if replay_cache is _REPLAY_CACHE_DEFAULT
         else replay_cache,
+    }
+
+
+def gate_policy_kwargs(policy: Policy | None = None) -> dict:
+    policy = policy or make_policy()
+    return {
+        "accepted_policy_id": policy.policy_id,
+        "accepted_policy_digests": {policy_digest(policy)},
     }
 
 
@@ -163,6 +196,8 @@ def evaluate_inputs(
 
 def make_gate(key: DemoKeyPair, **kwargs) -> CommandGate:
     kwargs.setdefault("accepted_capabilities", {Capability.REMOTE_ASSIST.value})
+    for key_name, value in gate_policy_kwargs().items():
+        kwargs.setdefault(key_name, value)
     kwargs.setdefault(
         "issuer_capability_scopes",
         {TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
@@ -179,9 +214,11 @@ def make_gate(key: DemoKeyPair, **kwargs) -> CommandGate:
         "state_public_keys_by_edge_id",
         {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
     )
-    kwargs.setdefault("command_replay_cache", CommandReplayCache.temporary())
+    kwargs.setdefault("command_replay_cache", durable_command_replay_cache())
+    kwargs.setdefault("revocation_store", durable_revocation_store())
     return CommandGate(
         key.public_key_b64,
+        local_edge_agent_id=EDGE_AGENT_ID,
         trusted_issuer_ids={TRUSTED_ISSUER_ID},
         trusted_revoker_ids={EDGE_AGENT_ID},
         revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
@@ -190,10 +227,19 @@ def make_gate(key: DemoKeyPair, **kwargs) -> CommandGate:
 
 
 def issue_valid_lease(key: DemoKeyPair, issuer_id: str = TRUSTED_ISSUER_ID) -> CapabilityLease:
+    policy = make_policy()
     request = make_request()
-    _, _, _, constraints = evaluate_inputs(request, make_state(), make_policy())
+    _, _, _, constraints = evaluate_inputs(request, make_state(), policy)
     assert constraints is not None
-    return issue_lease(request, constraints, issuer_id, key, ttl_seconds=600)
+    return issue_lease(
+        request,
+        constraints,
+        issuer_id,
+        key,
+        ttl_seconds=600,
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
+    )
 
 
 def issue_speed_limited_lease(key: DemoKeyPair, max_speed_mps: float = 0.5) -> CapabilityLease:
@@ -353,6 +399,75 @@ def test_unsupported_state_protocol_version_precedes_semantic_checks():
     assert reason == "PROTOCOL_VERSION_UNSUPPORTED"
     assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
     assert constraints is None
+
+
+def test_capability_request_future_authority_fields_are_rejected_at_boundary():
+    raw_request = make_request().model_dump(mode="json")
+    raw_request["future_authority_override"] = "allow"
+
+    with pytest.raises(ValidationError, match="future_authority_override"):
+        CapabilityRequest.model_validate(raw_request)
+
+
+def test_robot_state_future_authority_fields_are_rejected_at_boundary():
+    raw_state = make_state().model_dump(mode="json")
+    raw_state["future_authority_override"] = "allow"
+
+    with pytest.raises(ValidationError, match="future_authority_override"):
+        RobotStateAssertion.model_validate(raw_state)
+
+
+def test_raw_unsupported_lease_protocol_version_is_rejected_at_boundary():
+    key = DemoKeyPair()
+    raw_lease = issue_valid_lease(key).model_dump(mode="json")
+    raw_lease["protocol_version"] = "999.0-unsupported"
+
+    with pytest.raises(ValueError, match="unsupported protocol_version"):
+        CapabilityLease.model_validate(raw_lease)
+
+
+def test_raw_lease_future_fields_are_rejected_at_boundary():
+    key = DemoKeyPair()
+    raw_lease = issue_valid_lease(key).model_dump(mode="json")
+    raw_lease["future_authority_override"] = "allow"
+
+    with pytest.raises(ValueError, match="future_authority_override"):
+        CapabilityLease.model_validate(raw_lease)
+
+
+def test_raw_lease_nested_future_fields_are_rejected_at_boundary():
+    key = DemoKeyPair()
+    raw_lease = issue_valid_lease(key).model_dump(mode="json")
+    raw_lease["constraints"]["future_authority_override"] = "allow"
+
+    with pytest.raises(ValueError, match="future_authority_override"):
+        CapabilityLease.model_validate(raw_lease)
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ["protocol_version", "message_id", "correlation_id", "created_at", "message_type"],
+)
+def test_raw_lease_missing_common_envelope_field_is_rejected_at_boundary(missing_field):
+    key = DemoKeyPair()
+    raw_lease = issue_valid_lease(key).model_dump(mode="json")
+    raw_lease.pop(missing_field)
+
+    with pytest.raises(ValueError, match=missing_field):
+        CapabilityLease.model_validate(raw_lease)
+
+
+def test_unsupported_lease_protocol_version_is_denied_before_authorization():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key).model_copy(
+        update={"protocol_version": "999.0-unsupported", "signature": None}
+    )
+    resign(lease, key)
+
+    result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == "PROTOCOL_VERSION_UNSUPPORTED"
 
 
 def test_naive_lease_timestamps_are_denied_without_crashing():
@@ -614,6 +729,85 @@ def test_policy_requires_durable_replay_store_for_authority_issuance():
     assert constraints is None
 
 
+def test_policy_rejects_ephemeral_temporary_replay_store_for_authority_issuance():
+    replay_cache = RequestReplayCache.temporary()
+
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        make_request(),
+        make_state(),
+        make_policy(),
+        replay_cache=replay_cache,
+    )
+
+    assert replay_cache.store_path is not None
+    assert replay_cache.durable is False
+    assert decision == Decision.DENY
+    assert reason == "REQUEST_REPLAY_STORE_DURABLE_REQUIRED"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+
+def test_policy_rejects_unknown_top_level_field_before_digest_pin():
+    raw_policy = make_policy().model_dump(mode="json")
+    raw_policy["future_authority_override"] = "allow"
+
+    with pytest.raises(ValidationError, match="future_authority_override"):
+        Policy.model_validate(raw_policy)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("requirements", "network", "future_threshold"),
+        ("requirements", "future_scope"),
+        ("fallback", "future_fallback"),
+    ],
+)
+def test_policy_rejects_unknown_nested_field_before_digest_pin(path):
+    raw_policy = make_policy().model_dump(mode="json")
+    target = raw_policy
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = "allow"
+
+    with pytest.raises(ValidationError, match=path[-1]):
+        Policy.model_validate(raw_policy)
+
+
+def test_signed_request_requested_constraints_are_bound_to_resulting_lease():
+    policy = make_policy()
+    request = make_request(
+        requested_constraints=LeaseConstraints(max_speed_mps=0.5),
+    )
+
+    decision, reason, _, constraints = evaluate_inputs(request, make_state(), policy)
+
+    assert decision == Decision.ALLOW
+    assert reason == "POLICY_SATISFIED"
+    assert constraints is not None
+    assert constraints.max_speed_mps == 0.5
+
+
+def test_requested_constraints_cannot_expand_policy_network_thresholds():
+    policy = make_policy()
+    request = make_request(
+        requested_constraints=LeaseConstraints(
+            max_latency_ms_p95=policy.requirements.network.max_latency_ms_p95 + 1
+        ),
+    )
+
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        request,
+        make_state(),
+        policy,
+    )
+
+    assert decision == Decision.DENY
+    assert reason == "REQUESTED_CONSTRAINTS_TOO_BROAD"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+
 def test_central_agent_mock_emits_signed_request_for_policy_contract():
     signing_key = DemoKeyPair()
     request = request_remote_assist(signing_key)
@@ -626,7 +820,7 @@ def test_central_agent_mock_emits_signed_request_for_policy_contract():
         agent_public_keys_by_id={CENTRAL_AGENT_ID: signing_key.public_key_b64},
         edge_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
         accepted_policy_digests={policy_digest(policy)},
-        replay_cache=RequestReplayCache.temporary(),
+        replay_cache=durable_request_replay_cache(),
     )
 
     assert decision == Decision.ALLOW
@@ -804,10 +998,22 @@ def test_unsigned_current_state_rejects_previously_valid_lease_at_command_gate()
     ("payload", "expected_allowed", "expected_reason"),
     [
         ({"max_speed_mps": 0.4}, True, "LEASE_VALID"),
+        ({"speed_mps": 0.4}, True, "LEASE_VALID"),
+        ({"max_speed_mps": 0.4, "speed_mps": 0.4}, True, "LEASE_VALID"),
         ({"max_speed_mps": 0.6}, False, "COMMAND_SPEED_TOO_HIGH"),
         ({}, False, "COMMAND_SPEED_MISSING"),
         ({"max_speed_mps": "fast"}, False, "COMMAND_SPEED_MALFORMED"),
         ({"max_speed_mps": float("nan")}, False, "COMMAND_SPEED_MALFORMED"),
+        (
+            {"max_speed_mps": 0.4, "motion": {"max_speed_mps": 99.0}},
+            False,
+            "COMMAND_PAYLOAD_SCHEMA_VIOLATION",
+        ),
+        (
+            {"max_speed_mps": 0.4, "trajectory": [{"speed_mps": 99.0}]},
+            False,
+            "COMMAND_PAYLOAD_SCHEMA_VIOLATION",
+        ),
         (
             {"max_speed_mps": 0.4, "speed_mps": 99.0},
             False,
@@ -864,6 +1070,76 @@ def test_lease_context_replay_to_wrong_agent_robot_mission_or_capability_is_reje
     assert result.reason_code == expected_reason
 
 
+@pytest.mark.parametrize(
+    ("command_edge_agent_id", "lease_edge_agent_id"),
+    [
+        ("edge-agent:rover-002", "edge-agent:rover-002"),
+        (EDGE_AGENT_ID, "edge-agent:rover-002"),
+    ],
+)
+def test_direct_command_gate_rejects_nonlocal_edge_context_before_lease_validation(
+    command_edge_agent_id,
+    lease_edge_agent_id,
+):
+    key = DemoKeyPair()
+    other_edge_key = DemoKeyPair()
+    lease = issue_valid_lease(key).model_copy(
+        update={"edge_agent_id": lease_edge_agent_id, "signature": None}
+    )
+    lease = resign(lease, key)
+    command = make_command(edge_agent_id=command_edge_agent_id)
+    state_edge_agent_id = command_edge_agent_id
+    current_state = sign_state(
+        RobotStateAssertion(
+            robot_id="rover-001",
+            edge_agent_id=state_edge_agent_id,
+            mission_id="mission-001",
+            network_state=profile("normal"),
+            geofence_state=GeofenceState(geofence_id="test-zone-a", inside=True),
+        ),
+        other_edge_key if state_edge_agent_id != EDGE_AGENT_ID else EDGE_KEY,
+    )
+    gate = make_gate(
+        key,
+        state_public_keys_by_edge_id={
+            EDGE_AGENT_ID: EDGE_KEY.public_key_b64,
+            "edge-agent:rover-002": other_edge_key.public_key_b64,
+        },
+    )
+
+    result = gate.evaluate(command, lease, current_state=current_state)
+
+    assert result.allowed is False
+    assert result.reason_code == "EDGE_AGENT_MISMATCH"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
+    assert gate.audit_log.events[-1].event_type == AuditEventType.COMMAND_REJECTED
+    assert gate.audit_log.events[-1].actor_id == EDGE_AGENT_ID
+    assert gate.audit_log.events[-1].payload["expected_edge_agent_id"] == EDGE_AGENT_ID
+    assert gate.audit_log.events[-1].payload["command_edge_agent_id"] == command_edge_agent_id
+    assert gate.audit_log.events[-1].payload["lease_edge_agent_id"] == lease_edge_agent_id
+
+
+def test_nonlocal_edge_rejection_does_not_consume_command_replay_nonce():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    gate = make_gate(key)
+    nonlocal_command = make_command(edge_agent_id="edge-agent:rover-002")
+
+    mismatch = gate.evaluate(nonlocal_command, lease, current_state=make_state())
+    corrected_command = make_command(
+        command_id=nonlocal_command.command_id,
+        command_nonce=nonlocal_command.command_nonce,
+        edge_agent_id=EDGE_AGENT_ID,
+    )
+    corrected = gate.evaluate(corrected_command, lease, current_state=make_state())
+
+    assert mismatch.allowed is False
+    assert mismatch.reason_code == "EDGE_AGENT_MISMATCH"
+    assert corrected.allowed is True
+    assert corrected.reason_code == "LEASE_VALID"
+
+
 def test_command_without_signature_is_rejected_before_lease_validation():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
@@ -873,7 +1149,8 @@ def test_command_without_signature_is_rejected_before_lease_validation():
 
     assert result.allowed is False
     assert result.reason_code == "COMMAND_SIGNATURE_MISSING"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_edge_daemon_mismatch_without_command_auth_uses_command_gate_rejection():
@@ -888,8 +1165,11 @@ def test_edge_daemon_mismatch_without_command_auth_uses_command_gate_rejection()
 
     assert result.allowed is False
     assert result.reason_code == "COMMAND_AUTHENTICATED_AGENT_MISSING"
-    assert gate.audit_log.events[-2].event_type == AuditEventType.COMMAND_REJECTED
-    assert gate.audit_log.events[-2].payload["reason_code"] == "COMMAND_AUTHENTICATED_AGENT_MISSING"
+    assert gate.audit_log.events[-1].event_type == AuditEventType.DIAGNOSTIC
+    assert gate.audit_log.events[-1].authority_relevant is False
+    assert gate.audit_log.events[-1].actor_id == "local_command_gate"
+    assert gate.audit_log.events[-1].payload["reason_code"] == "COMMAND_AUTHENTICATED_AGENT_MISSING"
+    assert gate.fallback_events == []
 
 
 def test_command_without_authenticated_agent_is_rejected_before_lease_validation():
@@ -936,6 +1216,102 @@ def test_invalid_command_signature_is_rejected_before_lease_validation():
     assert result.reason_code == "COMMAND_SIGNATURE_INVALID"
 
 
+@pytest.mark.parametrize(
+    "command_update",
+    [
+        {"command_id": "x" * 2_000},
+        {"payload": {"blob": "x" * 70_000}},
+        {"payload": {"nested": {"child": {"leaf": "ok"}}}},
+    ],
+)
+def test_oversized_signed_command_material_rejects_before_canonical_json(
+    monkeypatch,
+    command_update,
+):
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    command = make_command()
+    if "payload" in command_update and "nested" in command_update["payload"]:
+        payload = command_update["payload"]
+        for _ in range(40):
+            payload = {"child": payload}
+        command_update = {"payload": payload}
+    command = command.model_copy(update=command_update)
+    state = make_state()
+    gate = make_gate(key)
+    canonical_json_calls = 0
+    original_canonical_json = crypto.canonical_json
+
+    def counting_canonical_json(payload):
+        nonlocal canonical_json_calls
+        canonical_json_calls += 1
+        return original_canonical_json(payload)
+
+    monkeypatch.setattr(crypto, "canonical_json", counting_canonical_json)
+
+    result = gate.evaluate(command, lease, current_state=state)
+
+    assert result.allowed is False
+    assert result.reason_code == "COMMAND_SIGNED_MATERIAL_TOO_LARGE"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
+    assert canonical_json_calls == 0
+    assert gate.fallback_events == []
+    assert [event.event_type for event in gate.audit_log.events] == [AuditEventType.DIAGNOSTIC]
+    assert gate.audit_log.events[0].authority_relevant is False
+    assert gate.audit_log.events[0].actor_id == "local_command_gate"
+
+
+def test_oversized_command_signature_rejects_before_decode_or_verify(monkeypatch):
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    command = make_command().model_copy(update={"signature": "A" * 2_000})
+    gate = make_gate(key)
+
+    def fail_unb64(value):
+        raise AssertionError(f"unb64 should not decode over-budget signature {len(value)}")
+
+    def fail_verify(payload, signature, public_key_b64):
+        raise AssertionError("verify should not run for over-budget command signature")
+
+    monkeypatch.setattr(command_gate_module, "unb64", fail_unb64)
+    monkeypatch.setattr(command_gate_module, "verify_with_public_key_b64", fail_verify)
+
+    result = gate.evaluate(command, lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == "COMMAND_SIGNED_MATERIAL_TOO_LARGE"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
+    assert gate.audit_log.events[-1].event_type == AuditEventType.DIAGNOSTIC
+    assert gate.audit_log.events[-1].payload["reason_code"] == "COMMAND_SIGNED_MATERIAL_TOO_LARGE"
+
+
+def test_malformed_command_signature_rejects_before_canonical_json(monkeypatch):
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    command = make_command().model_copy(update={"signature": "not-base64!"})
+    state = make_state()
+    gate = make_gate(key)
+    canonical_json_calls = 0
+    original_canonical_json = crypto.canonical_json
+
+    def counting_canonical_json(payload):
+        nonlocal canonical_json_calls
+        canonical_json_calls += 1
+        return original_canonical_json(payload)
+
+    monkeypatch.setattr(crypto, "canonical_json", counting_canonical_json)
+
+    result = gate.evaluate(command, lease, current_state=state)
+
+    assert result.allowed is False
+    assert result.reason_code == "COMMAND_SIGNATURE_INVALID"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
+    assert canonical_json_calls == 0
+
+
 def test_stale_command_is_rejected_before_lease_validation():
     key = DemoKeyPair()
     now = datetime.now(timezone.utc)
@@ -970,6 +1346,44 @@ def test_future_command_is_rejected_before_lease_validation():
     assert result.reason_code == "COMMAND_NOT_YET_VALID"
 
 
+@pytest.mark.parametrize(
+    ("case_name", "expected_reason"),
+    [
+        ("missing_authenticated_agent", "COMMAND_AUTHENTICATED_AGENT_MISSING"),
+        ("missing_signature", "COMMAND_SIGNATURE_MISSING"),
+        ("invalid_signature", "COMMAND_SIGNATURE_INVALID"),
+        ("untrusted_agent_key", "COMMAND_AGENT_KEY_NOT_TRUSTED"),
+    ],
+)
+def test_command_auth_denials_do_not_emit_fallback_side_effects(case_name, expected_reason):
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    emitted = []
+    gate = make_gate(key, fallback_sink=emitted.append)
+    command = make_command()
+    if case_name == "missing_authenticated_agent":
+        command = command.model_copy(update={"authenticated_agent_id": None, "signature": None})
+    elif case_name == "missing_signature":
+        command = command.model_copy(update={"signature": None})
+    elif case_name == "invalid_signature":
+        command = command.model_copy(update={"payload": {"tampered_after_signing": True}})
+    elif case_name == "untrusted_agent_key":
+        command = make_command(agent_id="fleet-agent:unknown")
+
+    result = gate.evaluate(command, lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == expected_reason
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
+    assert emitted == []
+    assert gate.fallback_events == []
+    assert [event.event_type for event in gate.audit_log.events] == [AuditEventType.DIAGNOSTIC]
+    assert gate.audit_log.events[0].authority_relevant is False
+    assert gate.audit_log.events[0].actor_id == "local_command_gate"
+    assert gate.audit_log.events[0].payload["fallback_action"] is None
+
+
 def test_replayed_signed_command_is_rejected_before_second_authorization():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
@@ -982,6 +1396,45 @@ def test_replayed_signed_command_is_rejected_before_second_authorization():
     assert first.allowed is True
     assert second.allowed is False
     assert second.reason_code == "COMMAND_REPLAYED"
+    assert second.fallback_declaration is None
+
+
+def test_command_gate_accepts_signed_lease_with_matching_policy_provenance():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+
+    result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
+
+    assert result.allowed is True
+    assert result.reason_code == "LEASE_VALID"
+
+
+def test_command_gate_rejects_signed_lease_missing_policy_provenance():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key).model_copy(
+        update={"policy_id": None, "policy_digest": None, "signature": None}
+    )
+    lease.signature = key.sign(lease)
+
+    result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_POLICY_PROVENANCE_REQUIRED"
+    assert result.fallback_declaration is not None
+
+
+def test_command_gate_rejects_signed_lease_policy_digest_mismatch():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key).model_copy(
+        update={"policy_digest": "sha256:stale-policy-digest", "signature": None}
+    )
+    lease.signature = key.sign(lease)
+
+    result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_POLICY_NOT_ACCEPTED"
+    assert result.fallback_declaration is not None
 
 
 def test_command_gate_requires_durable_command_replay_cache():
@@ -990,15 +1443,63 @@ def test_command_gate_requires_durable_command_replay_cache():
     with pytest.raises(ValueError, match="durable command_replay_cache"):
         CommandGate(
             key.public_key_b64,
+            local_edge_agent_id=EDGE_AGENT_ID,
             trusted_issuer_ids={TRUSTED_ISSUER_ID},
             trusted_revoker_ids={EDGE_AGENT_ID},
             accepted_capabilities={Capability.REMOTE_ASSIST.value},
+            **gate_policy_kwargs(),
             issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
             capability_constraint_requirements=remote_assist_constraint_requirements(),
             agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
             revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
             state_public_keys_by_edge_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
             command_replay_cache=CommandReplayCache(),
+            revocation_store=durable_revocation_store(),
+        )
+
+
+def test_command_gate_requires_durable_revocation_store():
+    key = DemoKeyPair()
+
+    with pytest.raises(ValueError, match="durable revocation_store"):
+        CommandGate(
+            key.public_key_b64,
+            local_edge_agent_id=EDGE_AGENT_ID,
+            trusted_issuer_ids={TRUSTED_ISSUER_ID},
+            trusted_revoker_ids={EDGE_AGENT_ID},
+            accepted_capabilities={Capability.REMOTE_ASSIST.value},
+            **gate_policy_kwargs(),
+            issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
+            capability_constraint_requirements=remote_assist_constraint_requirements(),
+            agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+            revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
+            state_public_keys_by_edge_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
+            command_replay_cache=durable_command_replay_cache(),
+            revocation_store=RevocationStore(),
+        )
+
+
+def test_command_gate_rejects_ephemeral_temporary_stores():
+    key = DemoKeyPair()
+    command_cache = CommandReplayCache.temporary()
+    revocation_store = RevocationStore.temporary()
+
+    assert command_cache.store_path is not None
+    assert command_cache.durable is False
+    assert revocation_store.store_path is not None
+    assert revocation_store.durable is False
+
+    with pytest.raises(ValueError, match="durable command_replay_cache"):
+        make_gate(
+            key,
+            command_replay_cache=command_cache,
+            revocation_store=durable_revocation_store(),
+        )
+    with pytest.raises(ValueError, match="durable revocation_store"):
+        make_gate(
+            key,
+            command_replay_cache=durable_command_replay_cache(),
+            revocation_store=revocation_store,
         )
 
 
@@ -1018,10 +1519,85 @@ def test_replayed_signed_command_is_rejected_after_gate_restart(tmp_path):
     assert second.reason_code == "COMMAND_REPLAYED"
 
 
+def test_revoked_lease_is_rejected_after_gate_restart(tmp_path):
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    revocation_store = tmp_path / "revocations.sqlite3"
+    first_gate = make_gate(key, revocation_store=RevocationStore(revocation_store))
+    revocation = sign_revocation(
+        LeaseRevocation(
+            lease_id=lease.lease_id,
+            revoked_by=EDGE_AGENT_ID,
+            edge_agent_id=EDGE_AGENT_ID,
+            reason_code="COMPROMISE_SUSPECTED",
+            fallback_action=FallbackAction.HOLD_POSITION,
+            robot_id=lease.robot_id,
+            mission_id=lease.mission_id,
+            capability=lease.capability,
+        )
+    )
+
+    first_gate.revoke(revocation, lease=lease)
+    second_gate = make_gate(key, revocation_store=RevocationStore(revocation_store))
+    result = second_gate.evaluate(make_command(), lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_REVOKED"
+    assert result.fallback_declaration is not None
+    assert result.fallback_declaration.revocation_id == revocation.message_id
+    assert second_gate.revoked_lease_ids == {lease.lease_id}
+
+
+def test_replayed_signed_revocation_after_restart_does_not_reemit_fallback(tmp_path):
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    emitted = []
+    revocation_store = tmp_path / "revocations.sqlite3"
+    first_gate = make_gate(
+        key,
+        revocation_store=RevocationStore(revocation_store),
+        fallback_sink=emitted.append,
+    )
+    revocation = sign_revocation(
+        LeaseRevocation(
+            lease_id=lease.lease_id,
+            revoked_by=EDGE_AGENT_ID,
+            edge_agent_id=EDGE_AGENT_ID,
+            reason_code="COMPROMISE_SUSPECTED",
+            fallback_action=FallbackAction.HOLD_POSITION,
+            robot_id=lease.robot_id,
+            mission_id=lease.mission_id,
+            capability=lease.capability,
+        )
+    )
+
+    first_fallback = first_gate.revoke(revocation, lease=lease)
+    second_gate = make_gate(
+        key,
+        revocation_store=RevocationStore(revocation_store),
+        fallback_sink=emitted.append,
+    )
+    replay_result = second_gate.revoke(revocation, lease=lease)
+
+    assert first_fallback is not None
+    assert replay_result is None
+    assert len(emitted) == 1
+    assert len(first_gate.fallback_events) == 1
+    assert second_gate.fallback_events == []
+    assert second_gate.audit_log.events[-1].event_type == AuditEventType.REVOCATION_REJECTED
+    assert second_gate.audit_log.events[-1].payload["reason_code"] == "REVOCATION_REPLAYED"
+
+
 def test_trusted_issuer_cannot_grant_capability_outside_local_scope():
     key = DemoKeyPair()
+    policy = make_policy()
     now = datetime.now(timezone.utc)
     lease = CapabilityLease(
+        protocol_version=SUPPORTED_PROTOCOL_VERSION,
+        message_id="msg_unsupported_capability_lease",
+        correlation_id="corr_unsupported_capability_lease",
+        created_at=now,
+        message_type="capability_lease",
         issuer_id=TRUSTED_ISSUER_ID,
         agent_id=CENTRAL_AGENT_ID,
         edge_agent_id=EDGE_AGENT_ID,
@@ -1031,6 +1607,8 @@ def test_trusted_issuer_cannot_grant_capability_outside_local_scope():
         constraints=LeaseConstraints(),
         issued_at=now,
         expires_at=now + timedelta(seconds=300),
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
     )
     resign(lease, key)
     command = make_command(capability=Capability.AUTONOMY_ESCALATION.value)
@@ -1055,8 +1633,14 @@ def issue_mission_continue_lease(
     key: DemoKeyPair,
     constraints: LeaseConstraints,
 ) -> CapabilityLease:
+    policy = make_policy()
     now = datetime.now(timezone.utc)
     lease = CapabilityLease(
+        protocol_version=SUPPORTED_PROTOCOL_VERSION,
+        message_id=f"msg_mission_continue_{now.timestamp()}",
+        correlation_id="corr_mission_continue",
+        created_at=now,
+        message_type="capability_lease",
         issuer_id=TRUSTED_ISSUER_ID,
         agent_id=CENTRAL_AGENT_ID,
         edge_agent_id=EDGE_AGENT_ID,
@@ -1066,6 +1650,8 @@ def issue_mission_continue_lease(
         constraints=constraints,
         issued_at=now,
         expires_at=now + timedelta(seconds=300),
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
     )
     return resign(lease, key)
 
@@ -1272,6 +1858,38 @@ def test_unsigned_revocation_cannot_revoke_lease():
     assert gate.audit_log.events[-1].payload["reason_code"] == "REVOCATION_SIGNATURE_MISSING"
 
 
+def test_oversized_revocation_signature_rejects_before_decode_or_verify(monkeypatch):
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    gate = make_gate(key)
+    revocation = LeaseRevocation(
+        lease_id=lease.lease_id,
+        revoked_by=EDGE_AGENT_ID,
+        edge_agent_id=EDGE_AGENT_ID,
+        reason_code="COMPROMISE_SUSPECTED",
+        fallback_action=FallbackAction.HOLD_POSITION,
+        signature="A" * 2_000,
+    )
+
+    def fail_unb64(value):
+        raise AssertionError(f"unb64 should not decode over-budget signature {len(value)}")
+
+    def fail_verify(payload, signature, public_key_b64):
+        raise AssertionError("verify should not run for over-budget revocation signature")
+
+    monkeypatch.setattr(command_gate_module, "unb64", fail_unb64)
+    monkeypatch.setattr(command_gate_module, "verify_with_public_key_b64", fail_verify)
+
+    with pytest.raises(ValueError, match="revocation signed material is too large"):
+        gate.revoke(revocation, lease=lease)
+
+    assert gate.revoked_lease_ids == set()
+    assert gate.fallback_events == []
+    assert gate.audit_log.events[-1].payload["reason_code"] == (
+        "REVOCATION_SIGNED_MATERIAL_TOO_LARGE"
+    )
+
+
 def test_tampered_revocation_signature_cannot_revoke_lease():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
@@ -1374,9 +1992,11 @@ def test_cross_edge_trusted_revoker_cannot_revoke_victim_lease():
     lease = issue_valid_lease(issuer_key)
     gate = CommandGate(
         issuer_key.public_key_b64,
+        local_edge_agent_id=EDGE_AGENT_ID,
         trusted_issuer_ids={TRUSTED_ISSUER_ID},
         trusted_revoker_ids={EDGE_AGENT_ID, revoker_b_id},
         accepted_capabilities={Capability.REMOTE_ASSIST.value},
+        **gate_policy_kwargs(),
         issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
         capability_constraint_requirements=remote_assist_constraint_requirements(),
         agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
@@ -1385,7 +2005,8 @@ def test_cross_edge_trusted_revoker_cannot_revoke_victim_lease():
             revoker_b_id: revoker_b_key.public_key_b64,
         },
         state_public_keys_by_edge_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
-        command_replay_cache=CommandReplayCache.temporary(),
+        command_replay_cache=durable_command_replay_cache(),
+        revocation_store=durable_revocation_store(),
     )
     revocation = sign_revocation(
         LeaseRevocation(
@@ -1416,16 +2037,19 @@ def test_explicit_revoker_edge_scope_can_revoke_target_lease():
     lease = issue_valid_lease(issuer_key)
     gate = CommandGate(
         issuer_key.public_key_b64,
+        local_edge_agent_id=EDGE_AGENT_ID,
         trusted_issuer_ids={TRUSTED_ISSUER_ID},
         trusted_revoker_ids={scoped_revoker_id},
         accepted_capabilities={Capability.REMOTE_ASSIST.value},
+        **gate_policy_kwargs(),
         issuer_capability_scopes={TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
         capability_constraint_requirements=remote_assist_constraint_requirements(),
         agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
         revoker_public_keys_by_id={scoped_revoker_id: scoped_revoker_key.public_key_b64},
         revoker_edge_scopes_by_id={scoped_revoker_id: {EDGE_AGENT_ID}},
         state_public_keys_by_edge_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
-        command_replay_cache=CommandReplayCache.temporary(),
+        command_replay_cache=durable_command_replay_cache(),
+        revocation_store=durable_revocation_store(),
     )
     revocation = sign_revocation(
         LeaseRevocation(
@@ -1533,8 +2157,9 @@ def test_unknown_lease_issuer_is_rejected_even_with_a_valid_signature():
 def test_lease_issuer_identity_must_match_verification_key():
     low_key = DemoKeyPair()
     privileged_key = DemoKeyPair()
+    policy = make_policy()
     request = make_request()
-    _, _, _, constraints = evaluate_inputs(request, make_state(), make_policy())
+    _, _, _, constraints = evaluate_inputs(request, make_state(), policy)
     assert constraints is not None
     forged_privileged_lease = issue_lease(
         request,
@@ -1542,9 +2167,12 @@ def test_lease_issuer_identity_must_match_verification_key():
         "issuer:privileged",
         low_key,
         ttl_seconds=600,
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
     )
     gate = CommandGate(
         low_key.public_key_b64,
+        local_edge_agent_id=EDGE_AGENT_ID,
         trusted_issuer_ids={"issuer:low", "issuer:privileged"},
         issuer_public_keys_by_id={
             "issuer:low": low_key.public_key_b64,
@@ -1552,6 +2180,7 @@ def test_lease_issuer_identity_must_match_verification_key():
         },
         trusted_revoker_ids={EDGE_AGENT_ID},
         accepted_capabilities={Capability.REMOTE_ASSIST.value},
+        **gate_policy_kwargs(),
         issuer_capability_scopes={
             "issuer:low": {Capability.REMOTE_ASSIST.value},
             "issuer:privileged": {Capability.REMOTE_ASSIST.value},
@@ -1560,7 +2189,8 @@ def test_lease_issuer_identity_must_match_verification_key():
         agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
         revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
         state_public_keys_by_edge_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
-        command_replay_cache=CommandReplayCache.temporary(),
+        command_replay_cache=durable_command_replay_cache(),
+        revocation_store=durable_revocation_store(),
     )
 
     result = gate.evaluate(make_command(), forged_privileged_lease, current_state=make_state())
@@ -1575,16 +2205,19 @@ def test_multiple_trusted_issuers_require_key_registry():
     with pytest.raises(ValueError, match="issuer_public_keys_by_id is required"):
         CommandGate(
             key.public_key_b64,
+            local_edge_agent_id=EDGE_AGENT_ID,
             trusted_issuer_ids={"issuer:low", "issuer:privileged"},
             trusted_revoker_ids={EDGE_AGENT_ID},
             accepted_capabilities={Capability.REMOTE_ASSIST.value},
+            **gate_policy_kwargs(),
             issuer_capability_scopes={
                 "issuer:low": {Capability.REMOTE_ASSIST.value},
                 "issuer:privileged": {Capability.REMOTE_ASSIST.value},
             },
             capability_constraint_requirements=remote_assist_constraint_requirements(),
             agent_public_keys_by_id={CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
-            command_replay_cache=CommandReplayCache.temporary(),
+            command_replay_cache=durable_command_replay_cache(),
+            revocation_store=durable_revocation_store(),
         )
 
 

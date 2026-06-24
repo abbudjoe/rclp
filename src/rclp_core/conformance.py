@@ -29,6 +29,7 @@ from rclp_core.state import (
 DEFAULT_LEASE_MAX_AGE_SECONDS = 600
 DEFAULT_LEASE_MAX_TTL_SECONDS = 600
 LEASE_CLOCK_SKEW_SECONDS = 30
+SUPPORTED_SPEED_PAYLOAD_FIELDS = frozenset({"max_speed_mps", "speed_mps"})
 
 
 def validate_lease_for_command(
@@ -38,6 +39,8 @@ def validate_lease_for_command(
     issuer_public_keys_by_id: Mapping[str, str] | None = None,
     trusted_issuer_ids: set[str],
     accepted_capabilities: set[str] | None = None,
+    accepted_policy_id: str | None = None,
+    accepted_policy_digests: set[str] | None = None,
     issuer_capability_scopes: Mapping[str, set[str]] | None = None,
     capability_constraint_requirements: (
         Mapping[str, CapabilityConstraintRequirement] | None
@@ -59,6 +62,8 @@ def validate_lease_for_command(
     revoked_lease_ids = revoked_lease_ids or set()
     if lease is None:
         return False, "NO_LEASE"
+    if version_reason := protocol_version_violation(lease):
+        return False, version_reason
     if lease.issuer_id not in trusted_issuer_ids:
         return False, "ISSUER_NOT_TRUSTED"
 
@@ -72,6 +77,12 @@ def validate_lease_for_command(
         return False, "ISSUER_KEY_NOT_TRUSTED"
     if not verify_lease_signature(lease, issuer_public_key):
         return False, "INVALID_SIGNATURE"
+    if policy_reason := lease_policy_provenance_violation(
+        lease,
+        accepted_policy_id=accepted_policy_id,
+        accepted_policy_digests=accepted_policy_digests,
+    ):
+        return False, policy_reason
     if scope_reason := capability_scope_violation(
         lease,
         accepted_capabilities=accepted_capabilities,
@@ -159,6 +170,26 @@ def capability_scope_violation(
     issuer_scope = issuer_capability_scopes.get(lease.issuer_id, set())
     if capability not in issuer_scope:
         return "CAPABILITY_NOT_GRANTED"
+    return None
+
+
+def lease_policy_provenance_violation(
+    lease: CapabilityLease,
+    *,
+    accepted_policy_id: str | None,
+    accepted_policy_digests: set[str] | None,
+) -> str | None:
+    if not accepted_policy_id or not accepted_policy_id.strip() or not accepted_policy_digests:
+        return "POLICY_PROVENANCE_REQUIRED"
+    normalized_digests = {digest for digest in accepted_policy_digests if digest.strip()}
+    if len(normalized_digests) != len(accepted_policy_digests):
+        return "POLICY_PROVENANCE_REQUIRED"
+    if not lease.policy_id or not lease.policy_id.strip():
+        return "LEASE_POLICY_PROVENANCE_REQUIRED"
+    if not lease.policy_digest or not lease.policy_digest.strip():
+        return "LEASE_POLICY_PROVENANCE_REQUIRED"
+    if lease.policy_id != accepted_policy_id or lease.policy_digest not in normalized_digests:
+        return "LEASE_POLICY_NOT_ACCEPTED"
     return None
 
 
@@ -272,6 +303,8 @@ def validate_command_payload_against_constraints(
         return False, "LEASE_CONSTRAINT_MALFORMED"
     if command_payload is None:
         return False, "COMMAND_SPEED_MISSING"
+    if set(command_payload) - SUPPORTED_SPEED_PAYLOAD_FIELDS:
+        return False, "COMMAND_PAYLOAD_SCHEMA_VIOLATION"
     has_max_speed = "max_speed_mps" in command_payload
     has_speed = "speed_mps" in command_payload
     if has_max_speed and has_speed:

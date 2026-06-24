@@ -5,13 +5,15 @@ verification. They are deterministic and require no ROS 2, Isaac Sim, network
 access, filesystem access from core verifier logic, or wall-clock time.
 
 The current spike uses `RCLP-DEV-HMAC-SHA256`: HMAC-SHA256 over canonical JSON
-lease claims using sorted keys and no insignificant whitespace. Separate dev
-HMAC domains cover signed commands and signed local context fields so command
-actor identity, network state, and geofence state cannot be treated as authority
-inputs unless they are bound to authenticated local identities. The lease
-signature excludes `input.lease.signature`; the command signature excludes
-`input.command.signature`; the local context signature excludes
-`input.local_context.signature`.
+lease claims using sorted keys and no insignificant whitespace. Lease claims
+include the protocol envelope and signed policy id/digest. Separate dev HMAC
+domains cover the signed command envelope, command identity fields, timestamp,
+nonce, and `payload`, plus signed local context fields, so command actor
+identity, payload constraints, network state, and geofence state cannot be
+treated as authority inputs unless they are bound to authenticated local
+identities. The lease signature excludes `input.lease.signature`; the command
+signature excludes `input.command.signature`; the local context signature
+excludes `input.local_context.signature`.
 
 Each vector keeps untrusted lease, command, and local observed state under
 `input`. Trusted local verifier state is under `trusted_context`, including

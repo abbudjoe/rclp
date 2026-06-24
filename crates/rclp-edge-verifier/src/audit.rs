@@ -1,9 +1,13 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::canonical_json::canonical_json;
 use crate::types::{Decision, ReasonCode};
+
+static AUDIT_EVENT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug)]
 pub(crate) struct AuditSubject {
@@ -21,6 +25,7 @@ pub(crate) struct AuditSubject {
     pub state_refs: Vec<String>,
     pub related_message_ids: Vec<String>,
     pub observed_at_unix_ms: i64,
+    pub authority_relevant: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -42,6 +47,8 @@ pub struct AuditEvent {
     pub payload: Value,
     pub payload_hash: String,
     pub authority_relevant: bool,
+    pub event_sequence: u64,
+    pub identity_nonce: String,
     pub integrity_profile: String,
     pub integrity_proof: String,
     pub policy_id: Option<String>,
@@ -57,14 +64,20 @@ pub struct AuditEvent {
 
 impl AuditEvent {
     pub(crate) fn new(decision: Decision, reason_code: ReasonCode, subject: AuditSubject) -> Self {
-        let event_type = match decision {
-            Decision::Allow => "command_allowed",
-            Decision::Deny => "command_rejected",
-            Decision::Degrade => "capability_degraded",
+        let event_type = if subject.authority_relevant {
+            match decision {
+                Decision::Allow => "command_allowed",
+                Decision::Deny => "command_rejected",
+                Decision::Degrade => "capability_degraded",
+            }
+        } else {
+            "diagnostic"
         }
         .to_string();
         let summary = format!("{}: {}", decision.as_str(), reason_code.as_str());
         let payload_hash = stable_hash(&subject.payload);
+        let event_sequence = AUDIT_EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let identity_nonce = event_identity_nonce(event_sequence);
         let integrity_profile = "rclp-dev-sha256-v1".to_string();
         let lease_id = subject.lease_id.clone();
         let command_id = subject.command_id.clone();
@@ -85,6 +98,9 @@ impl AuditEvent {
             "lease_id": lease_id,
             "command_id": command_id,
             "observed_at_unix_ms": subject.observed_at_unix_ms,
+            "event_sequence": event_sequence,
+            "identity_nonce": identity_nonce,
+            "payload_hash": payload_hash,
         });
         let audit_id = format!("audit_{}", stable_hash_suffix(&audit_seed));
         let message_id = format!(
@@ -111,7 +127,9 @@ impl AuditEvent {
             "mission_id": mission_id.clone(),
             "summary": summary.clone(),
             "payload_hash": payload_hash.clone(),
-            "authority_relevant": true,
+            "authority_relevant": subject.authority_relevant,
+            "event_sequence": event_sequence,
+            "identity_nonce": identity_nonce.clone(),
             "integrity_profile": integrity_profile.clone(),
             "policy_id": policy_id.clone(),
             "policy_digest": policy_digest.clone(),
@@ -140,7 +158,9 @@ impl AuditEvent {
             mission_id,
             payload: subject.payload,
             payload_hash,
-            authority_relevant: true,
+            authority_relevant: subject.authority_relevant,
+            event_sequence,
+            identity_nonce,
             integrity_profile,
             integrity_proof,
             policy_id,
@@ -154,6 +174,19 @@ impl AuditEvent {
             summary,
         }
     }
+}
+
+fn event_identity_nonce(event_sequence: u64) -> String {
+    let monotonic_hint = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!(
+        "{}:{}:{}",
+        std::process::id(),
+        monotonic_hint,
+        event_sequence
+    )
 }
 
 fn stable_hash(value: &Value) -> String {

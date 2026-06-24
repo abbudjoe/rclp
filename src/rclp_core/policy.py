@@ -9,7 +9,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rclp_core.audit import AuditLog
 from rclp_core.crypto import verify_with_public_key_b64
@@ -45,8 +45,16 @@ class RequestReplayCache:
     is backed by a durable SQLite store.
     """
 
-    def __init__(self, store_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        store_path: str | Path | None = None,
+        *,
+        durable: bool | None = None,
+    ) -> None:
         self._store_path = Path(store_path) if store_path is not None else None
+        self._durable = self._store_path is not None if durable is None else durable
+        if self._durable and self._store_path is None:
+            raise ValueError("durable request replay cache requires a store path")
         self._tempdir: TemporaryDirectory[str] | None = None
         self._seen_request_nonces: set[tuple[str, str]] = set()
         if self._store_path is not None:
@@ -68,13 +76,13 @@ class RequestReplayCache:
     @classmethod
     def temporary(cls) -> "RequestReplayCache":
         tempdir = TemporaryDirectory(prefix="rclp-request-replay-")
-        cache = cls(Path(tempdir.name) / "request_replay.sqlite3")
+        cache = cls(Path(tempdir.name) / "request_replay.sqlite3", durable=False)
         cache._tempdir = tempdir
         return cache
 
     @property
     def durable(self) -> bool:
-        return self._store_path is not None
+        return self._durable and self._store_path is not None
 
     @property
     def store_path(self) -> Path | None:
@@ -135,6 +143,8 @@ class RequestReplayCache:
 
 
 class NetworkRequirements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     max_latency_ms_p95: float = Field(default=80.0, ge=0, allow_inf_nan=False)
     max_packet_loss_pct: float = Field(default=1.0, ge=0, le=100, allow_inf_nan=False)
     min_uplink_mbps: float = Field(default=3.0, ge=0, allow_inf_nan=False)
@@ -159,6 +169,8 @@ class NetworkRequirements(BaseModel):
 
 
 class PolicyRequirements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     allowed_agents: list[str] = Field(default_factory=list)
     allowed_edge_agents: list[str] = Field(default_factory=list)
     allowed_robots: list[str] = Field(default_factory=list)
@@ -170,6 +182,8 @@ class PolicyRequirements(BaseModel):
 
 
 class FallbackPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     on_deny: FallbackAction = FallbackAction.LOCAL_AUTONOMY_ONLY
     on_network_degrade: FallbackAction = FallbackAction.CRAWL_TO_SAFE_ZONE
     on_disconnect: FallbackAction = FallbackAction.LOCAL_AUTONOMY_ONLY
@@ -177,6 +191,8 @@ class FallbackPolicy(BaseModel):
 
 
 class Policy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     policy_id: str
     capability: Capability
     lease_ttl_seconds: int = Field(default=600, gt=0)
@@ -239,6 +255,81 @@ def _network_requirements_malformed(req: NetworkRequirements) -> bool:
         or req.deny_above_packet_loss_pct < req.max_packet_loss_pct
         or req.deny_below_uplink_mbps > req.min_uplink_mbps
     )
+
+
+def _requested_constraint_violation(
+    base_constraints: LeaseConstraints,
+    requested_constraints: LeaseConstraints | None,
+) -> str | None:
+    if requested_constraints is None:
+        return None
+    if (
+        requested_constraints.geofence_id is not None
+        and requested_constraints.geofence_id != base_constraints.geofence_id
+    ):
+        return "REQUESTED_GEOFENCE_NOT_ALLOWED"
+    if _maximum_constraint_too_broad(
+        requested_constraints.max_latency_ms_p95,
+        base_constraints.max_latency_ms_p95,
+    ):
+        return "REQUESTED_CONSTRAINTS_TOO_BROAD"
+    if _maximum_constraint_too_broad(
+        requested_constraints.max_packet_loss_pct,
+        base_constraints.max_packet_loss_pct,
+    ):
+        return "REQUESTED_CONSTRAINTS_TOO_BROAD"
+    if _minimum_constraint_too_broad(
+        requested_constraints.min_uplink_mbps,
+        base_constraints.min_uplink_mbps,
+    ):
+        return "REQUESTED_CONSTRAINTS_TOO_BROAD"
+    if (
+        "fallback_on_degrade" in requested_constraints.model_fields_set
+        and requested_constraints.fallback_on_degrade != base_constraints.fallback_on_degrade
+    ):
+        return "REQUESTED_FALLBACK_CONFLICT"
+    if _maximum_constraint_too_broad(
+        requested_constraints.max_speed_mps,
+        base_constraints.max_speed_mps,
+    ):
+        return "REQUESTED_CONSTRAINTS_TOO_BROAD"
+    return None
+
+
+def _maximum_constraint_too_broad(
+    requested: float | None,
+    allowed: float | None,
+) -> bool:
+    return requested is not None and allowed is not None and requested > allowed
+
+
+def _minimum_constraint_too_broad(
+    requested: float | None,
+    allowed: float | None,
+) -> bool:
+    return requested is not None and allowed is not None and requested < allowed
+
+
+def _apply_requested_constraints(
+    base_constraints: LeaseConstraints,
+    requested_constraints: LeaseConstraints | None,
+) -> LeaseConstraints:
+    if requested_constraints is None:
+        return base_constraints
+    updates = {}
+    for field_name in [
+        "geofence_id",
+        "max_latency_ms_p95",
+        "max_packet_loss_pct",
+        "min_uplink_mbps",
+        "fallback_on_degrade",
+        "max_speed_mps",
+    ]:
+        if field_name in requested_constraints.model_fields_set:
+            value = getattr(requested_constraints, field_name)
+            if value is not None:
+                updates[field_name] = value
+    return base_constraints.model_copy(update=updates)
 
 
 def policy_digest(policy: "Policy") -> str:
@@ -397,6 +488,12 @@ def _evaluate_policy_inputs(
         min_uplink_mbps=req.network.min_uplink_mbps,
         fallback_on_degrade=policy.fallback.on_network_degrade,
     )
+    if requested_reason := _requested_constraint_violation(
+        constraints,
+        request.requested_constraints,
+    ):
+        return Decision.DENY, requested_reason, [policy.fallback.on_deny], None
+    constraints = _apply_requested_constraints(constraints, request.requested_constraints)
     return Decision.ALLOW, "POLICY_SATISFIED", [], constraints
 
 

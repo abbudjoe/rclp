@@ -38,13 +38,18 @@ Minimum v0.0.1 message checklist:
 - `CapabilityDecision` records allow, deny, or degrade with reason code,
   deciding actor, policy reference, audit id, lease when allowed, and fallback
   alternatives when denied or degraded.
-- `CapabilityLease` is signed, short-lived, scoped to agent/edge/robot/mission/
-  capability, and carries local rejection constraints.
+- `CapabilityLease` carries the common protocol envelope and `capability_lease`
+  message type, is signed, short-lived, scoped to agent/edge/robot/mission/
+  capability, binds signed policy provenance, rejects unsupported versions or
+  unknown future fields at trust boundaries, and carries local rejection
+  constraints.
 - `LeaseRevocation` identifies the lease, signed revoker, edge agent, reason,
   revocation time, optional robot/mission/capability context, and advisory
-  fallback hook. Cross-edge revokers are denied by default; broader revokers
-  require explicit `revoker_edge_scopes_by_id` configuration, and the selected
-  fallback remains a local-policy decision.
+  fallback hook. Accepted revocations persist in durable edge-local authority
+  state and replayed signed revocation messages do not re-emit fallback hooks.
+  Cross-edge revokers are denied by default; broader revokers require explicit
+  `revoker_edge_scopes_by_id` configuration, and the selected fallback remains
+  a local-policy decision.
 - `FallbackDeclaration` records the selected fallback hook; it is not a
   certified safety behavior. Trust-boundary use requires an authenticated
   envelope; the v0.0.1 local demo emits local fallback declarations without
@@ -59,7 +64,7 @@ The policy path MUST:
 - fail closed for unknown agents, edge agents, robots, missions, capabilities,
   empty authority scopes, stale requests, replayed request nonces, invalid
   request signatures, missing replay protection, unauthenticated or stale state,
-  and unaccepted policy digests;
+  unknown future policy fields, and unaccepted policy digests;
 - treat network state as an authorization input, not a network guarantee;
 - allow `remote_assist` only when identity, mission, geofence, human-operator,
   network, policy-digest, and request-signature checks pass;
@@ -73,19 +78,33 @@ The edge command gate MUST reject:
 
 - missing lease;
 - unknown issuer;
+- unsupported lease protocol version or unknown future lease fields at the
+  trust boundary;
+- missing or unaccepted signed lease policy provenance in verifier profiles that
+  pin accepted policy digests;
 - invalid lease signature;
 - expired, stale, or too-long lease;
 - lease context mismatch for agent, edge agent, robot, mission, or capability;
 - missing required constraints for `remote_assist`;
-- known revoked lease;
+- known revoked lease, including after command-gate restart;
 - missing, unsigned, or stale current local state for state-constrained
   capabilities;
 - current local state that violates lease constraints;
 - command payloads that omit, malform, exceed, or conflict on `max_speed_mps`
-  when present.
+  when present;
+- command payload members outside the accepted capability's typed payload
+  schema, including nested speed or motion fields in the MVP speed-constrained
+  profile;
+- signed command material that exceeds the verifier profile's pre-auth scalar,
+  payload-size, node-count, or nesting-depth budget.
+- signed revocation material that exceeds the receiver's pre-auth text budget
+  before signature decoding or verification.
 
-Each command allow or rejection MUST be auditable. Rejections SHOULD emit a
-`FallbackDeclaration` chosen from local fallback policy.
+Each command allow or rejection MUST be auditable. Rejections after command
+authentication SHOULD emit a `FallbackDeclaration` chosen from local fallback
+policy. Command-authentication failures MUST NOT emit fallback side effects.
+Unauthenticated command failure audits MUST NOT trust claimed command subject
+fields as authority context.
 
 ## Required Local Evidence
 

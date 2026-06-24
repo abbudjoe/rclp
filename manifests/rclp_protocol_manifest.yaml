@@ -154,7 +154,13 @@ message_models:
       - signature
   CapabilityLease:
     python_model: rclp_core.models.CapabilityLease
+    message_type: capability_lease
     required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
       - lease_id
       - issuer_id
       - agent_id
@@ -166,6 +172,8 @@ message_models:
       - issued_at
       - expires_at
       - nonce
+      - policy_id
+      - policy_digest
       - signature
     runtime_required_fields:
       - lease_id

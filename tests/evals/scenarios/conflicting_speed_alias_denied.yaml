@@ -9,10 +9,8 @@ input:
       max_speed_mps: 0.5
   command:
     payload:
-      intent: start_remote_assist
       max_speed_mps: 0.4
       speed_mps: 99.0
 expected:
   decision: deny
   reason_code: COMMAND_SPEED_CONFLICT
-

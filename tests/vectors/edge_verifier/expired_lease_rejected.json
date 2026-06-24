@@ -72,9 +72,16 @@
         },
         "issued_at": 1759999300000,
         "expires_at": 1759999999000,
-        "nonce": "nonce-expired"
+        "nonce": "nonce-expired",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-expired",
+        "correlation_id": "corr-expired_lease_rejected",
+        "created_at_unix_ms": 1759999300000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "4968e118f19a392925b3fb429e0f54a7ba1770793aa52988d5582c1848e112be"
+      "signature": "56a1192e238c6cce7d0b6e1d735d2632d0dc974e067d6ccce007b94473339a75"
     },
     "command": {
       "command_id": "cmd-expired",
@@ -86,7 +93,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-expired-lease-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "f03e1f505a4d10585fb7e539207ad6cac670617435715622e4e0ced058044400"
+      "signature": "1a65f42c3c20f1433ffbb06256b27895cb4c13ace6cf0861370006c1f2424110",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-expired",
+      "correlation_id": "corr-expired_lease_rejected",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

@@ -1,6 +1,7 @@
 import importlib
 import json
 from pathlib import Path
+from typing import get_args
 
 import yaml
 
@@ -80,7 +81,11 @@ def test_protocol_manifest_matches_exported_message_models():
 
         assert runtime_required_fields == defaulted_required_fields
         if "message_type" in contract:
-            assert model.model_fields["message_type"].default == contract["message_type"]
+            message_type_field = model.model_fields["message_type"]
+            if message_type_field.is_required():
+                assert contract["message_type"] in get_args(message_type_field.annotation)
+            else:
+                assert message_type_field.default == contract["message_type"]
 
 
 def test_protocol_manifest_required_fields_are_named_in_spec():
@@ -129,7 +134,7 @@ def test_sample_replay_events_are_valid_audit_commits():
     ]
 
 
-def test_network_degrade_scenario_matches_current_policy_profile_behavior():
+def test_network_degrade_scenario_matches_current_policy_profile_behavior(tmp_path):
     scenario = load_yaml("examples/scenarios/network_degrade.yaml")
     policy = Policy.from_yaml(ROOT / "examples/policies/remote_assist_policy.yaml")
     key = DemoKeyPair()
@@ -140,7 +145,7 @@ def test_network_degrade_scenario_matches_current_policy_profile_behavior():
         "accepted_policy_digests": {policy_digest(policy)},
     }
 
-    for step in scenario["steps"]:
+    for index, step in enumerate(scenario["steps"]):
         if "expected_decision" not in step:
             continue
         decision, _, _, _ = _evaluate_policy_inputs(
@@ -148,6 +153,6 @@ def test_network_degrade_scenario_matches_current_policy_profile_behavior():
             robot_state(step["profile"]),
             policy,
             **trust_kwargs,
-            replay_cache=RequestReplayCache.temporary(),
+            replay_cache=RequestReplayCache(tmp_path / f"request-replay-{index}.sqlite3"),
         )
         assert decision == step["expected_decision"]

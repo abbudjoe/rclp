@@ -213,6 +213,26 @@ def test_load_jsonl_rejects_tampered_authority_context(tmp_path):
         load_jsonl(path)
 
 
+def test_load_jsonl_rejects_unknown_context_outside_integrity_proof(tmp_path):
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.CAPABILITY_ALLOWED,
+        actor_id="issuer",
+        robot_id="robot",
+        mission_id="mission",
+        summary="allow",
+        payload={"reason_code": "POLICY_SATISFIED"},
+    )
+    event = log.events[0].model_dump(mode="json")
+    event["future_authority_context"] = {"robot_id": "robot-other"}
+    path = tmp_path / "unknown-context.jsonl"
+    path.write_text(json.dumps(event) + "\n")
+
+    with pytest.raises(ValidationError, match="future_authority_context"):
+        load_jsonl(path, trusted_chain_head=log.chain_head)
+
+
 def test_load_jsonl_rejects_missing_payload_hash(tmp_path):
     log = AuditLog()
     log.record(

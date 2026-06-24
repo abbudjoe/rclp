@@ -72,7 +72,14 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760000500000,
-        "nonce": "nonce-malformed-signature"
+        "nonce": "nonce-malformed-signature",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-malformed-signature",
+        "correlation_id": "corr-malformed_signature_rejected",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
       "signature": "not-a-hex-signature"
     },
@@ -86,7 +93,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-malformed-signature-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "b2c8f675dbca09ff635fc292575d5108a41cc6ed4523b37243cddc69c3229475"
+      "signature": "e7045788f2a2ebbb26330dfe208dfde31b4d9109974af7d9c75e72ec4c7570d4",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-malformed-signature",
+      "correlation_id": "corr-malformed_signature_rejected",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

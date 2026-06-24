@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 
 use crate::audit::AuditEvent;
 
@@ -24,6 +25,11 @@ pub struct CapabilityLeaseEnvelope {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapabilityLeaseClaims {
+    pub protocol_version: String,
+    pub message_id: String,
+    pub correlation_id: String,
+    pub created_at_unix_ms: i64,
+    pub message_type: String,
     pub lease_id: String,
     pub issuer_id: String,
     pub agent_id: String,
@@ -37,6 +43,8 @@ pub struct CapabilityLeaseClaims {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_before: Option<i64>,
     pub nonce: String,
+    pub policy_id: String,
+    pub policy_digest: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -68,6 +76,10 @@ pub enum NetworkViolationAction {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EdgeCommand {
+    pub protocol_version: String,
+    pub message_id: String,
+    pub correlation_id: String,
+    pub message_type: String,
     pub command_id: String,
     pub agent_id: String,
     pub authenticated_agent_id: String,
@@ -77,8 +89,7 @@ pub struct EdgeCommand {
     pub capability: String,
     pub command_nonce: String,
     pub created_at_unix_ms: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_speed_mps: Option<f64>,
+    pub payload: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
 }
@@ -306,6 +317,7 @@ pub enum ReasonCode {
     DenyCommandAgentKeyNotTrusted,
     DenyCommandSignatureMissing,
     DenyInvalidCommandSignature,
+    DenyCommandSignedMaterialTooLarge,
     DenyCommandNotYetValid,
     DenyStaleCommand,
     DenyReplayedCommand,
@@ -350,6 +362,7 @@ impl ReasonCode {
             Self::DenyCommandAgentKeyNotTrusted => "DENY_COMMAND_AGENT_KEY_NOT_TRUSTED",
             Self::DenyCommandSignatureMissing => "DENY_COMMAND_SIGNATURE_MISSING",
             Self::DenyInvalidCommandSignature => "DENY_INVALID_COMMAND_SIGNATURE",
+            Self::DenyCommandSignedMaterialTooLarge => "DENY_COMMAND_SIGNED_MATERIAL_TOO_LARGE",
             Self::DenyCommandNotYetValid => "DENY_COMMAND_NOT_YET_VALID",
             Self::DenyStaleCommand => "DENY_STALE_COMMAND",
             Self::DenyReplayedCommand => "DENY_REPLAYED_COMMAND",

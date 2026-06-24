@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -28,7 +30,7 @@ from rclp_core.policy import (
     evaluate_policy,
     policy_digest,
 )
-from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache
+from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache, RevocationStore
 
 
 CENTRAL_AGENT_ID = "fleet-agent:v0.1"
@@ -36,6 +38,7 @@ EDGE_AGENT_ID = "edge-agent:rover-001"
 TRUSTED_ISSUER_ID = "issuer"
 CENTRAL_KEY = DemoKeyPair()
 EDGE_KEY = DemoKeyPair()
+_TEST_STORE_DIRS: list[TemporaryDirectory[str]] = []
 
 
 def sign_request(request: CapabilityRequest, key: DemoKeyPair = CENTRAL_KEY) -> CapabilityRequest:
@@ -114,12 +117,30 @@ def make_policy() -> Policy:
     return Policy.from_yaml("examples/policies/remote_assist_policy.yaml")
 
 
+def _test_store_path(filename: str) -> Path:
+    tempdir = TemporaryDirectory(prefix="rclp-test-stores-")
+    _TEST_STORE_DIRS.append(tempdir)
+    return Path(tempdir.name) / filename
+
+
+def durable_request_replay_cache() -> RequestReplayCache:
+    return RequestReplayCache(_test_store_path("request_replay.sqlite3"))
+
+
+def durable_command_replay_cache() -> CommandReplayCache:
+    return CommandReplayCache(_test_store_path("command_replay.sqlite3"))
+
+
+def durable_revocation_store() -> RevocationStore:
+    return RevocationStore(_test_store_path("revocations.sqlite3"))
+
+
 def policy_trust_kwargs(policy: Policy) -> dict:
     return {
         "agent_public_keys_by_id": {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
         "edge_public_keys_by_id": {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
         "accepted_policy_digests": {policy_digest(policy)},
-        "replay_cache": RequestReplayCache.temporary(),
+        "replay_cache": durable_request_replay_cache(),
     }
 
 
@@ -132,7 +153,10 @@ def evaluate_inputs(
 
 
 def make_gate(key: DemoKeyPair, **kwargs) -> CommandGate:
+    policy = make_policy()
     kwargs.setdefault("accepted_capabilities", {Capability.REMOTE_ASSIST.value})
+    kwargs.setdefault("accepted_policy_id", policy.policy_id)
+    kwargs.setdefault("accepted_policy_digests", {policy_digest(policy)})
     kwargs.setdefault(
         "issuer_capability_scopes",
         {TRUSTED_ISSUER_ID: {Capability.REMOTE_ASSIST.value}},
@@ -156,9 +180,11 @@ def make_gate(key: DemoKeyPair, **kwargs) -> CommandGate:
         "state_public_keys_by_edge_id",
         {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
     )
-    kwargs.setdefault("command_replay_cache", CommandReplayCache.temporary())
+    kwargs.setdefault("command_replay_cache", durable_command_replay_cache())
+    kwargs.setdefault("revocation_store", durable_revocation_store())
     return CommandGate(
         key.public_key_b64,
+        local_edge_agent_id=EDGE_AGENT_ID,
         trusted_issuer_ids={TRUSTED_ISSUER_ID},
         trusted_revoker_ids={EDGE_AGENT_ID},
         revoker_public_keys_by_id={EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
@@ -190,10 +216,19 @@ def state_with_unknown_network() -> RobotStateAssertion:
 
 
 def issue_valid_lease(key: DemoKeyPair) -> CapabilityLease:
+    policy = make_policy()
     request = make_request()
-    _, _, _, constraints = evaluate_inputs(request, make_state("normal"), make_policy())
+    _, _, _, constraints = evaluate_inputs(request, make_state("normal"), policy)
     assert constraints is not None
-    return issue_lease(request, constraints, TRUSTED_ISSUER_ID, key, 600)
+    return issue_lease(
+        request,
+        constraints,
+        TRUSTED_ISSUER_ID,
+        key,
+        600,
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
+    )
 
 
 def test_normal_network_allows_lease_and_command_gate_accepts():
@@ -205,7 +240,15 @@ def test_normal_network_allows_lease_and_command_gate_accepts():
     assert decision == "allow"
     assert reason == "POLICY_SATISFIED"
     assert constraints is not None
-    lease = issue_lease(request, constraints, "issuer", key, 600)
+    lease = issue_lease(
+        request,
+        constraints,
+        "issuer",
+        key,
+        600,
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
+    )
     result = gate.evaluate(make_command(), lease, current_state=make_state("normal"))
     assert result.allowed is True
     assert result.reason_code == "LEASE_VALID"
@@ -432,7 +475,16 @@ def test_expired_lease_rejected():
     request = make_request()
     _, _, _, constraints = evaluate_inputs(request, make_state("normal"), make_policy())
     assert constraints is not None
-    lease = issue_lease(request, constraints, "issuer", key, 1)
+    policy = make_policy()
+    lease = issue_lease(
+        request,
+        constraints,
+        "issuer",
+        key,
+        1,
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
+    )
     lease.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     lease.signature = key.sign(lease)
     result = make_gate(key).evaluate(make_command(), lease)
@@ -584,7 +636,16 @@ def test_tampered_lease_rejected_before_context_use():
 
 def test_missing_remote_assist_constraints_rejected():
     key = DemoKeyPair()
-    lease = issue_lease(make_request(), LeaseConstraints(), "issuer", key, 600)
+    policy = make_policy()
+    lease = issue_lease(
+        make_request(),
+        LeaseConstraints(),
+        "issuer",
+        key,
+        600,
+        policy_id=policy.policy_id,
+        policy_digest=policy_digest(policy),
+    )
     result = make_gate(key).evaluate(make_command(), lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONSTRAINTS_MISSING"

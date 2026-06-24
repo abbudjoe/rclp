@@ -72,9 +72,16 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760002000000,
-        "nonce": "nonce-ttl-too-long"
+        "nonce": "nonce-ttl-too-long",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-ttl-too-long",
+        "correlation_id": "corr-ttl_too_long_rejected",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "96423d3aa0f024354e3553a4f1f531d10053105b2f4836c7e006dc68540d3a48"
+      "signature": "498189175bdb69a2acd99ae73f14e455da415ba01aee3048d4387cb05c4a5576"
     },
     "command": {
       "command_id": "cmd-ttl-too-long",
@@ -86,7 +93,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-ttl-too-long-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "2ad350682816a50b5801ff75d79f51ef292015895576add069e1556c135ff102"
+      "signature": "fc18fa85e20a1107be31e8414b79f3ff6e316ad2ab516f40884956cc15e8aa16",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-ttl-too-long",
+      "correlation_id": "corr-ttl_too_long_rejected",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

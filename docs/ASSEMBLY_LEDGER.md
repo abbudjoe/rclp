@@ -1,5 +1,339 @@
 # Assembly Ledger
 
+## Post-Scan 3-Finding Security Remediation - 2026-06-24 (payload/edge/signature)
+
+Status: successful
+
+Source contract:
+
+- User request: fix all three findings from the completed Codex Security scan
+  using `assembly`.
+- Completed Codex Security scan `b62a8bb7-0f0e-48fb-bad2-b0a390b989f1`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-3f9Gv0/rclp/e7cf2722f26a764e25b918d3deaa2a08a78a21ab_20260624T004902Z_bqw_06ma/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- No cloud jobs, GPU jobs, or paid compute are required for this remediation,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+- The active tool policy does not allow spawning subagents unless the user
+  explicitly asks for subagents or delegation, so the assembly review gate will
+  be completed in-thread unless explicit delegation is later requested.
+
+Target contract:
+
+Close the three validated scan findings at their root authority contracts:
+the Rust verifier must enforce a typed payload contract for speed-constrained
+commands; Python `CommandGate` must own and enforce the configured local edge
+identity even when called directly; and command/revocation signature text must
+be cheaply bounded before base64 decode or signature verification.
+
+Success criterion:
+
+Nested or unknown executable payload fields cannot bypass Rust
+`max_speed_mps` enforcement; direct `CommandGate.evaluate()` rejects commands
+or leases for non-local edges before lease validation can allow; oversized
+command and revocation signatures are rejected before `unb64()` or
+`verify_with_public_key_b64()` can process them; focused regressions, full
+local gates, assembly spec-conformance review, and post-review gates pass.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| RCLP-RUST-PAYLOAD-SCHEMA-001: Rust verifier enforces a typed payload contract for speed-constrained commands and rejects nested or unknown payload members that are outside the local constraint decision. | met | `crates/rclp-edge-verifier/src/verifier.rs` now treats speed-constrained payloads as a typed schema with only top-level `max_speed_mps` and `speed_mps`; unknown top-level members, including nested `motion`, `trajectory`, and vendor motion fields, reject with `DENY_COMMAND_CONSTRAINT`. Rust regressions `speed_limited_payload_accepts_supported_speed_aliases` and `speed_limited_payload_rejects_unknown_motion_fields` passed. Python conformance now mirrors the same schema with `COMMAND_PAYLOAD_SCHEMA_VIOLATION` for speed-constrained unknown members. |
+| RCLP-WRONG-LOCAL-EDGE-DIRECT-GATE-001: Python `CommandGate` binds direct evaluation to a configured local edge identity and rejects command or lease edge mismatches before lease validation can authorize. | met | `CommandGate` now requires `local_edge_agent_id`, rejects non-local command/lease edge context with `EDGE_AGENT_MISMATCH`, and `EdgeAgentDaemon` validates that it wraps a gate for the same local edge. Regressions `test_direct_command_gate_rejects_nonlocal_edge_context_before_lease_validation` and `test_nonlocal_edge_rejection_does_not_consume_command_replay_nonce` passed, and existing daemon mismatch tests stayed green. |
+| RCLP-PY-SIGNATURE-PREAUTH-BOUNDS-001: Python command and revocation paths reject over-budget signature text before base64 decode, canonical re-encode, or signature verification. | met | `_command_auth_violation()` checks signed command material before `unb64()`, and `revoke()` rejects oversized revocation signatures with `REVOCATION_SIGNED_MATERIAL_TOO_LARGE` before `verify_with_public_key_b64()`. Monkeypatched regressions `test_oversized_command_signature_rejects_before_decode_or_verify` and `test_oversized_revocation_signature_rejects_before_decode_or_verify` prove decode/verify are not reached. |
+| Security-relevant tests cover every changed behavior and legitimate behavior remains covered. | met | Passed: focused payload tests (`cargo test -p rclp-edge-verifier --test vector_tests speed_limited_payload`, `.venv/bin/python -m pytest tests/test_security_negative_paths.py::test_max_speed_constraint_is_enforced_against_command_payload -q`); focused local-edge/replay tests; focused signature-ordering tests; `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (190 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `cargo test --workspace`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo fmt --all -- --check`; `.venv/bin/ruff check .`; `.venv/bin/ruff format --check .`; `git diff --check`. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | In-thread assembly review found one valid ordering issue: non-local edge rejection was happening after command replay consumption inside command authentication. The fix moved replay consumption after local-edge checks and added `test_nonlocal_edge_rejection_does_not_consume_command_replay_nonce`. Post-review full Python, eval, Rust, lint, format, and whitespace gates passed. |
+
+Review notes:
+
+- The payload remediation is intentionally fail-closed for the MVP
+  speed-constrained profile: payload members outside the typed top-level speed
+  schema are rejected instead of inferred as non-executable.
+- `CommandGate` now owns the local edge identity contract directly. The daemon
+  remains a wrapper and refuses to wrap a gate for a different local edge.
+- Command replay consumption now happens after command authentication and local
+  edge binding, so a valid command addressed to another edge cannot poison the
+  local replay cache.
+- Subagent review was not spawned because the active tool policy only permits
+  subagents when the user explicitly asks for subagents or delegation; the
+  assembly review gate was completed in-thread.
+
+## Post-Scan 3-Finding Security Remediation - 2026-06-24
+
+Status: successful
+
+Source contract:
+
+- User request: fix all three findings from the completed Codex Security scan
+  using `assembly`.
+- Completed Codex Security scan `c3b45b5d-eeef-4363-b1f6-52e2b36a6539`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/e7cf2722f26a764e25b918d3deaa2a08a78a21ab_20260623T222957Z_c1i2r7s0/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- `DIRECTION.md` is listed as required reading in `AGENTS.md`, but is absent
+  in the current checkout after prior user-directed cleanup. The remaining
+  required doctrine files and scan artifacts are the active implementation
+  contract.
+- No cloud jobs, GPU jobs, or paid compute are required for this remediation,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Close the three validated findings at their root authority contracts: Rust
+lease TTL duration must not be inflated by clock-skew tolerance; Rust
+`FileReplayCache` must acknowledge consumed replay markers only after a durable
+commit protocol; and Python `CommandGate` must reject oversized signed command
+material before signature verification canonicalizes attacker-controlled input.
+
+Success criterion:
+
+Rust verifier denies leases whose signed duration exceeds the exact local
+`max_lease_ttl_ms`; `FileReplayCache::consume_nonce()` performs a durable file
+and directory commit before returning success; Python command auth rejects
+oversized scalar, payload, node-count, and nesting-depth material before
+`canonical_json()` runs; focused regressions, full local gates, assembly
+spec-conformance review, and post-review gates pass.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| RCLP-RUST-TTL-STRICT-001: Rust verifier enforces signed lease duration against the exact local policy maximum, with clock skew only for instant/freshness comparisons. | met | `crates/rclp-edge-verifier/src/verifier.rs` now compares signed lease duration directly to `trusted_context.max_lease_ttl_ms`; clock skew remains only on age/freshness checks. Rust regressions `lease_ttl_exact_policy_maximum_is_allowed` and `lease_ttl_max_plus_one_is_rejected` cover exact max allow and `max + 1` denial. |
+| RCLP-RUST-REPLAY-DURABLE-COMMIT-001: `FileReplayCache` only returns successful nonce consumption after durable marker commit and parent directory sync, failing closed on durability errors. | met | `FileReplayCache::consume_nonce()` now creates the marker with `create_new`, writes the nonce, `sync_all()`s the file, `sync_all()`s the parent directory, and returns `false` on commit errors. Regression `file_replay_cache_writes_marker_and_rejects_duplicate_nonce` proves an accepted nonce has an observable marker and is not accepted again. |
+| RCLP-PY-COMMAND-SIGNED-MATERIAL-BOUNDS-001: Python `CommandGate` bounds signed command material before invalid-signature verification can canonicalize untrusted input. | met | `src/rclp_ros2/command_gate.py` now checks signed command scalar, total text, payload estimated size, payload node count, and payload depth before `verify_with_public_key_b64()` can canonicalize the command. Python regressions prove oversized scalar, payload, and nesting reject with `COMMAND_SIGNED_MATERIAL_TOO_LARGE` while `canonical_json()` is not called, and malformed signature behavior remains `COMMAND_SIGNATURE_INVALID` without canonicalization. |
+| Security-relevant tests cover every changed behavior and legitimate behavior remains covered. | met | Passed: `cargo test -p rclp-edge-verifier --test vector_tests lease_ttl`; `cargo test -p rclp-edge-verifier --test vector_tests file_replay_cache_writes_marker_and_rejects_duplicate_nonce`; `cargo test -p rclp-edge-verifier --test vector_tests` (34 passed); `cargo test --workspace` (1 lib test, 34 vector tests, doc-tests); `cargo clippy --workspace --all-targets -- -D warnings`; `cargo fmt --all -- --check`; `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest tests/test_security_negative_paths.py` (113 passed); `.venv/bin/python -m pytest` (181 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `.venv/bin/ruff check .`; `.venv/bin/ruff format --check .`; `git diff --check`. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Review pass checked the changed Rust/Python authority boundaries against this DoD and found no remaining code-level issues. A delegated subagent was not spawned because the active tool policy permits subagents only when the user explicitly asks for delegation; the assembly review discipline was still completed in-thread. Post-review targeted Python tests, Ruff lint/format, Rust fmt, Clippy, and whitespace checks passed. |
+
+Review notes:
+
+- The TTL remediation is intentionally narrow: it removes skew tolerance from
+  duration enforcement while preserving skew on time-window freshness checks.
+- The replay remediation is fail-closed: if marker write, file sync, or parent
+  directory sync fails, nonce consumption is not reported as successful.
+- The Python remediation keeps missing and malformed signatures on their
+  existing command-auth paths, while oversized syntactically valid but invalid
+  signed command material is rejected before command canonicalization.
+- The active tool policy requires explicit user delegation before spawning
+  subagents, so this assembly run used an in-thread spec-conformance review
+  instead of a delegated reviewer.
+
+## Post-Scan 3-Finding Security Remediation - 2026-06-23
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all three Codex Security findings using `assembly`.
+- Completed Codex Security scan `0babed54-469b-4f62-b7b5-201359a5bc02`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/e7cf2722f26a764e25b918d3deaa2a08a78a21ab_20260623T210345Z_3fxnfg28/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- `DIRECTION.md` is listed as required reading in `AGENTS.md`, but is absent
+  in the current checkout after prior user-directed cleanup. The remaining
+  required doctrine files and scan artifacts are the active implementation
+  contract.
+- No cloud jobs, GPU jobs, or paid compute are required for this remediation,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Close the three validated scan findings at their root authority contracts:
+Python command-gate authorization must require a signed lease policy reference
+that matches an accepted local policy pin; the Rust verifier must fail closed
+unless replay state is explicitly durable/shared for production verification;
+and Rust command authentication must bound attacker-controlled signed command
+material before invalid signatures can consume unbounded canonicalization
+resources.
+
+Success criterion:
+
+Missing or mismatched Python lease policy provenance is denied before
+`LEASE_VALID`; Rust verifier calls reject non-durable replay caches and preserve
+nonce consumption across verifier restart when backed by a shared store; Rust
+verifier rejects oversized signed command fields and oversized or overly deep
+command payloads before HMAC canonicalization; focused regressions, full local
+gates, subagent spec-conformance review, and post-review gates pass.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| RCLP-PY-LEASE-POLICY-PROVENANCE-001: Python command-gate lease validation requires accepted policy id/digest inputs and rejects signed leases whose policy provenance is missing or mismatched. | met | `CapabilityLease` and `issue_lease()` require nonblank `policy_id` and `policy_digest`; `CommandGate` requires accepted policy pins; `validate_lease_for_command()` rejects missing or mismatched signed provenance. Focused regressions cover matching, missing, and digest-mismatch signed lease provenance. |
+| RCLP-RUST-REPLAY-DURABILITY-001: Rust verifier API rejects non-durable replay stores for production verification and keeps command/lease replay state durable across verifier restart. | met | `ReplayCacheDurability` makes durability explicit, `verify_json_value()` and `verify()` deny non-durable replay caches before authority decisions, and `FileReplayCache` provides a local durable/shared reference implementation. Rust regressions cover non-durable rejection, signed command replay after cache recreation, and lease nonce replay after cache recreation with a fresh signed command. |
+| RCLP-RUST-PREAUTH-PAYLOAD-BOUNDS-001: Rust verifier bounds signed command material before command HMAC canonicalization on untrusted inputs. | met | The verifier checks a signed-material budget before command HMAC verification, covering command scalar fields, signature text, lease/local signed text, and command payload size, node count, and nesting depth. Over-budget material returns `DENY_COMMAND_SIGNED_MATERIAL_TOO_LARGE` through a diagnostic/non-authority denial. Focused Rust regressions cover oversized scalar command fields and oversized/deep payloads before HMAC canonicalization. |
+| Security-relevant tests cover every changed behavior and legitimate behavior remains covered. | met | Passed after review fixes: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (177 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `cargo test --workspace` (1 lib test plus 31 vector tests); `cargo test -p rclp-edge-verifier --test vector_tests` (31 passed); `cargo clippy --workspace --all-targets -- -D warnings`; `cargo fmt --all -- --check`; `.venv/bin/ruff check .`; `.venv/bin/ruff format . --check`; `git diff --check`. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Reviewer `019ef67d-d89b-7163-970d-f4006e2c00c8` ("Nash") found valid follow-ups for non-payload command-field bounds, lease-nonce restart evidence, and stale docs/ledger evidence. Code and docs were fixed, Nash re-reviewed the code/security paths as met with no remaining code-level findings, and this ledger entry is now closed with post-review gate evidence. |
+
+Review notes:
+
+- Initial reviewer `019ef67d-d89b-7163-970d-f4006e2c00c8` ("Nash")
+  found one valid P2 gap: the original pre-auth Rust budget only covered
+  `command.payload`, while command HMAC canonicalization also signs scalar
+  command fields. The fix broadened the gate to signed command material before
+  HMAC canonicalization and added
+  `oversized_signed_command_field_is_rejected_before_hmac_canonicalization`.
+- The same reviewer found a replay evidence gap: command replay after cache
+  recreation did not independently prove lease nonce durability. The fix added
+  `file_replay_cache_preserves_lease_nonce_after_verifier_recreation`, which
+  resigns a fresh command while reusing the lease nonce and expects
+  `DENY_REPLAYED_NONCE`.
+- The Rust verifier exports `FileReplayCache` as a local durable reference
+  cache for tests and adapters. Production clustered edge deployments still
+  need a production replay service that preserves the same atomic consume
+  contract across verifier instances and restarts.
+- Final re-review status: clean for the code/security remediation paths. The
+  only remaining reviewer note was this ledger entry being stale; the entry was
+  updated after that re-review and the clean post-review gates above.
+
+## Post-Scan 9-Finding Security Remediation - 2026-06-23
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all Codex Security findings using `assembly`.
+- Completed Codex Security scan `d43b49d8-a432-4000-a90b-0e1c8fcf74cf`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/e7cf2722f26a764e25b918d3deaa2a08a78a21ab_20260623T193034Z_bsbfw_gv/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- No cloud jobs or paid compute are required for this remediation, and none
+  will be launched, stopped, resized, deleted, or otherwise mutated.
+- `DIRECTION.md` was listed in repo instructions but is absent in the current
+  checkout; the remaining doctrine files and scan report are the active
+  implementation contract.
+
+Target contract:
+
+Close the nine validated findings at their root authority contracts: policy and
+message trust boundaries must reject unknown future authority fields,
+temporary stores must not satisfy durable-store requirements, revocation
+messages must be idempotent across replay and restart, Rust lease and command
+verification must bind the protocol envelope, command payload, and signed
+policy provenance, unauthenticated Rust command denials must not trust claimed
+command provenance, and repo docs must not preserve live Lambda identifiers.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Policy digest pinning hashes only strict, known policy fields and rejects unknown top-level or nested policy input. | met | `Policy`, `PolicyRequirements`, `NetworkRequirements`, and `FallbackPolicy` now forbid extras; `test_policy_rejects_unknown_top_level_field_before_digest_pin` and `test_policy_rejects_unknown_nested_field_before_digest_pin` prove hidden fields fail before digest acceptance. |
+| Temporary request replay, command replay, and revocation stores are explicitly non-durable and fail closed at issuance/gate boundaries. | met | `RequestReplayCache.temporary()`, `CommandReplayCache.temporary()`, and `RevocationStore.temporary()` set `durable=False`; policy/gate constructors reject them. `test_policy_rejects_ephemeral_temporary_replay_store_for_authority_issuance` and `test_command_gate_rejects_ephemeral_temporary_stores` cover the original path. |
+| Rust verifier requires versioned protocol envelope and payload binding for signed leases and commands. | met | Rust `CapabilityLeaseClaims` and `EdgeCommand` now require protocol envelope fields; command HMAC includes the envelope and `payload`; vectors were regenerated. `command_payload_tamper_invalidates_command_signature`, `command_without_payload_is_malformed`, `command_envelope_tamper_invalidates_command_signature`, and `lease_envelope_tamper_invalidates_lease_signature_after_command_auth` cover the path. |
+| Signed Python request, state, command, revocation, fallback, and audit messages reject unknown future authority fields before signature/audit acceptance. | met | `BaseMessage` uses `extra="forbid"` and nested authority models use strict models. Focused tests cover request, state, lease, nested lease constraints, policy input, and audit import unknown fields. |
+| Signed revocation replay is idempotent and does not re-emit fallback side effects, including after command-gate restart. | met | `RevocationStore` tracks unique `revocation_id` values in durable SQLite before authority mutation; duplicate accepted revocations produce `REVOCATION_REPLAYED` and no fallback. `test_replayed_signed_revocation_after_restart_does_not_reemit_fallback` covers restart replay. |
+| Rust verifier binds lease policy provenance to the signed lease and accepted trusted policy reference. | met | Rust lease claims require signed `policy_id` and `policy_digest`, and `policy_digest_violation()` compares them with `TrustedVerifierContext` accepted policy state. `signed_lease_policy_digest_mismatch_is_rejected` covers a signed mismatch. |
+| Assembly ledger no longer records live Lambda identifiers or cloud-specific deployment IDs. | met | T7 live evidence was redacted to operator-managed generic labels; targeted search found no `real2sim-b1`, `rclp-t7-isaac`, `real2sim-isaac`, `gpu_1x_a10`, or `us-east-1` strings under `docs/`, `tests/`, `src/`, `crates/`, or `manifests/`. |
+| Rust command-auth failure audits are diagnostic/non-authority and do not trust unauthenticated command subject fields. | met | All verifier denials before command authentication now route through `deny_untrusted_command()`, producing diagnostic/non-authority audit events with claimed subject values only in payload. `authenticated_command_actor_mismatch_is_rejected_before_lease_checks` and `pre_command_auth_policy_failure_is_diagnostic_non_authority` cover direct and mixed pre-auth failures. |
+| Audit JSONL import rejects appended unknown context outside the integrity proof. | met | `AuditCommit` inherits strict `BaseMessage` parsing; `test_load_jsonl_rejects_unknown_context_outside_integrity_proof` proves appended top-level context is rejected. |
+| Security-relevant tests cover every changed behavior and legitimate behavior remains covered. | met | Passed: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (174 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `cargo test --workspace` (25 Rust vector tests plus unit tests); `cargo clippy --workspace --all-targets -- -D warnings`; `cargo fmt --all -- --check`; `.venv/bin/ruff check .`; `.venv/bin/ruff format . --check`. |
+| Assembly spec-conformance review is clean and post-review validation gates pass. | met | Reviewer `019ef636-ee95-72f3-afaf-a3abd7bb1cf7` initially found the Rust pre-command-auth audit gap and stale ledger status; the Rust gap was fixed, the reviewer rechecked it cleanly, and post-fix gates passed: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `.venv/bin/python -m pytest tests/test_rust_edge_vectors.py tests/test_audit.py tests/test_security_negative_paths.py`, and `.venv/bin/ruff check .`. |
+
+Review notes:
+
+- Reviewer `019ef636-ee95-72f3-afaf-a3abd7bb1cf7` ("Halley") found one
+  valid P1 issue: Rust pre-command-auth denials for earlier lease/policy
+  failures could still emit authority-relevant audit records with claimed
+  command subjects. The fix routes every pre-command-auth typed denial through
+  diagnostic/non-authority audit construction and adds focused Rust regressions.
+- The same review noted this ledger entry was not yet closed; this entry is
+  now closed after code fix, clean re-review, and post-review validation.
+- Final re-review status: clean for the Rust pre-command-auth audit issue. The
+  reviewer confirmed pre-command-auth typed denials now route through
+  diagnostic/non-authority audit construction, and that the focused Rust
+  regressions cover the mixed pre-auth failure path.
+
+## Post-Scan 5-Finding Security Remediation - 2026-06-23
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all five Codex Security findings using `assembly`.
+- Completed Codex Security scan `7539de62-1d6d-4a01-9b30-426f39d6717c`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T174025Z_oxoe3_6l/report.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- No cloud jobs or paid compute are required for this remediation, and none
+  will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Close the five validated findings at their root authority contracts:
+revocation state must survive command-gate restart, unauthenticated command
+denials must not trigger fallback side effects, leases must fail closed on
+unsupported protocol versions, Rust audit identities must not collide across
+distinct decisions, and malformed pre-parse Rust audit records must not be
+authority-relevant events without authority context.
+
+Success criterion:
+
+The reproduced attack paths deny safely after restart or malformed input, do
+not emit attacker-triggered fallback declarations, produce unique audit event
+IDs, reject unsupported lease protocol versions, and pass focused regressions,
+repo gates, and spec-conformance review.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| RCLP-REVOCATION-DURABLE-001: Python command-gate revocation enforcement uses an explicit durable/shared store and fails closed without one. | met | `RevocationStore` is SQLite-backed, `CommandGate` requires a durable injected store, accepted revocations are persisted before in-memory mutation, and `test_revoked_lease_is_rejected_after_gate_restart` proves a recreated gate with the same store rejects the original restart PoC. |
+| RCLP-AUTH-FAIL-NO-FALLBACK-001: Unauthenticated or command-authentication denials do not emit `FallbackDeclaration` side effects. | met | Command-authentication failures call `_reject_command(..., emit_fallback=False)`, return no fallback action/declaration, do not call the fallback sink, and now record diagnostic/non-authority audit events using local actor identity. `test_command_auth_denials_do_not_emit_fallback_side_effects` covers missing actor, missing signature, invalid signature, and untrusted key. |
+| RCLP-LEASE-VERSION-001: Capability leases carry and enforce the supported protocol version so unsupported/future raw leases cannot authorize commands. | met | `CapabilityLease` requires the common envelope (`protocol_version`, `message_id`, `correlation_id`, `created_at`, `message_type`) at parse time, forbids unknown top-level fields, and `LeaseConstraints` forbids unknown nested authority fields. Focused tests cover unsupported lease versions, missing common envelope fields, top-level future fields, and nested future constraint fields. |
+| RCLP-RUST-AUDIT-ID-001: Rust verifier audit events have unique identities across distinct authority decisions, even under identical trusted timestamps and malformed input. | met | Rust `AuditEvent` identity now binds `event_sequence`, `identity_nonce`, and payload hash into `audit_id`, `message_id`, and `integrity_proof`; `malformed_json_audit_events_have_unique_identities` proves repeated malformed decisions do not collide. |
+| RCLP-RUST-MALFORMED-AUDIT-001: Rust malformed pre-parse audit events are diagnostic/non-authority unless authority context is available. | met | Rust `AuditSubject` carries `authority_relevant`; malformed pre-parse decisions emit `event_type=diagnostic`, `authority_relevant=false`, and no lease/command context, while parsed authority decisions remain authority-relevant. |
+| Security-relevant tests cover every changed behavior and legitimate behavior remains covered. | met | Added Python regressions for durable revocation restart, durable store constructor failure, strict lease protocol parsing, nested lease constraint future fields, and no fallback/auth diagnostic behavior; added Rust vector regressions for audit uniqueness and malformed diagnostic classification. |
+| Validation gates pass. | met | Passed after review fixes: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (162 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `cargo test --workspace`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo fmt --all -- --check`; `.venv/bin/ruff check .`; `.venv/bin/ruff format . --check`. |
+| Assembly spec-conformance review is clean and post-review gates pass. | met | Initial subagent reviewer `019ef5ba-16ac-70e1-99d5-99345217b51c` found strict lease parsing, unauthenticated audit provenance, and stale ledger findings; first re-review found the remaining missing `message_type` envelope gap. All valid findings were fixed, post-review gates passed, and final re-review returned clean with every DoD item met. |
+
+Review notes:
+
+- Reviewer: `019ef5ba-16ac-70e1-99d5-99345217b51c` ("Parfit").
+- Initial review status: three valid findings. P1 strict lease parsing and P2
+  unauthenticated audit provenance were fixed in code and tests; P3 stale
+  ledger evidence was updated in this entry.
+- First re-review status: one remaining valid finding for missing
+  `message_type` acceptance on raw leases. The fix was expanded to require the
+  full common `CapabilityLease` envelope at parse time, with focused tests.
+- Final re-review status: clean. The reviewer classified all DoD items as met
+  and made no code or cloud changes.
+- No cloud jobs or paid compute were required or mutated.
+
 ## Post-Scan 4-Finding Security Remediation - 2026-06-23T2
 
 Status: successful
@@ -919,11 +1253,15 @@ Evidence:
 - Targeted secret-pattern scan over touched docs/scripts found no matches.
 - No Lambda instance was launched, stopped, resized, deleted, or otherwise mutated during this work.
 
-Live Lambda/Isaac evidence, 2026-06-22:
+External Lambda/Isaac evidence, 2026-06-22:
 
-- User requested the proof be run on Isaac Sim in Lambda; existing active Lambda instance `real2sim-b1-live-stream-r2` was reused rather than launching new paid compute.
-- Cloud run ledger updated at `~/.codex/cloud_runs/ledger.jsonl` under run id `rclp-t7-isaac-remote-assist-gate-r1`.
-- Runner: Lambda `gpu_1x_a10` in `us-east-1`, NVIDIA A10 visible through `nvidia-smi`; Isaac stream container `real2sim-isaac-stream-r2` stayed healthy.
+- User requested the proof be run on Isaac Sim in Lambda; an existing
+  operator-managed Lambda instance was reused rather than launching new paid
+  compute.
+- Cloud run evidence was recorded in the local cloud-run ledger under a
+  redacted operator-approved run label.
+- Runner evidence confirmed a Lambda GPU host with NVIDIA A10 visible through
+  `nvidia-smi`; the operator-managed Isaac stream container stayed healthy.
 - Isaac environment: container image `nvcr.io/nvidia/isaac-sim:6.0.0`; `/isaac-sim/VERSION` reported `6.0.0-rc.59+release.41464.5f2772bc.gl`; `/isaac-sim/python.sh` reported Python 3.12.13; ROS 2 bridge extension present at `/isaac-sim/exts/isaacsim.ros2.bridge`; `ros2` CLI was not on PATH.
 - Proof was run inside the Isaac Sim container with `PYTHONPATH=src` and `PYTHON_BIN=/isaac-sim/python.sh`.
 - Container `python -m compileall src tests` passed after fixing staging issues by excluding macOS AppleDouble files and chowning the staged repo.

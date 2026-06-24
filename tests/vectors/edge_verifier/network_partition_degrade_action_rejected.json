@@ -73,9 +73,16 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760000500000,
-        "nonce": "nonce-network-partition-degrade"
+        "nonce": "nonce-network-partition-degrade",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-network-partition-degrade",
+        "correlation_id": "corr-network_partition_degrade_action_rejected",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "38b71f5ae8333c7fa57495914de5b0c36d2d84ac9fb0ca5d50f84f805913b46e"
+      "signature": "1e682264cfc6f7366af3b0135342bce60b7b97f545221c64f8cd23693eb0c9b9"
     },
     "command": {
       "command_id": "cmd-network-partition-degrade-action-rejected",
@@ -87,7 +94,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-network-partition-degrade-action-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "da22878b59317dec6d6478dd93c4ad0a1942f5a401bb2517d4d00846df1cc7f2"
+      "signature": "abe36abc0ebb451fc0042afad528906ba42ab25611dbf5cab47832ac4bdfec0a",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-network-partition-degrade-action-rejected",
+      "correlation_id": "corr-network_partition_degrade_action_rejected",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

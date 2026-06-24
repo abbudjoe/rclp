@@ -72,9 +72,16 @@
         },
         "issued_at": 1759999900000,
         "expires_at": 1760000500000,
-        "nonce": "nonce-wrong-capability"
+        "nonce": "nonce-wrong-capability",
+        "protocol_version": "0.0.1-draft",
+        "message_id": "msg-lease-wrong-capability",
+        "correlation_id": "corr-wrong_capability_rejected",
+        "created_at_unix_ms": 1759999900000,
+        "message_type": "capability_lease",
+        "policy_id": "remote-assist-authority-v0",
+        "policy_digest": "sha256:remote-assist-authority-v0-test-digest"
       },
-      "signature": "1455c5c86a371dc9df188110275ef8aac8da269216b8fbe8710bce5efb659362"
+      "signature": "f697c7e373e08575e5cbe1c08eb87b8d37f50b4a057a9510692581aa765d73d3"
     },
     "command": {
       "command_id": "cmd-wrong-capability",
@@ -86,7 +93,12 @@
       "authenticated_agent_id": "fleet-agent:v0.1",
       "command_nonce": "cmd-nonce-wrong-capability-rejected",
       "created_at_unix_ms": 1760000000000,
-      "signature": "bce9c560806504ea8a0c6627b378364b1166042a19ffac316cfb4c12f135796c"
+      "signature": "4f6dd123bf87081d845dd2a8e2e8a41415228b623f5a03fad216a9d6c74a3989",
+      "protocol_version": "0.0.1-draft",
+      "message_id": "msg-cmd-wrong-capability",
+      "correlation_id": "corr-wrong_capability_rejected",
+      "message_type": "edge_command",
+      "payload": {}
     },
     "local_context": {
       "robot_id": "rover-001",

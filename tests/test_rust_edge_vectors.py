@@ -78,6 +78,11 @@ EXPECTED_REASON_CODES = {
 }
 
 REQUIRED_CLAIM_FIELDS = {
+    "protocol_version",
+    "message_id",
+    "correlation_id",
+    "created_at_unix_ms",
+    "message_type",
     "lease_id",
     "issuer_id",
     "agent_id",
@@ -89,9 +94,15 @@ REQUIRED_CLAIM_FIELDS = {
     "issued_at",
     "expires_at",
     "nonce",
+    "policy_id",
+    "policy_digest",
 }
 
 REQUIRED_COMMAND_FIELDS = {
+    "protocol_version",
+    "message_id",
+    "correlation_id",
+    "message_type",
     "command_id",
     "agent_id",
     "authenticated_agent_id",
@@ -101,6 +112,7 @@ REQUIRED_COMMAND_FIELDS = {
     "capability",
     "command_nonce",
     "created_at_unix_ms",
+    "payload",
 }
 
 
@@ -195,6 +207,8 @@ def test_rust_edge_vector_directory_is_well_formed():
         if name != "command_authenticated_agent_missing_rejected":
             assert command["authenticated_agent_id"] == command["agent_id"]
         assert isinstance(command["created_at_unix_ms"], int)
+        assert isinstance(command["payload"], dict)
+        assert "max_speed_mps" not in command
         if name != "command_missing_signature_rejected":
             assert isinstance(command["signature"], str)
         assert "command_hmac_secret" not in command

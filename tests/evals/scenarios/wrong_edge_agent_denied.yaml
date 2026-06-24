@@ -7,4 +7,4 @@ input:
     edge_agent_id: edge-agent:other
 expected:
   decision: deny
-  reason_code: LEASE_CONTEXT_MISMATCH
+  reason_code: EDGE_AGENT_MISMATCH
