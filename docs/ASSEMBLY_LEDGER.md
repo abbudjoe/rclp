@@ -1,5 +1,89 @@
 # Assembly Ledger
 
+## S1 Fresh-clone Reproducibility Review Rerun 2 - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: perform the S1 fresh-clone reproducibility review using
+  `assembly`.
+- Required report:
+  `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+- `AGENTS.md`
+- Required repo doctrine and reviewer-facing docs under `docs/`
+
+Preflight note:
+
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this review, and none will be launched, stopped, resized, deleted, or
+  otherwise mutated.
+
+Target contract:
+
+Act as an external reviewer and determine whether a skeptical
+robotics/platform engineer can clone the repo, understand the RCLP MVP, run the
+tests, run the evals, run the demo, and understand what the project proves for
+controlled technical validation calls after the S1 follow-up fixes.
+
+Success criterion:
+
+The required report is refreshed with honest command results, the controlled
+validation scope remains clear, no production-readiness claim is introduced,
+subagent spec-conformance review is clean, and local validation evidence passes.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required docs, local doctrine, and repo surfaces are read or inspected. | met | Read `AGENTS.md`, `README.md`, `docs/RELEASE_READINESS.md`, `docs/DEMO_SCRIPT.md`, `docs/EVALS.md`, `docs/SAFETY_BOUNDARY.md`, `docs/COMMERCIAL_BOUNDARY.md`, and required doctrine files; inspected `src/`, `tests/`, `tests/evals/`, `crates/`, `.github/workflows/`, scripts, and package metadata. |
+| D2: Supported prompt commands and documented setup-path commands are run without concealing failures. | met | Bare prompt commands and documented venv/script equivalents were run; bare `pytest`, bare eval runner, and bare demo command failed outside the activated environment, while documented venv/script paths passed. |
+| D3: Report answers the seven S1 evaluation questions and uses the requested structure. | met | The report uses the requested S1 structure, records the setup, bare-command, venv/script, Rust, packaged-validation, demo, and hygiene outcomes, and answers the README, quickstart, demo, deterministic eval, hidden dependency, claim-support, and reviewer-comfort questions. |
+| D4: Spec-conformance review is clean. | met | Faraday review found the report itself sound and the only initial finding was stale ledger closeout status. The ledger was updated; Faraday re-review returned no findings and the reviewer was closed. |
+| D5: Final hygiene and validation checks pass. | met | `git diff --check` passed; `./scripts/run_validation_checks.sh` passed with 246 pytest tests, 33/33 eval scenarios, Ruff, Rust fmt/clippy, 3 Rust unit tests, and 47 Rust vector tests; hard-deny packaged demo marker scan passed. |
+
+Changed files:
+
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+
+Evidence collected so far:
+
+- `git status --short` was clean before this review updated the ledger/report.
+- `python -m compileall src tests` passed.
+- Bare `pytest` failed outside an activated venv: command not found.
+- Bare `python tests/evals/eval_runner.py` failed outside the venv with
+  `ModuleNotFoundError: No module named 'yaml'`.
+- Bare `python -m rclp_agents.demo_remote_assist` failed outside the venv with
+  `ModuleNotFoundError: No module named 'rclp_agents'`.
+- `python -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'`
+  passed against the existing ignored venv.
+- `.venv/bin/python -m pytest` passed with 246 tests.
+- `.venv/bin/python tests/evals/eval_runner.py` passed with 33/33 eval
+  scenarios and wrote the ignored generated report.
+- `.venv/bin/python -m rclp_agents.demo_remote_assist` passed a marker scan for
+  allow, no-lease deny, degrade, revoke, audit, and replay sections.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D
+  warnings`, and `cargo test --workspace` passed; Cargo briefly waited on
+  normal local file locks while clippy/test ran.
+- `./scripts/run_validation_checks.sh` passed with 246 pytest tests, 33/33 eval
+  scenarios, Ruff, Rust fmt/clippy, 3 Rust unit tests, and 47 Rust vector
+  tests.
+- `./scripts/run_validation_demo.sh --network-profile uplink_bad` passed a
+  marker scan for `POLICY_SATISFIED`, `LEASE_VALID`, `NO_LEASE`,
+  `NETWORK_UPLINK_TOO_LOW`, `NETWORK_PROFILE_REVOKE`, `LEASE_REVOKED`,
+  `audit_jsonl`, and `incident_replay_summary`.
+- `git ls-files --others --exclude-standard` found no untracked required files.
+- Targeted credential/local-path scan found only historical assembly-ledger
+  evidence and a Rust secret-redaction ledger note, not current production
+  credentials or hidden required files.
+- Faraday review found D1-D3 met and the report sound; the only valid finding
+  was stale ledger closeout status for D4/D5.
+- Post-ledger-fix `git diff --check` passed.
+- Post-ledger-fix hard-deny packaged demo marker scan passed.
+- Faraday re-review returned no findings at `2026-06-25T16:19:13Z`; reviewer
+  classified D1-D5 as met/clean and was closed.
+
 ## S1 Non-blocking Improvement Implementation - 2026-06-25
 
 Status: successful

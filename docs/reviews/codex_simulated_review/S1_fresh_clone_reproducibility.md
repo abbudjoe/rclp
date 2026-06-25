@@ -10,12 +10,12 @@ GREEN
 - The README explains the project in under one minute: it states the authority-layer claim, the non-goals, quickstart, demo markers, validation package, safety boundary, and commercial boundary.
 - The supported local proof matches the intended MVP claim for controlled technical validation: short-lived, locally enforced capability leases conditioned on identity, mission, geofence, network state, and fallback policy.
 - The repo does not claim production safety, field validation, real carrier/network behavior, runnable ROS 2 integration, Isaac Sim execution, or hosted commercial-platform readiness.
-- I would be comfortable sending this repo to a technical reviewer for controlled validation calls, with the caveat that reviewers should follow the documented venv/install step or use the packaged scripts rather than bare system Python.
+- The previous reviewer-polish gaps are now addressed: README uses `python -m pytest` plus venv-qualified variants, Python CI includes a demo smoke, and `SECURITY.md` documents the public-launch reporting gate.
+- I would be comfortable sending this repo to a technical reviewer for controlled validation calls, with the caveat that reviewers should follow the documented venv/install step or packaged scripts rather than bare system Python.
 
 ## Commands run
 
-- `python -m venv .venv` — passed; rerun against the existing ignored local venv.
-- `.venv/bin/python -m pip install -e '.[dev]'` — passed; rebuilt the editable package and found declared runtime/dev dependencies already satisfied.
+- `python -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'` — passed; rerun against the existing ignored local venv.
 - `python -m compileall src tests` — passed.
 - `pytest` — failed outside an activated environment: `zsh:1: command not found: pytest`.
 - `.venv/bin/python -m pytest` — passed: 246 tests.
@@ -41,7 +41,7 @@ GREEN
 - Rust verifier checks are present and deterministic. The workspace consumes shared vectors under `tests/vectors/edge_verifier/` and clearly labels its HMAC profile as test-only.
 - CI workflows exist for both Python and Rust. Python CI covers compileall, `python -m pytest`, deterministic evals, and the demo marker smoke; Rust CI covers Rust fmt, clippy, and tests. Ruff remains covered by the local packaged validation script.
 - No untracked required files were present before this report update. Generated artifacts are ignored: `.venv/`, `target/`, egg-info, pytest/Ruff caches, and `tests/evals/reports/latest.json`.
-- Secret/path scan did not find committed production secrets. The visible HMAC strings are in test vectors and documented as non-production. Lambda/Isaac docs use operator placeholders and warnings rather than committed credentials.
+- Secret/path scan did not find committed production secrets. The visible HMAC strings are in test vectors and documented as non-production. Lambda/Isaac docs use operator placeholders and warnings rather than committed credentials. The only scan hits were historical ledger evidence and a Rust secret-redaction ledger note.
 
 ## What failed or was confusing
 
@@ -49,7 +49,7 @@ GREEN
 - The packaged validation script requires dev dependencies because Ruff is part of the local gate. It prints the install command if dependencies are missing.
 - `compileall src tests` can list ignored generated directories such as egg-info and eval reports after local setup. This is harmless, but fresh reviewers may notice it.
 - The demo output is intentionally verbose. The README and demo script now include marker tables, which makes it practical to narrate live without scrolling through every JSON field.
-- `SECURITY.md` now provides controlled-validation private-channel reporting guidance. Before a public launch, the project should still publish a monitored security address or enable private vulnerability reporting.
+- `SECURITY.md` now provides controlled-validation private-channel guidance and a concrete public-launch reporting gate. I did not mutate or verify GitHub repository settings in this local review.
 - Isaac Sim and ROS 2 are clearly scoped as scaffold/POC surfaces, not runnable proof paths. That is documented correctly, but the reviewer should not infer simulator or robot integration from the local proof.
 
 ## Blocking issues before customer calls
@@ -58,13 +58,13 @@ GREEN
 
 ## Non-blocking improvements
 
-- Implemented in follow-up: `SECURITY.md` now names GitHub private vulnerability reporting for `abbudjoe/rclp` as the public-launch reporting path and requires a monitored email if repository-hosted private reporting is unavailable.
-- Implemented in follow-up: `README.md` now uses `python -m pytest` in quickstart and includes `.venv/bin/python ...` equivalents beside the local commands.
-- Implemented in follow-up: `.github/workflows/ci.yml` now runs the remote-assist demo with the hard-deny network profile and greps the expected allow, deny, revoke, audit, and replay markers.
-- Implemented in follow-up: `README.md` now includes a reviewer boundary checklist for Rust verifier status, ROS 2/Isaac Sim scope, hosted-platform exclusions, and controlled-validation wording.
+- No new repo changes are required before controlled technical validation calls.
+- Before a public repository launch, actually enable GitHub private vulnerability reporting for `abbudjoe/rclp` or publish the monitored security email described in `SECURITY.md`; this review did not mutate repository settings.
+- Optionally align secondary docs that still show bare `pytest` examples, such as `docs/RELEASE_READINESS.md` and `docs/EVALS.md`, with the README's `python -m pytest` form for consistency.
+- Keep the generated eval report under `tests/evals/reports/latest.json` ignored and treated as local evidence, not required source material.
 
 ## Recommended fixes
 
 - No protocol behavior fixes are required before controlled technical validation calls.
 - Before any broader public release, enable the documented GitHub private vulnerability reporting path or publish the monitored security email, then rerun `./scripts/run_validation_checks.sh` from a clean clone.
-- If reviewer friction appears around setup, keep the README quickstart and CI command forms aligned with `python -m pytest` and the venv-qualified variants.
+- If another documentation polish pass is planned, update secondary command examples from `pytest` to `python -m pytest` so they match README and CI.
