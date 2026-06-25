@@ -1,5 +1,52 @@
 # Assembly Ledger
 
+## S2 Protocol/Security Red-team Review Refresh - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: run the S2 protocol/security red-team review using `assembly`.
+- Required read list, attack/failure-mode list, command list, and report
+  structure in the S2 prompt.
+- Required report path:
+  `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+
+Preflight note:
+
+- This is a hostile protocol/security review/report phase, not a remediation
+  phase.
+- Broad code changes are out of scope. Only tiny fixes would be allowed if a
+  small obvious bug prevented the review from running.
+- No cloud jobs, GPU jobs, AWS Lambda functions, or paid compute are required,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Assess whether the current MVP hardening claim is credible enough for controlled
+technical validation calls, without claiming production safety or production
+security and without broad code changes.
+
+Success criterion:
+
+The required docs/code/eval surfaces are read, supported tests/evals/lints are
+run, every requested attack/failure mode is evaluated, a subagent
+spec-conformance review is clean or valid findings are addressed, and the S2
+report plus ledger are updated with concrete evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required docs and repository doctrine are read. | met | Read `AGENTS.md`, `README.md`, `docs/SAFETY_BOUNDARY.md`, `docs/EVALS.md`, `docs/RUST_EDGE_VERIFIER.md`, `docs/DEMO_SCRIPT.md`, `docs/ENGINEERING_DOCTRINE.md`, `docs/SECURITY_DOCTRINE.md`, `docs/DESIGN_TASTE.md`, `docs/PROTOCOL_SPEC_DRAFT.md`, `docs/THREAT_MODEL.md`, `docs/TEST_STRATEGY.md`, `docs/CRYPTO_PROFILES.md`, and `docs/ADAPTER_ENFORCEMENT_CONTRACT.md`. |
+| D2: Required Python/Rust authority surfaces and eval scenarios are reviewed. | met | Reviewed `tests/evals/scenarios/`, `tests/evals/eval_runner.py`, `src/rclp_core/`, `src/rclp_ros2/command_gate.py`, `src/rclp_agents/edge_agent_daemon.py`, `crates/rclp-edge-verifier/`, and representative protocol/security/audit/conformance tests. |
+| D3: Every requested attack/failure mode is evaluated against code/tests/docs. | met | Report maps the S2 attack list under "Attack paths reviewed" and ties outcomes to policy, command-gate, audit, eval, and Rust verifier evidence. |
+| D4: Supported evidence commands pass or failures are recorded. | met | Bare `pytest` was unavailable on `PATH`; `.venv/bin/python -m pytest` passed 267 tests; `.venv/bin/python tests/evals/eval_runner.py` passed 33 scenarios; `cargo test --workspace` passed 3 unit and 48 vector/integration tests; `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `.venv/bin/python -m compileall src tests`, `.venv/bin/ruff check .`, `.venv/bin/ruff format --check .`, and `.venv/bin/python scripts/run_cross_language_conformance.py --require-rust` all passed. |
+| D5: S2 report is written at the requested path with required headings and no production-safety/security claim. | met | Updated `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md` with GREEN verdict scoped to controlled technical validation calls and fresh command evidence. |
+| D6: Assembly subagent review of report/spec conformance is clean, or valid findings are fixed. | met | Read-only explorer subagent `019effe0-d207-7092-81ce-7a9533309a16` returned CLEAN: required headings present, every attack/failure mode evaluated, production safety/security claims avoided, verdict/evidence consistent with current repo, and no blocking report changes needed. |
+
 ## S2 Recommended Fixes Hardening Pass - 2026-06-25
 
 Status: successful

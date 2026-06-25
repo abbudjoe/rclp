@@ -10,18 +10,22 @@ narrower MVP claim that RCLP demonstrates a safety-adjacent authority layer with
 scoped, expiring, locally enforced, revocable, network/geofence-conditioned, and
 auditable authority in deterministic local validation.
 
-Evidence run after remediation:
+Fresh evidence run for this review:
 
-- `./scripts/run_validation_checks.sh` passed.
-- The packaged gate covered `python -m compileall src tests`, `pytest` (267
-  tests), `python tests/evals/eval_runner.py` (33 scenarios, 0 failures), Ruff
-  check/format, `cargo fmt --all -- --check`,
-  `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace` (3 unit tests, 48 vector tests), and
-  `python scripts/run_cross_language_conformance.py --require-rust` (15 mapped
-  Python/Rust parity cases, 0 failures).
-- Assembly subagent review re-ran focused audit/parity checks and returned no
-  remaining blocking code findings after audit-batch and parity fixes.
+- Bare `pytest` is not installed on this shell path (`zsh: command not found:
+  pytest`), so the supported repository virtualenv command was used.
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/python -m pytest` passed: 267 tests.
+- `.venv/bin/python tests/evals/eval_runner.py` passed: 33 scenarios, 0
+  failures.
+- `cargo test --workspace` passed: 3 unit tests, 48 vector/integration tests,
+  0 doc tests.
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format --check .` passed.
+- `.venv/bin/python scripts/run_cross_language_conformance.py --require-rust`
+  passed: 15 mapped Python/Rust parity cases, 0 failures.
 
 ## Hardening claim assessment
 
@@ -182,22 +186,8 @@ operations.
 
 ## Recommended fixes
 
-Completed for the local MVP validation profile:
-
-- Documented development canonicalization/signature profiles in
-  `docs/CRYPTO_PROFILES.md`.
-- Added `python scripts/run_cross_language_conformance.py` to run Python evals
-  and Rust vectors from one command and compare mapped decisions plus reason-code
-  sets.
-- Made Rust verifier scope explicit in `docs/RUST_EDGE_VERIFIER.md`.
-- Added a current daemon delegation test proving `EdgeAgentDaemon` calls the
-  configured `CommandGate`.
-- Added signed `ControlPlaneReachabilityAssertion` as an optional distinct
-  protocol input that fails closed when policy-required.
-- Added `AuditBatchCommit` signed local evidence with chain validation before
-  signing or verification.
-
-Residual future fixes before production or broader v0.1 claims:
+No blocking fixes are required before controlled technical validation calls.
+Recommended future fixes before production or broader v0.1 claims:
 
 - Define and implement a production-grade cross-language crypto profile with key
   ids, rotation, revocation, and production canonicalization stability.
