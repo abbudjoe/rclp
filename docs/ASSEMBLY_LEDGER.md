@@ -1,5 +1,80 @@
 # Assembly Ledger
 
+## S3 Robotics Platform / Customer-legibility Review Refresh - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: run `S3 - Robotics Platform / Customer-legibility Reviewer`
+  using `assembly`.
+- Required output path:
+  `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`.
+
+Target contract:
+
+Refresh the S3 robotics/customer-legibility report against the current
+customer-facing docs without modifying code, so a robotics platform engineer
+or fleet reliability lead can judge readiness for controlled customer
+validation.
+
+Success criterion:
+
+The report uses the requested structure, answers all 10 evaluation questions,
+is skeptical rather than promotional, reflects the current authority-service /
+authority-gate wording, and the assembly ledger records DoD status and
+evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required docs are read first in the order specified by the user. | met | After mandatory repo doctrine, read the S3 packet before report edits: `README.md`, `docs/CUSTOMER_VALIDATION_MEMO.md`, `docs/DEMO_SCRIPT.md`, `docs/EVALS.md`, `docs/SAFETY_BOUNDARY.md`, `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md`, and `docs/COMMERCIAL_BOUNDARY.md`. |
+| D2: Report exists at the requested path with every requested section. | met | `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md` was refreshed; heading smoke found every requested section. |
+| D3: Report answers all 10 evaluation questions through the requested sections. | met | Local spec-conformance review confirmed coverage of one-sentence interpretation, authority-gap clarity, protocol/product/safety/fleet-manager distinction, adjacent-protocol distinction, demo workflow fit, agent-language risk, stack fit, validation-call feedback clarity, likely objections, and clarity gaps before outreach. |
+| D4: Report is skeptical and customer-legibility focused. | met | Verdict is green only for controlled technical validation and yellow for broader outreach; report preserves objections about synthetic observe-only evidence, adapter specificity, policy lifecycle, network-state trust, and hard-gate operational acceptability. |
+| D5: No code files are modified. | met | `git diff --name-only` shows only `docs/ASSEMBLY_LEDGER.md` and `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`. |
+| D6: Assembly evidence and DoD statuses are recorded. | met | This ledger entry records source contract, target contract, success criterion, DoD statuses, changed files, review notes, and smoke evidence. |
+
+Changed files:
+
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`
+
+Review notes:
+
+- The report is documentation-only. It does not modify code, protocol
+  behavior, tests, cloud jobs, GPU jobs, AWS Lambda functions, or paid compute.
+- Additional validation-facing docs were read after the required packet:
+  `docs/START_HERE_FOR_VALIDATION.md`, `docs/CUSTOMER_CALL_PACKET.md`,
+  `docs/STACK_PLACEMENT.md`, `docs/DEPLOYMENT_SHAPES.md`,
+  `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`, and `docs/POLICY_OWNERSHIP.md`.
+- Multi-agent tooling is available, but its tool instructions forbid spawning
+  subagents unless the user explicitly asks for subagents, delegation, or
+  parallel agent work. No subagent was spawned; spec-conformance review was
+  performed locally against the extracted DoD and recorded here.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute were
+  launched, stopped, resized, deleted, or otherwise mutated.
+
+Evidence:
+
+- Required repo guidance and doctrine were read before edits:
+  `AGENTS.md`, `docs/ENGINEERING_DOCTRINE.md`,
+  `docs/SECURITY_DOCTRINE.md`, `docs/DESIGN_TASTE.md`,
+  `docs/PROTOCOL_SPEC_DRAFT.md`, `docs/THREAT_MODEL.md`, and
+  `docs/TEST_STRATEGY.md`.
+- Required S3 review packet was read before report edits.
+- `rg -n "^# S3|^## Verdict|^## One-sentence interpretation|^## What is clear|^## What is confusing|^## Likely customer objections|^## Where this fits in a robot stack|^## Where this does not fit|^## Blocking issues before technical validation calls|^## Recommended wording changes" docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`
+  found every requested heading.
+- `rg -n "RCLP is an open protocol MVP|authority gap|protocol and reference implementation|ROS 2|VDA5050|Open-RMF|remote-assist authority workflow|agent|where the gate would live|Likely customer objections|No blocker|No blocking wording change" docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`
+  found coverage for the 10 requested evaluation prompts.
+- `git diff --check` passed.
+- `git diff --name-only` showed only documentation changes:
+  `docs/ASSEMBLY_LEDGER.md` and
+  `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`.
+
 ## S3 Recheck Recommended Wording Implementation - 2026-06-25
 
 Status: in-progress
