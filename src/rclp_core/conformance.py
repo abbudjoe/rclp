@@ -9,6 +9,7 @@ from rclp_core.leases import (
     capability_constraint_bound_violation,
     capability_constraint_requirement_violation,
     lease_matches_context,
+    lease_signature_algorithm_violation,
     lease_signed_material_too_large,
     lease_time_violation,
     verify_lease_signature,
@@ -79,6 +80,8 @@ def validate_lease_for_command(
     issuer_public_key = issuer_public_keys.get(lease.issuer_id)
     if issuer_public_key is None:
         return False, "ISSUER_KEY_NOT_TRUSTED"
+    if alg_reason := lease_signature_algorithm_violation(lease):
+        return False, alg_reason
     if lease_signed_material_too_large(lease):
         return False, "LEASE_SIGNED_MATERIAL_TOO_LARGE"
     if not verify_lease_signature(lease, issuer_public_key):

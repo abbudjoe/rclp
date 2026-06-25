@@ -7,4 +7,4 @@ input:
     signature: unknown_algorithm
 expected:
   decision: deny
-  reason_code: INVALID_SIGNATURE
+  reason_code: LEASE_SIGNATURE_ALGORITHM_UNSUPPORTED

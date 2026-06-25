@@ -18,6 +18,7 @@ from rclp_core.models import (
     CapabilityDecision,
     CapabilityRequest,
     Decision,
+    ED25519_SIGNATURE_ALGORITHM,
     FallbackAction,
     GeofenceState,
     LeaseRevocation,
@@ -64,6 +65,7 @@ def make_state(network_profile: str, key: DemoKeyPair) -> RobotStateAssertion:
         network_state=profile(network_profile),
         geofence_state=GeofenceState(geofence_id=GEOFENCE_ID, inside=True),
         human_operator_available=True,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     state.signature = key.sign(state)
     return state
@@ -120,6 +122,7 @@ def command_denial_payload(
 
 def sign_command(command: Command, key: DemoKeyPair) -> Command:
     command.authenticated_agent_id = command.agent_id
+    command.signature_alg = ED25519_SIGNATURE_ALGORITHM
     command.signature = None
     command.signature = key.sign(command)
     return command
@@ -127,6 +130,7 @@ def sign_command(command: Command, key: DemoKeyPair) -> Command:
 
 def sign_attestation(attestation: AgentAttestation, key: DemoKeyPair) -> AgentAttestation:
     attestation.authenticated_agent_id = attestation.agent_id
+    attestation.signature_alg = ED25519_SIGNATURE_ALGORITHM
     attestation.signature = None
     attestation.signature = key.sign(attestation)
     return attestation
@@ -148,12 +152,14 @@ def make_command(command_id_prefix: str, key: DemoKeyPair) -> Command:
 
 def sign_request(request: CapabilityRequest, key: DemoKeyPair) -> CapabilityRequest:
     request.authenticated_agent_id = request.requesting_agent_id
+    request.signature_alg = ED25519_SIGNATURE_ALGORITHM
     request.signature = None
     request.signature = key.sign(request)
     return request
 
 
 def sign_revocation(revocation: LeaseRevocation, key: DemoKeyPair) -> LeaseRevocation:
+    revocation.signature_alg = ED25519_SIGNATURE_ALGORITHM
     revocation.signature = None
     revocation.signature = key.sign(revocation)
     return revocation

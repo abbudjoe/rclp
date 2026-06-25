@@ -10,8 +10,10 @@ from rclp_core.models import (
     CapabilityConstraintBounds,
     CapabilityLease,
     CapabilityRequest,
+    ED25519_SIGNATURE_ALGORITHM,
     LeaseConstraints,
     SUPPORTED_PROTOCOL_VERSION,
+    signature_algorithm_violation,
 )
 
 
@@ -70,8 +72,10 @@ def issue_lease(
         constraints=constraints,
         issued_at=now,
         expires_at=now + timedelta(seconds=ttl_seconds),
+        nonce=f"lease_nonce_{uuid4().hex}",
         policy_id=policy_id,
         policy_digest=policy_digest,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     lease.signature = issuer_key.sign(lease)
     return lease
@@ -127,6 +131,14 @@ def verify_lease_signature(lease: CapabilityLease, issuer_public_key_b64: str) -
     return verify_with_public_key_b64(lease, lease.signature, issuer_public_key_b64)
 
 
+def lease_signature_algorithm_violation(lease: CapabilityLease) -> str | None:
+    return signature_algorithm_violation(
+        lease,
+        missing_reason="LEASE_SIGNATURE_ALGORITHM_MISSING",
+        unsupported_reason="LEASE_SIGNATURE_ALGORITHM_UNSUPPORTED",
+    )
+
+
 def lease_signature_material_too_large(lease: CapabilityLease) -> bool:
     if lease.signature is None:
         return False
@@ -163,6 +175,7 @@ def lease_signed_material_too_large(lease: CapabilityLease) -> bool:
         lease.nonce,
         lease.policy_id,
         lease.policy_digest,
+        lease.signature_alg,
         lease.signature,
     ):
         if text_budget.exceeded(value):

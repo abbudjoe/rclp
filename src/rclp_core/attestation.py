@@ -4,7 +4,7 @@ from collections.abc import Collection, Mapping
 from datetime import datetime, timedelta, timezone
 
 from rclp_core.crypto import verify_with_public_key_b64
-from rclp_core.models import AgentAttestation
+from rclp_core.models import AgentAttestation, signature_algorithm_violation
 
 
 DEFAULT_ATTESTATION_MAX_AGE_SECONDS = 300
@@ -40,6 +40,7 @@ def attestation_signed_material_too_large(attestation: AgentAttestation) -> bool
         attestation.public_key_id,
         attestation.trust_tier,
         attestation.revoked,
+        attestation.signature_alg,
         attestation.signature,
     ):
         if text_budget.exceeded(value):
@@ -52,6 +53,12 @@ def attestation_auth_violation(
     agent_public_keys_by_id: Mapping[str, str],
 ) -> str | None:
     """Return an authentication-only rejection reason for an attestation."""
+    if alg_reason := signature_algorithm_violation(
+        attestation,
+        missing_reason="ATTESTATION_SIGNATURE_ALGORITHM_MISSING",
+        unsupported_reason="ATTESTATION_SIGNATURE_ALGORITHM_UNSUPPORTED",
+    ):
+        return alg_reason
     if attestation.authenticated_agent_id is None:
         return "ATTESTATION_AUTHENTICATED_AGENT_MISSING"
     if attestation.authenticated_agent_id != attestation.agent_id:

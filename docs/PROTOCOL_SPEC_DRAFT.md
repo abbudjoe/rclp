@@ -61,6 +61,14 @@ protected. The MVP reference implementation may use clearly labeled
 non-production keys, but the protocol contract assumes verifiable message
 origin and payload integrity.
 
+Signed trust-boundary messages in the Python MVP profile MUST carry
+`signature_alg="RCLP-DEV-ED25519"` and MUST include that field in the signed
+material. Receivers MUST reject missing or unsupported `signature_alg` values
+before decoding or verifying the signature. The Rust edge-verifier vector
+profile uses the separate `CapabilityLeaseEnvelope.alg` value
+`RCLP-DEV-HMAC-SHA256` for deterministic offline tests; it is not a production
+signature profile.
+
 Receivers MUST reject malformed messages, unsupported `protocol_version`
 values, duplicate `message_id` values in a replay-sensitive context, and
 messages whose authenticated identity does not match their claimed actor field.
@@ -89,8 +97,10 @@ message names are `AuditCommit` and `AgentAttestation`.
 
 The local v0.0.1 implementation enforces signed `CapabilityRequest`, signed
 edge-local `RobotStateAssertion`, signed `CapabilityLease`, and signed
-`LeaseRevocation` paths. Standalone `NetworkStateAssertion`,
-`CapabilityDecision`, and `FallbackDeclaration` trust-boundary signature
+`LeaseRevocation` paths. `FallbackDeclaration` has a signable and verifiable
+trust-boundary profile in the MVP, but local fallback hooks remain
+safety-adjacent declarations, not certified safety behavior. Standalone
+`NetworkStateAssertion` and `CapabilityDecision` trust-boundary signature
 verification remain v0.1 release blockers, so those messages MUST be treated as
 local/in-process demo messages unless a downstream implementation adds
 authenticated envelopes and negative tests.
@@ -108,6 +118,7 @@ Required fields:
 - `trust_tier`
 - `created_at`
 - `authenticated_agent_id`
+- `signature_alg`
 - `signature` or equivalent authenticated envelope
 
 Optional fields:
@@ -148,6 +159,7 @@ Required fields:
 - `network_state`
 - `network_state.attached`
 - `observed_at`
+- `signature_alg`
 - `signature` or equivalent authenticated envelope
 
 Optional fields:
@@ -191,6 +203,7 @@ Required fields:
 - `requested_duration_seconds`
 - `request_nonce`
 - `created_at`
+- `signature_alg`
 - `signature` or equivalent authenticated envelope
 
 Optional fields:
@@ -247,6 +260,7 @@ Required fields:
 - `created_at`
 - `deciding_actor_id`
 - `policy_id` and/or `policy_digest`
+- `signature_alg`
 - `signature` or equivalent authenticated envelope
 - `lease` when `decision` is `allow`
 - `safe_alternatives` when `decision` is `deny` or `degrade`
@@ -306,6 +320,7 @@ Required fields:
 - `nonce`
 - `policy_id`
 - `policy_digest`
+- `signature_alg`
 - `signature`
 
 Required constraint semantics:
@@ -380,6 +395,7 @@ Required fields:
 - `capability`
 - `command_nonce`
 - `payload`
+- `signature_alg`
 - `signature`
 
 Rejection conditions:
@@ -399,6 +415,7 @@ Rejection conditions:
 - a matching capability lease is absent
 - `command_id` or `command_nonce` has already been accepted in the replay
   window
+- the presented lease nonce has already been consumed by an accepted command
 - command agent, edge agent, robot, mission, capability, or payload does not
   match the presented lease and local state constraints
 
@@ -440,6 +457,7 @@ Required fields:
 - `revoked_at`
 - `created_at`
 - `fallback_action`
+- `signature_alg`
 - `signature` or equivalent authenticated envelope for trust-boundary use
 
 Optional fields:
@@ -514,6 +532,7 @@ Required fields:
 - `observed_at`
 - `measurement_window_seconds`
 - `source`
+- `signature_alg`
 - `signature` or equivalent authenticated envelope
 
 Normative behavior:
@@ -564,7 +583,9 @@ Required fields:
 - `trigger`
 - `fallback_action`
 - `declared_by`
+- `authenticated_declared_by` for trust-boundary use
 - `created_at`
+- `signature_alg`
 - `signature` or equivalent authenticated envelope
 
 Optional fields:
@@ -581,6 +602,10 @@ Normative behavior:
   mission, robot, and capability.
 - An edge agent MAY emit a fallback declaration locally without cloud
   connectivity when a lease expires, is revoked, or violates local constraints.
+- A fallback declaration that crosses a trust boundary MUST include
+  `signature_alg`, `authenticated_declared_by`, and a valid signature by an
+  actor authorized to declare fallback for the edge agent. In-process local
+  fallback declarations MAY remain unsigned local records.
 - Local robot safety systems remain authoritative for low-level safety.
 
 Rejection conditions:
@@ -673,6 +698,10 @@ Normative behavior:
 - `integrity_profile` MUST identify how `integrity_proof` should be verified.
 - Non-authority diagnostic audit events MAY use weaker integrity guarantees
   when the profile explicitly allows it.
+- The MVP audit conformance shape is captured in
+  `manifests/rclp_audit_conformance_schema.json`; eval mappings MAY add
+  scenario-specific views, but they MUST NOT replace the base `AuditCommit`
+  requirements.
 
 Rejection conditions:
 
@@ -709,7 +738,7 @@ An edge agent MUST reject a physical command if:
 - the lease is expired
 - the lease is stale or has a TTL beyond the accepted policy maximum
 - the lease agent, edge agent, robot, mission, or capability does not match
-- the lease nonce has been used in an invalid context
+- the lease nonce has already been consumed by an accepted command
 - a revocation for the lease is known
 - the capability requires current local state and no fresh local state is
   available
@@ -732,6 +761,17 @@ observed network state can influence authority decisions.
 For high-authority capabilities, unknown, stale, or untrusted network state
 SHOULD cause denial, degradation, or locally declared fallback according to
 policy.
+
+## Cloud / Control-Plane Reachability
+
+The MVP does not define a separate cloud-reachability or hosted-control-plane
+message. Current cloud-partition scenarios are deterministic local network
+state simulations, typically `NetworkProfile.PARTITION`, and claims about those
+scenarios MUST be phrased as local network-state-aware authorization behavior.
+
+Future profiles MAY add a dedicated control-plane reachability assertion, but
+edge command enforcement MUST remain local and fail closed without requiring
+cloud availability.
 
 ## Fallback Semantics
 
@@ -772,10 +812,13 @@ authority lease semantics.
 - Network impairment used in MVP tests is simulated.
 - Sim proof is not field-proven safety.
 - Policy schemas and conformance tests will evolve before v0.1.
+- Python and Rust now both treat an accepted lease nonce as single-use in their
+  edge-verifier replay windows.
 
 ## Open Questions
 
-- What canonical serialization and signature profile should v0.1 require?
+- Which production canonical serialization and signature profile should v0.1
+  require beyond the MVP dev profiles?
 - What clock-skew tolerance should conformance tests assume?
 - Should `policy_id`, `policy_digest`, or both be mandatory on all decisions
   and leases?
@@ -786,6 +829,4 @@ authority lease semantics.
   hash chaining, signed batches, append-only storage with signed commit
   digests, or another narrow mechanism?
 - Which fields should be mandatory in the ROS 2, VDA5050, Open-RMF, MCP, and
-  A2A adapter profiles?
-- What is the smallest conformance schema that proves the authority contract
-  without turning RCLP into a fleet manager?
+  A2A adapter profiles beyond the base command-gate contract?

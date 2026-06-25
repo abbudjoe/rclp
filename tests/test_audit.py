@@ -1,10 +1,38 @@
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from rclp_core.audit import AuditLog, load_jsonl
+from rclp_core.audit import LOAD_REQUIRED_FIELDS, AuditLog, load_jsonl
 from rclp_core.models import AuditCommit, AuditEventType, stable_json_hash
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_audit_conformance_schema_matches_runtime_required_fields():
+    schema = json.loads(
+        (ROOT / "manifests/rclp_audit_conformance_schema.json").read_text(encoding="utf-8")
+    )
+
+    assert set(schema["required"]) == LOAD_REQUIRED_FIELDS
+    assert schema["properties"]["message_type"]["const"] == "audit_commit"
+    assert set(schema["properties"]["event_type"]["enum"]) == {
+        event_type.value for event_type in AuditEventType
+    }
+    assert set(schema["x-rclp-authority-event-types"]) == {
+        AuditEventType.CAPABILITY_REQUESTED.value,
+        AuditEventType.NETWORK_STATE_ASSERTED.value,
+        AuditEventType.CAPABILITY_ALLOWED.value,
+        AuditEventType.CAPABILITY_DENIED.value,
+        AuditEventType.CAPABILITY_DEGRADED.value,
+        AuditEventType.COMMAND_ALLOWED.value,
+        AuditEventType.COMMAND_REJECTED.value,
+        AuditEventType.LEASE_REVOKED.value,
+        AuditEventType.REVOCATION_REJECTED.value,
+        AuditEventType.FALLBACK_DECLARED.value,
+    }
 
 
 def test_audit_replay_groups_by_correlation():

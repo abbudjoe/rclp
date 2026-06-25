@@ -92,19 +92,25 @@ context, trusted issuers, revocation, replay rejection, geofence/network checks,
 speed constraints, command actor authentication, command freshness/replay
 rejection, local-state freshness, and auditable fail-closed decisions.
 
-One intentional spike delta is replay handling: the current Python command gate
-does not persistently consume lease nonces, while T10 requires the Rust verifier
-to mark a valid lease nonce on first successful use and reject a second use with
-`DENY_REPLAYED_NONCE`. Treat that as a hardening experiment, not a finalized
-protocol decision.
+Python and Rust now share the MVP replay decision that an accepted lease nonce
+is single-use in the edge verifier replay window. Python reports
+`LEASE_NONCE_REPLAYED`; Rust reports `DENY_REPLAYED_NONCE`.
 
 The shared vectors live in `tests/vectors/edge_verifier/`. Each vector keeps
 untrusted verification input under `input`, trusted local verifier state under
 `trusted_context`, and test replay-cache seed state under `seen_nonces`.
 `trusted_context` includes the accepted policy id/digest, issuer and command
 trust roots, accepted capability scopes, and per-capability constraint
-requirements. Rust tests execute the vectors. Python tests only validate vector
-shape so pytest does not depend on Cargo.
+requirements. Rust tests execute the vectors. Python tests validate vector shape
+so pytest does not depend on Cargo. The crate also exposes a thin CLI bridge:
+
+```bash
+cargo run -p rclp-edge-verifier --bin rclp-edge-verify -- \
+  tests/vectors/edge_verifier/valid_remote_assist_lease.json
+```
+
+The CLI runs the same `verify_json_value` library path and writes a JSON
+decision with `decision`, `reason_code`, and `audit_event`.
 
 `ReplayCache::consume_nonce()` is intentionally a single check-and-mark
 operation from the verifier's perspective. `ReplayCache::durability()` must
@@ -133,8 +139,9 @@ Rules:
 This profile is test-only. Production edge deployments should replace or
 supplement it with an asymmetric signature profile such as Ed25519, key IDs,
 rotation, revoked-key handling, and a normative canonicalization spec. The
-Python demo already uses non-production Ed25519 helpers; the Rust HMAC profile
-is only to keep shared vectors deterministic and offline during this spike.
+Python demo uses the explicit non-production
+`signature_alg="RCLP-DEV-ED25519"` profile; the Rust HMAC profile is only to
+keep shared vectors deterministic and offline during this spike.
 
 ## Running Tests
 
@@ -160,12 +167,11 @@ Use the repo virtualenv if the system Python does not have pytest installed:
 - The Rust crate does not yet verify Python Ed25519 demo leases.
 - The crate provides `FileReplayCache` as a local durable reference cache, not
   a production replay service for clustered edge deployments.
-- Whether lease nonces are single-use or command/session-scoped needs v0.1
-  protocol resolution.
 - Production issuer key rotation is not modeled in the Rust spike.
 - The Rust spike consumes a local revocation set; it does not verify
   `LeaseRevocation` message signatures. The Python command gate verifies signed
   revocation messages in the MVP reference path.
-- Fallback declaration signatures remain a v0.1 hardening item.
+- Fallback declaration signature verification is implemented in the Python MVP
+  reference path, but not in the Rust spike.
 - Clock trust and monotonic time handling are still assumptions.
 - Audit persistence and hash-chain integration remain in the Python reference.

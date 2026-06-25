@@ -1,5 +1,119 @@
 # Assembly Ledger
 
+## S2 Protocol/Security Red-team Fixes - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: implement all recommended fixes from the S2 protocol/security
+  red-team review using `assembly`.
+- `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+- `docs/EVALS.md`
+- `docs/RUST_EDGE_VERIFIER.md`
+
+Preflight note:
+
+- The working tree already contained the untracked S2 review report before this
+  fix pass began.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this remediation, and none will be launched, stopped, resized, deleted,
+  or otherwise mutated.
+
+Target contract:
+
+Make the MVP hardening claim credible enough for controlled technical
+validation calls by closing the S2 report's recommended gaps without broad
+feature expansion or production-safety claims.
+
+Success criterion:
+
+Python and Rust replay/signature semantics are aligned where the MVP claims
+parity, fallback trust-boundary declarations are signable/verifiable, audit
+conformance and cloud/control-plane boundaries are explicit, adapter
+enforcement contracts are documented/tested, and focused plus full validation
+gates pass.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Python command gate consumes lease nonce on successful authorization and rejects a second valid command using the same signed lease nonce. | met | `CommandReplayCache.remember_authorized_use()` records command id, command nonce, and lease nonce atomically; `test_replayed_lease_nonce_is_rejected_after_gate_restart` passed with `LEASE_NONCE_REPLAYED`. |
+| D2: Python signed trust-boundary messages carry an explicit `signature_alg` and fail closed when the field is missing or unsupported. | met | `signature_alg` is modeled and checked for request, state, lease, command, revocation, attestation, and fallback paths; negative tests passed, and `unknown_alg_denied` now expects `LEASE_SIGNATURE_ALGORITHM_UNSUPPORTED`. |
+| D3: Fallback declarations can be signed and verified for trust-boundary use, while local fallback hooks remain non-certified. | met | `src/rclp_core/fallback.py` verifies signed fallback declarations; `CommandGate` can sign emitted fallbacks; `test_signed_fallback_declaration_verifies_for_trust_boundary_use` passed. |
+| D4: Rust edge verifier exposes a CLI bridge for JSON vectors without duplicating verifier logic. | met | `crates/rclp-edge-verifier/src/bin/rclp-edge-verify.rs` calls `verify_json_value`; `cli_verifies_json_vector_with_durable_replay_cache` passed. |
+| D5: Audit conformance has a first-class schema/checklist beyond eval scenario mapping. | met | `manifests/rclp_audit_conformance_schema.json` added; `test_audit_conformance_schema_matches_runtime_required_fields` passed; docs point eval/audit readers to the schema. |
+| D6: Cloud/control-plane reachability boundary is explicitly documented separate from local network-state authorization. | met | `docs/PROTOCOL_SPEC_DRAFT.md` now has a Cloud / Control-Plane Reachability section, and `docs/EVALS.md` describes partition scenarios as deterministic local network-state behavior. |
+| D7: Adapter-level command routes are documented and covered by a bypass-resistant gate test. | met | `docs/ADAPTER_ENFORCEMENT_CONTRACT.md` added; existing daemon/gate tests cover no-lease, edge mismatch, and unauthenticated command rejection through `CommandGate`. |
+| D8: Focused and full validation gates pass after fixes. | met | Focused security/audit/eval tests, full pytest, compileall, eval runner, Ruff, cargo fmt, cargo test, cargo clippy, and `git diff --check` passed. |
+
+Changed files:
+
+- `README.md`
+- `crates/rclp-edge-verifier/src/bin/rclp-edge-verify.rs`
+- `crates/rclp-edge-verifier/tests/vector_tests.rs`
+- `docs/ADAPTER_ENFORCEMENT_CONTRACT.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/CONFORMANCE_CHECKLIST.md`
+- `docs/EVALS.md`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/RUST_EDGE_VERIFIER.md`
+- `docs/SAFETY_BOUNDARY.md`
+- `docs/TEST_STRATEGY.md`
+- `manifests/rclp_audit_conformance_schema.json`
+- `manifests/rclp_protocol_manifest.yaml`
+- `src/rclp_agents/central_agent_mock.py`
+- `src/rclp_agents/demo_remote_assist.py`
+- `src/rclp_core/attestation.py`
+- `src/rclp_core/conformance.py`
+- `src/rclp_core/fallback.py`
+- `src/rclp_core/leases.py`
+- `src/rclp_core/models.py`
+- `src/rclp_core/policy.py`
+- `src/rclp_core/state.py`
+- `src/rclp_ros2/command_gate.py`
+- `tests/evals/eval_runner.py`
+- `tests/evals/scenarios/unknown_alg_denied.yaml`
+- `tests/test_audit.py`
+- `tests/test_conformance_contract.py`
+- `tests/test_protocol_flow.py`
+- `tests/test_security_negative_paths.py`
+
+Review notes:
+
+- No subagent review was spawned; the parent agent checked the implementation
+  against the S2 report's recommended-fix list and the assembly definition of
+  done.
+- The pre-existing untracked S2 review report remains at
+  `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`.
+
+Evidence:
+
+- Focused regression gate passed:
+  `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py::test_signed_trust_boundary_messages_require_explicit_signature_algorithm tests/test_security_negative_paths.py::test_unsupported_signature_algorithms_are_denied_before_signature_verification tests/test_security_negative_paths.py::test_replayed_lease_nonce_is_rejected_after_gate_restart tests/test_security_negative_paths.py::test_signed_fallback_declaration_verifies_for_trust_boundary_use tests/test_audit.py::test_audit_conformance_schema_matches_runtime_required_fields tests/test_protocol_evals.py`
+  (9 passed).
+- Focused touched-suite gate passed:
+  `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py tests/test_audit.py tests/test_protocol_evals.py tests/test_conformance_contract.py`
+  (205 passed).
+- Eval runner passed:
+  `.venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed).
+- Full Python gates passed:
+  `.venv/bin/python -m compileall src tests`;
+  `.venv/bin/python -m pytest -q` (251 passed);
+  `.venv/bin/ruff check .`;
+  `.venv/bin/ruff format --check .`.
+- Rust gates passed:
+  `cargo fmt --all -- --check`;
+  `cargo test --workspace` (3 unit tests, 0 binary tests, 48 vector tests);
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Hygiene passed:
+  `git diff --check`.
+
 ## T13 Demo + Validation Release Package - 2026-06-25
 
 Status: successful

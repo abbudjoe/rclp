@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rclp_core.crypto import DemoKeyPair
-from rclp_core.models import Capability, CapabilityRequest
+from rclp_core.models import Capability, CapabilityRequest, ED25519_SIGNATURE_ALGORITHM
 
 
 def request_remote_assist(signing_key: DemoKeyPair) -> CapabilityRequest:
@@ -14,6 +14,7 @@ def request_remote_assist(signing_key: DemoKeyPair) -> CapabilityRequest:
         capability=Capability.REMOTE_ASSIST,
         reason="central mock requests remote assist",
         requested_duration_seconds=600,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     request.signature = signing_key.sign(request)
     return request

@@ -24,6 +24,7 @@ from rclp_core.models import (
     LeaseConstraints,
     RobotStateAssertion,
     protocol_version_violation,
+    signature_algorithm_violation,
     stable_json_hash,
 )
 from rclp_core.state import (
@@ -436,6 +437,12 @@ def _request_auth_violation(
 ) -> str | None:
     if _required_wire_fields_missing(request, CAPABILITY_REQUEST_REQUIRED_WIRE_FIELDS):
         return "REQUEST_REQUIRED_FIELD_MISSING"
+    if alg_reason := signature_algorithm_violation(
+        request,
+        missing_reason="REQUEST_SIGNATURE_ALGORITHM_MISSING",
+        unsupported_reason="REQUEST_SIGNATURE_ALGORITHM_UNSUPPORTED",
+    ):
+        return alg_reason
     if request.authenticated_agent_id is None:
         return "REQUEST_AUTHENTICATED_AGENT_MISSING"
     if request.authenticated_agent_id != request.requesting_agent_id:
@@ -486,6 +493,7 @@ def _signed_request_material_budget_violation(request: CapabilityRequest) -> boo
         constraints.fallback_on_degrade if constraints is not None else None,
         constraints.max_speed_mps if constraints is not None else None,
         request.request_nonce,
+        request.signature_alg,
         request.signature,
     ):
         if text_budget.exceeded(value):

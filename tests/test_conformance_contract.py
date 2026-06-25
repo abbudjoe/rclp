@@ -12,6 +12,7 @@ from rclp_core.models import (
     AuditEventType,
     Capability,
     CapabilityRequest,
+    ED25519_SIGNATURE_ALGORITHM,
     GeofenceState,
     RobotStateAssertion,
     SafetyState,
@@ -42,6 +43,7 @@ def signed_request(key: DemoKeyPair) -> CapabilityRequest:
         capability=Capability.REMOTE_ASSIST,
         reason="conformance scenario",
         requested_duration_seconds=600,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     request.signature = key.sign(request)
     return request
@@ -57,6 +59,7 @@ def robot_state(network_profile: str) -> RobotStateAssertion:
         network_state=profile(network_profile),
         geofence_state=GeofenceState(geofence_id="test-zone-a", inside=True),
         human_operator_available=True,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     state.signature = EDGE_KEY.sign(state)
     return state

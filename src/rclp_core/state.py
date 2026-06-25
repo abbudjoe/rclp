@@ -4,7 +4,12 @@ from collections.abc import Collection, Mapping
 from datetime import datetime, timedelta, timezone
 
 from rclp_core.crypto import verify_with_public_key_b64
-from rclp_core.models import NetworkProfile, NetworkState, RobotStateAssertion
+from rclp_core.models import (
+    NetworkProfile,
+    NetworkState,
+    RobotStateAssertion,
+    signature_algorithm_violation,
+)
 
 
 DEFAULT_STATE_MAX_AGE_SECONDS = 30
@@ -53,6 +58,7 @@ def robot_state_signed_material_too_large(state: RobotStateAssertion) -> bool:
         geofence_state.verified_at.isoformat(),
         state.observed_at.isoformat(),
         state.human_operator_available,
+        state.signature_alg,
         state.signature,
     ):
         if text_budget.exceeded(value):
@@ -108,6 +114,12 @@ def state_auth_violation(
         return "STATE_REQUIRED_FIELD_MISSING"
     if network_state_required_fields_missing(state.network_state):
         return "STATE_REQUIRED_FIELD_MISSING"
+    if alg_reason := signature_algorithm_violation(
+        state,
+        missing_reason="STATE_SIGNATURE_ALGORITHM_MISSING",
+        unsupported_reason="STATE_SIGNATURE_ALGORITHM_UNSUPPORTED",
+    ):
+        return alg_reason
     if state.authenticated_edge_agent_id is None:
         return "STATE_AUTHENTICATED_EDGE_MISSING"
     if state.authenticated_edge_agent_id != state.edge_agent_id:

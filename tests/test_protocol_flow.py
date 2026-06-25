@@ -14,6 +14,7 @@ from rclp_core.models import (
     CapabilityConstraintRequirement,
     CapabilityLease,
     CapabilityRequest,
+    ED25519_SIGNATURE_ALGORITHM,
     FallbackAction,
     GeofenceState,
     LeaseConstraints,
@@ -45,6 +46,7 @@ _TEST_STORE_DIRS: list[TemporaryDirectory[str]] = []
 
 def sign_request(request: CapabilityRequest, key: DemoKeyPair = CENTRAL_KEY) -> CapabilityRequest:
     request.authenticated_agent_id = request.requesting_agent_id
+    request.signature_alg = ED25519_SIGNATURE_ALGORITHM
     request.signature = None
     request.signature = key.sign(request)
     return request
@@ -52,6 +54,7 @@ def sign_request(request: CapabilityRequest, key: DemoKeyPair = CENTRAL_KEY) -> 
 
 def sign_state(state: RobotStateAssertion, key: DemoKeyPair = EDGE_KEY) -> RobotStateAssertion:
     state.authenticated_edge_agent_id = state.edge_agent_id
+    state.signature_alg = ED25519_SIGNATURE_ALGORITHM
     state.signature = None
     state.signature = key.sign(state)
     return state
@@ -61,6 +64,7 @@ def sign_revocation(
     revocation: LeaseRevocation,
     key: DemoKeyPair = EDGE_KEY,
 ) -> LeaseRevocation:
+    revocation.signature_alg = ED25519_SIGNATURE_ALGORITHM
     revocation.signature = None
     revocation.signature = key.sign(revocation)
     return revocation
@@ -68,6 +72,7 @@ def sign_revocation(
 
 def sign_command(command: Command, key: DemoKeyPair = CENTRAL_KEY) -> Command:
     command.authenticated_agent_id = command.agent_id
+    command.signature_alg = ED25519_SIGNATURE_ALGORITHM
     command.signature = None
     command.signature = key.sign(command)
     return command

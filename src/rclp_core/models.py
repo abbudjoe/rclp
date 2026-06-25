@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 SUPPORTED_PROTOCOL_VERSION = "0.0.1-draft"
 STRICT_MODEL_CONFIG = ConfigDict(extra="forbid")
+ED25519_SIGNATURE_ALGORITHM = "RCLP-DEV-ED25519"
 
 
 def utc_now() -> datetime:
@@ -118,6 +119,19 @@ def protocol_version_violation(*messages: BaseMessage) -> str | None:
     return None
 
 
+def signature_algorithm_violation(
+    message: BaseModel,
+    *,
+    missing_reason: str,
+    unsupported_reason: str,
+) -> str | None:
+    if "signature_alg" not in message.model_fields_set:
+        return missing_reason
+    if getattr(message, "signature_alg", None) != ED25519_SIGNATURE_ALGORITHM:
+        return unsupported_reason
+    return None
+
+
 class AgentAttestation(BaseMessage):
     message_type: Literal["agent_attestation"] = "agent_attestation"
     agent_id: str
@@ -127,6 +141,7 @@ class AgentAttestation(BaseMessage):
     public_key_id: str
     trust_tier: Literal["development", "staging", "production"]
     revoked: bool = False
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     _validate_revoked_bool = field_validator("revoked", mode="before")(_reject_coerced_bool)
@@ -188,6 +203,7 @@ class RobotStateAssertion(BaseMessage):
     geofence_state: GeofenceState
     observed_at: datetime = Field(default_factory=utc_now)
     human_operator_available: bool = True
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     _validate_human_operator_available_bool = field_validator(
@@ -209,6 +225,7 @@ class NetworkStateAssertion(BaseMessage):
     observed_at: datetime = Field(default_factory=utc_now)
     measurement_window_seconds: int = Field(gt=0)
     source: str
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     _validate_attached_bool = field_validator("attached", mode="before")(_reject_coerced_bool)
@@ -253,6 +270,7 @@ class CapabilityRequest(BaseMessage):
     requested_duration_seconds: int = Field(default=600, gt=0)
     requested_constraints: LeaseConstraints | None = None
     request_nonce: str = Field(default_factory=lambda: f"nonce_{uuid4().hex}")
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     _validate_requested_duration_seconds_int = field_validator(
@@ -314,6 +332,7 @@ class CapabilityLease(BaseMessage):
     nonce: str = Field(default_factory=lambda: f"lease_nonce_{uuid4().hex}")
     policy_id: str
     policy_digest: str
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     @model_validator(mode="after")
@@ -339,6 +358,7 @@ class CapabilityDecision(BaseMessage):
     lease: CapabilityLease | None = None
     safe_alternatives: list[FallbackAction] = Field(default_factory=list)
     audit_id: str
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
 
@@ -353,6 +373,7 @@ class LeaseRevocation(BaseMessage):
     robot_id: str | None = None
     mission_id: str | None = None
     capability: Capability | None = None
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
 
@@ -364,9 +385,11 @@ class FallbackDeclaration(BaseMessage):
     trigger: str
     fallback_action: FallbackAction
     declared_by: str
+    authenticated_declared_by: str | None = None
     lease_id: str | None = None
     decision_id: str | None = None
     revocation_id: str | None = None
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
 
