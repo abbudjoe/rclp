@@ -12,6 +12,10 @@ authority primitive maps to real robot-fleet workflows.
 
 This is not a broad public launch and not a production-readiness claim.
 
+Use `docs/CONTROLLED_REVIEW_PACKET.md` to decide which files belong in the
+external technical-review packet and which planning docs should stay out unless
+the reviewer explicitly needs that context.
+
 ## Implemented Components
 
 - Python reference implementation for capability requests, policy evaluation,
@@ -159,7 +163,8 @@ git tag -a v0.1-validation -m "RCLP v0.1 validation release"
 1. Run `./scripts/run_validation_checks.sh` from a clean checkout.
 2. Run `./scripts/run_validation_demo.sh` and keep
    `docs/DEMO_WALKTHROUGH.md` open during the call.
-3. Send `docs/CUSTOMER_CALL_PACKET.md` before or after the call.
+3. Use `docs/CONTROLLED_REVIEW_PACKET.md` to assemble the technical-review
+   packet, then send `docs/CUSTOMER_CALL_PACKET.md` before or after the call.
 4. Use `docs/FIRST_CALL_TARGET_PROFILE.md` to prioritize the first 5-8 calls.
 5. Record feedback as issues or field notes without expanding protocol scope
    during calls.

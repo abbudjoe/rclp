@@ -5,14 +5,14 @@ use this repository as a production robot safety system.
 
 ## Reporting Security Issues
 
-Security reporting contact:
+For controlled technical validation, report security issues to the named
+project owner or private review channel that provided the repository or review
+packet. If no private reporting channel has been provided, do not begin the
+external review until one is established.
 
-```text
-TODO: replace with project security contact before public launch.
-```
-
-Until a real contact is published, do not disclose sensitive vulnerability
-details in public issues.
+Do not disclose sensitive vulnerability details in public issues. Before any
+public launch, replace the controlled-review channel with a monitored public
+security contact or GitHub private vulnerability reporting process.
 
 ## Current Known Security Limitations
 

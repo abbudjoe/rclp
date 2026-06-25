@@ -14,13 +14,13 @@ The post-T12 handoff state is expected to include:
   audit JSONL, and incident replay.
 - Rust edge verifier spike that proves the edge-side verifier primitive can be
   expressed as deterministic, dependency-light code.
-- Deterministic adversarial eval harness with 24 YAML scenarios and JSON
+- Deterministic adversarial eval harness with 33 YAML scenarios and JSON
   reporting.
 - Local demo flow for `remote_assist` authority negotiation.
 - Safety and commercial boundary docs that keep the repo narrow and honest.
 
 Current checkout note: after fast-forwarding to `origin/main`, the T12 eval
-artifacts are present under `docs/EVALS.md` and `tests/evals/`, with 24 YAML
+artifacts are present under `docs/EVALS.md` and `tests/evals/`, with 33 YAML
 scenarios and a local eval runner.
 
 ## 2. What The Repo Currently Proves
@@ -154,7 +154,7 @@ Ready for controlled technical validation calls when:
 - Rust fmt, clippy, and tests pass if Rust is present
 - no secrets or committed private keys are present
 - no absolute local paths leak into public docs
-- no Boost/internal company references are present
+- no named-company/internal references are present
 - safety boundary is explicit
 - commercial boundary is explicit
 - validation memo or customer-call packet exists

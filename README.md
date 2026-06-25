@@ -95,6 +95,7 @@ deployments.
 
 Start here:
 
+- `docs/CONTROLLED_REVIEW_PACKET.md`
 - `docs/VALIDATION_RELEASE_NOTES.md`
 - `docs/CUSTOMER_CALL_PACKET.md`
 - `docs/DEMO_WALKTHROUGH.md`
@@ -187,6 +188,8 @@ the primitive in under one minute, run the demo, inspect the tests, understand
 the safety boundary, and see exactly what this MVP does and does not prove.
 
 Release readiness notes: `docs/RELEASE_READINESS.md`.
+
+Controlled review packet: `docs/CONTROLLED_REVIEW_PACKET.md`.
 
 Validation release notes: `docs/VALIDATION_RELEASE_NOTES.md`.
 

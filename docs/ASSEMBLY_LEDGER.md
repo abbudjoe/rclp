@@ -1,5 +1,51 @@
 # Assembly Ledger
 
+## S4 Open-source / Commercial-boundary Fixes - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all blocking issues and implement recommended fixes
+  from `docs/reviews/codex_simulated_review/S4_open_source_commercial_boundary.md`
+  using `assembly`.
+- `AGENTS.md`
+- `docs/ENGINEERING_DOCTRINE.md`
+- `docs/SECURITY_DOCTRINE.md`
+- `docs/DESIGN_TASTE.md`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+- `docs/COMMERCIAL_BOUNDARY.md`
+- `docs/GOVERNANCE.md`
+- `docs/SAFETY_BOUNDARY.md`
+
+Preflight note:
+
+- No cloud jobs, GPU jobs, Lambda instances, or paid compute mutations are
+  required for this item. None were launched, stopped, resized, deleted, or
+  otherwise mutated.
+
+Target contract:
+
+Resolve the S4 yellow/blocking hygiene items without broad code changes:
+controlled external technical reviewers should see a clean license posture,
+non-placeholder controlled security reporting instructions, a focused external
+review packet boundary, conservative safety/security language, and no added
+commercial strategy or sensitive data.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Rust and Python package license declarations align with the root license. | met | `crates/rclp-edge-verifier/Cargo.toml` now declares `Apache-2.0`, matching `LICENSE` and `pyproject.toml`. |
+| `SECURITY.md` no longer contains a placeholder reporting contact. | met | `SECURITY.md` now directs controlled reviewers to the named project owner or private review channel that provided the packet and keeps monitored public intake as a public-launch requirement. |
+| A controlled external review packet boundary exists and excludes planning docs unless needed. | met | Added `docs/CONTROLLED_REVIEW_PACKET.md` with include/exclude lists, distribution checks, and opening-note language; README, validation notes, release readiness, FAQ, and customer-call checklist link or reference it. |
+| S4 report reflects the remediated current state without overclaiming public-release readiness. | met | `docs/reviews/codex_simulated_review/S4_open_source_commercial_boundary.md` now reports GREEN for controlled validation, no controlled-validation blockers, and remaining public-release cautions. |
+| Safety/security wording remains conservative. | met | New and edited docs use controlled validation, safety-adjacent authority layer, fallback hook, network-state-aware authorization, and sim proof framing without production safety claims. |
+| No secrets, local paths, pricing, named customer lists, or carrier-contract details are added. | met | Edits add only docs/package metadata and no credentials, account identifiers, local paths, pricing, customer names, or carrier details. |
+| Validation gates and subagent review complete. | met | `.venv/bin/python -m compileall src tests`, `.venv/bin/python -m pytest` (246 passed), `.venv/bin/ruff check .`, `.venv/bin/ruff format . --check`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` passed. Targeted scans found no local absolute paths, no stale placeholder security-contact text, no old dual-license string, and no named company/carrier target terms; broader secret-pattern hits were code/test HMAC names or environment-variable placeholders. Subagent review findings were addressed. |
+
 ## T13 Demo + Validation Release Package - 2026-06-25
 
 Status: successful
@@ -1750,7 +1796,7 @@ Evidence:
 - `cargo test --workspace` passed: 1 library test, 2 vector tests, 0 doc tests.
 - Content scan found no absolute local-user paths in the changed public
   sequence docs or `README.md`; intended checklist wording about
-  Boost/internal references and fallback hooks remains.
+  named-company/internal references and fallback hooks remains.
 
 Cloud/job status:
 
@@ -1889,7 +1935,7 @@ Definition of done:
 | Repo does not overclaim production readiness, certified safety, carrier behavior, real cellular behavior, or customer willingness. | met | Wording scan found only explicit non-claims or doctrine examples for safety/production/cellular/customer terms. `docs/SECURITY_REVIEW_NOTES.md` heading was narrowed to blockers before customer pilots / production-profile use so controlled technical validation is not contradicted. |
 | Customer validation memo exists and asks for specific technical/customer feedback while stating non-claims. | met | `docs/CUSTOMER_VALIDATION_MEMO.md` includes one-liner, problem statement, MVP proof points, feedback sought, explicit non-claims, and 12 validation questions. |
 | Release readiness doc exists with current status, implemented/stubbed surfaces, test/demo commands, known gaps, and before-customer-call checklist. | met | `docs/RELEASE_READINESS.md` includes current MVP status, implemented items, stubbed/scaffolded items, test commands, demo commands, expected evidence, known gaps, and before-customer-call checklist. |
-| GitHub/release hygiene is checked: `.gitignore`, `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, workflows, and community-file scope. | met | `.gitignore` now ignores Rust/build/coverage/artifact outputs; `LICENSE` contains full Apache-2.0 text; `CONTRIBUTING.md` includes Python and Rust validation; `SECURITY.md` exists with MVP limitations and placeholder contact; `.github/workflows/ci.yml` and `rust.yml` already cover Python/Rust gates; no `CODE_OF_CONDUCT.md` was added. |
+| GitHub/release hygiene is checked: `.gitignore`, `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, workflows, and community-file scope. | met | `.gitignore` now ignores Rust/build/coverage/artifact outputs; `LICENSE` contains full Apache-2.0 text; `CONTRIBUTING.md` includes Python and Rust validation; `SECURITY.md` exists with MVP limitations and controlled-review reporting guidance; `.github/workflows/ci.yml` and `rust.yml` already cover Python/Rust gates; no `CODE_OF_CONDUCT.md` was added. |
 | Tests and validation commands are run and results reported. | met | Validation evidence is recorded below. Bare `pytest` and bare `ruff` are not on PATH in this shell; repo `.venv` runners passed. |
 
 Review status:
