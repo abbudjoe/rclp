@@ -154,6 +154,7 @@ For controlled technical validation, start here:
 
 Related validation docs:
 
+- `docs/CONTROLLED_REVIEW_PACKET.md`
 - `docs/VALIDATION_RELEASE_NOTES.md`
 - `docs/CUSTOMER_CALL_PACKET.md`
 - `docs/STACK_PLACEMENT.md`
@@ -306,6 +307,8 @@ Reviewer boundary checklist for future docs and examples:
   proof, and safety-adjacent authority behavior.
 
 Release readiness notes: `docs/RELEASE_READINESS.md`.
+
+Controlled review packet: `docs/CONTROLLED_REVIEW_PACKET.md`.
 
 Validation release notes: `docs/VALIDATION_RELEASE_NOTES.md`.
 

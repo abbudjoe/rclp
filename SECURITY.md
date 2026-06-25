@@ -5,7 +5,10 @@ use this repository as a production robot safety system.
 
 ## Reporting Security Issues
 
-Security reporting contact:
+For controlled technical validation, report security issues to the named
+project owner or private review channel that provided the repository or review
+packet. If no private reporting channel has been provided, do not begin the
+external review until one is established.
 
 ```text
 For controlled validation, report security issues to the project maintainer

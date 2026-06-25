@@ -10,10 +10,12 @@ not a public launch checklist and not a production readiness claim.
 - [ ] No absolute local paths in public docs or scripts.
 - [ ] No secrets, tokens, API keys, Lambda credentials, private keys, or account
   IDs committed.
-- [ ] No Boost/internal company references.
+- [ ] No named-company/internal references.
 - [ ] LICENSE is present and acceptable for controlled validation.
 - [ ] `SECURITY.md` does not overpromise response process or production
   hardening.
+- [ ] A named project owner or private review channel exists for controlled
+  security reports before the packet is shared.
 - [ ] Known gaps are documented, not hidden.
 
 ## Demo Readiness
@@ -54,6 +56,7 @@ not a public launch checklist and not a production readiness claim.
 ## Customer-Call Packet
 
 - [ ] Customer validation memo or customer-call packet exists.
+- [ ] Controlled review packet exists and excludes planning docs unless needed.
 - [ ] One-liner is clear.
 - [ ] Problem statement is centered on the central software actor to
   robot-local authority gate boundary.
@@ -66,6 +69,7 @@ not a public launch checklist and not a production readiness claim.
 ## Legal And IP Hygiene
 
 - [ ] License reviewed for controlled validation.
+- [ ] Rust and Python package license declarations match the root license.
 - [ ] Third-party protocol names are used descriptively and carefully.
 - [ ] No proprietary customer workflows are included.
 - [ ] No customer data or field logs are committed.
@@ -75,7 +79,8 @@ not a public launch checklist and not a production readiness claim.
 
 - [ ] Controlled-call framing is clear: `v0.1-validation`, not public launch.
 - [ ] Governance note exists or is listed as a public launch blocker.
-- [ ] Security contact is either confirmed or listed as a public launch blocker.
+- [ ] Controlled-review security reporting channel is confirmed; public
+  security intake remains a public-launch blocker.
 - [ ] Contributor guidance is either present or listed as a public launch
   blocker.
 - [ ] Issue templates are either present or listed as a public launch blocker.

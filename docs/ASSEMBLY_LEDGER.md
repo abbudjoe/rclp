@@ -2325,7 +2325,7 @@ Evidence:
 - `cargo test --workspace` passed: 1 library test, 2 vector tests, 0 doc tests.
 - Content scan found no absolute local-user paths in the changed public
   sequence docs or `README.md`; intended checklist wording about
-  Boost/internal references and fallback hooks remains.
+  named-company/internal references and fallback hooks remains.
 
 Cloud/job status:
 
@@ -2464,7 +2464,7 @@ Definition of done:
 | Repo does not overclaim production readiness, certified safety, carrier behavior, real cellular behavior, or customer willingness. | met | Wording scan found only explicit non-claims or doctrine examples for safety/production/cellular/customer terms. `docs/SECURITY_REVIEW_NOTES.md` heading was narrowed to blockers before customer pilots / production-profile use so controlled technical validation is not contradicted. |
 | Customer validation memo exists and asks for specific technical/customer feedback while stating non-claims. | met | `docs/CUSTOMER_VALIDATION_MEMO.md` includes one-liner, problem statement, MVP proof points, feedback sought, explicit non-claims, and 12 validation questions. |
 | Release readiness doc exists with current status, implemented/stubbed surfaces, test/demo commands, known gaps, and before-customer-call checklist. | met | `docs/RELEASE_READINESS.md` includes current MVP status, implemented items, stubbed/scaffolded items, test commands, demo commands, expected evidence, known gaps, and before-customer-call checklist. |
-| GitHub/release hygiene is checked: `.gitignore`, `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, workflows, and community-file scope. | met | `.gitignore` now ignores Rust/build/coverage/artifact outputs; `LICENSE` contains full Apache-2.0 text; `CONTRIBUTING.md` includes Python and Rust validation; `SECURITY.md` exists with MVP limitations and placeholder contact; `.github/workflows/ci.yml` and `rust.yml` already cover Python/Rust gates; no `CODE_OF_CONDUCT.md` was added. |
+| GitHub/release hygiene is checked: `.gitignore`, `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, workflows, and community-file scope. | met | `.gitignore` now ignores Rust/build/coverage/artifact outputs; `LICENSE` contains full Apache-2.0 text; `CONTRIBUTING.md` includes Python and Rust validation; `SECURITY.md` exists with MVP limitations and controlled-review reporting guidance; `.github/workflows/ci.yml` and `rust.yml` already cover Python/Rust gates; no `CODE_OF_CONDUCT.md` was added. |
 | Tests and validation commands are run and results reported. | met | Validation evidence is recorded below. Bare `pytest` and bare `ruff` are not on PATH in this shell; repo `.venv` runners passed. |
 
 Review status:

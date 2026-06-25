@@ -81,7 +81,8 @@ the validation package.
 
 ## Q: What should reviewers inspect first?
 
-Start with `README.md`, `docs/VALIDATION_RELEASE_NOTES.md`,
-`docs/DEMO_WALKTHROUGH.md`, `docs/EVALS.md`, `docs/SAFETY_BOUNDARY.md`, and
+Start with `README.md`, `docs/CONTROLLED_REVIEW_PACKET.md`,
+`docs/VALIDATION_RELEASE_NOTES.md`, `docs/DEMO_WALKTHROUGH.md`,
+`docs/EVALS.md`, `docs/SAFETY_BOUNDARY.md`, and
 `docs/COMMERCIAL_BOUNDARY.md`. Then run `./scripts/run_validation_checks.sh`
 and `./scripts/run_validation_demo.sh`.

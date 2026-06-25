@@ -126,6 +126,8 @@ Expected visible evidence:
 
 - Run Python and Rust validation commands in a clean checkout.
 - Run the default demo and one impaired profile.
+- Use `docs/CONTROLLED_REVIEW_PACKET.md` to keep the external review surface
+  focused on protocol validation and exclude planning docs unless needed.
 - Skim `docs/SAFETY_BOUNDARY.md` and avoid production safety claims.
 - Skim `docs/COMMERCIAL_BOUNDARY.md` and keep hosted platform discussion
   separate from the open repo.
