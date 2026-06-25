@@ -12,9 +12,15 @@ For controlled validation, report security issues to the project maintainer
 through the same private channel that provided access to this repository.
 ```
 
-Do not disclose sensitive vulnerability details in public issues. Before any
-public repository launch, publish a monitored project security address or
-enable private vulnerability reporting in the repository host.
+Public repository launch reporting gate:
+
+- Enable GitHub private vulnerability reporting for `abbudjoe/rclp`.
+- Once enabled, use the repository's private advisory intake:
+  `https://github.com/abbudjoe/rclp/security/advisories/new`.
+- If repository-hosted private reporting is unavailable, publish a monitored
+  project security email in this file before public launch.
+
+Do not disclose sensitive vulnerability details in public issues.
 
 ## Current Known Security Limitations
 

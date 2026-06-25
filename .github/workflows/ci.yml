@@ -14,5 +14,16 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e '.[dev]'
       - run: python -m compileall src tests
-      - run: pytest
+      - run: python -m pytest
       - run: python tests/evals/eval_runner.py
+      - name: demo smoke
+        run: |
+          python -m rclp_agents.demo_remote_assist --network-profile uplink_bad > /tmp/rclp_demo.txt
+          grep -q "POLICY_SATISFIED" /tmp/rclp_demo.txt
+          grep -q "LEASE_VALID" /tmp/rclp_demo.txt
+          grep -q "NO_LEASE" /tmp/rclp_demo.txt
+          grep -q "NETWORK_UPLINK_TOO_LOW" /tmp/rclp_demo.txt
+          grep -q "NETWORK_PROFILE_REVOKE" /tmp/rclp_demo.txt
+          grep -q "LEASE_REVOKED" /tmp/rclp_demo.txt
+          grep -q "audit_jsonl" /tmp/rclp_demo.txt
+          grep -q "incident_replay_summary" /tmp/rclp_demo.txt
