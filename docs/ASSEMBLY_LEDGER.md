@@ -1,5 +1,78 @@
 # Assembly Ledger
 
+## S1 Fresh-clone Review Follow-up Fixes - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all non-blocking improvements and implement all
+  recommended fixes from the S1 fresh-clone reproducibility review using
+  `assembly`.
+- `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+
+Preflight note:
+
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this follow-up, and none will be launched, stopped, resized, deleted, or
+  otherwise mutated.
+
+Target contract:
+
+Close the reviewer-experience gaps identified by S1 without changing protocol
+behavior: make the demo markers easier to point at, make the packaged
+validation setup expectation explicit, show a representative eval success
+summary, replace the public security-contact TODO with controlled-validation
+reporting guidance, and repeat the Rust/Isaac/ROS 2 boundary where reviewers
+will see it.
+
+Success criterion:
+
+The documentation fixes are present, the security-contact TODO is gone, the
+full local validation path still passes, subagent spec-conformance review is
+clean, and the final response states controlled technical validation scope
+without production-readiness claims.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: README or demo script includes exact demo sections and reason-code markers to point at. | met | `README.md` and `docs/DEMO_SCRIPT.md` now include marker tables for `normal_network_decision`, `command_gate_with_valid_lease`, `command_without_valid_lease`, `impaired_network_decision`, `lease_revocation`, `command_gate_after_network_revocation`, `audit_jsonl`, and `incident_replay_summary`, with `POLICY_SATISFIED`, `LEASE_VALID`, `NO_LEASE`, `NETWORK_LATENCY_DEGRADED`, `NETWORK_UPLINK_TOO_LOW`, `NETWORK_PROFILE_REVOKE`, and `LEASE_REVOKED`. |
+| D2: Packaged validation docs say the editable dev install must run before `run_validation_checks.sh`. | met | `README.md` and `docs/DEMO_SCRIPT.md` now state that the editable dev install should be run first because `run_validation_checks.sh` treats Ruff as part of the local validation gate. |
+| D3: `docs/EVALS.md` includes a concise successful eval summary. | met | `docs/EVALS.md` now includes a representative `RCLP evals: 33 passed, 0 failed, 33 total` summary and states that it is deterministic local reference evidence only. |
+| D4: `SECURITY.md` no longer contains the public security-contact TODO. | met | `SECURITY.md` now directs controlled-validation reports to the private maintainer channel and requires a monitored address or private vulnerability reporting before public launch; targeted `rg` found no old contact TODO. |
+| D5: Rust verifier, Isaac Sim, and ROS 2 boundaries are repeated in reviewer-facing docs. | met | `README.md`, `docs/DEMO_SCRIPT.md`, `docs/EVALS.md`, and `SECURITY.md` describe the Rust verifier as a spike/test-only HMAC surface and repeat that ROS 2 and Isaac Sim are scaffold/proof-plan surfaces, not local proof requirements. |
+| D6: Full local validation passes after documentation fixes. | met | `python -m compileall src tests` passed; `./scripts/run_validation_checks.sh` passed before and after review fixes with 246 pytest tests, 33/33 evals, Ruff, Rust fmt/clippy, and Rust unit/vector tests; `./scripts/run_validation_demo.sh --network-profile uplink_bad` passed and showed `NETWORK_UPLINK_TOO_LOW`, `NETWORK_PROFILE_REVOKE`, `LEASE_REVOKED`, `audit_jsonl`, and `incident_replay_summary`. |
+| D7: Spec-conformance review is clean and ledger is updated with evidence. | met | Noether review found the docs changes met D1-D6 and had one ledger-staleness finding; the ledger was updated to `successful` with D1-D7 marked met and concrete evidence, then Noether re-review reported no remaining findings. |
+
+Changed files:
+
+- `README.md`
+- `SECURITY.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/DEMO_SCRIPT.md`
+- `docs/EVALS.md`
+
+Evidence:
+
+- `rg -n "TODO: replace with project security contact|For controlled validation|Output Markers|Expected successful eval summary|RCLP-DEV-HMAC-SHA256|Isaac Sim execution|ROS 2 runtime delivery" README.md docs/DEMO_SCRIPT.md docs/EVALS.md SECURITY.md` found the new documentation anchors and did not report the old security-contact TODO.
+- `python -m compileall src tests` passed.
+- `./scripts/run_validation_checks.sh` passed: Python 3.14.4, 246 pytest tests, 33/33 deterministic eval scenarios, Ruff check/format, Rust fmt, Rust clippy, and Rust tests.
+- `./scripts/run_validation_demo.sh --network-profile uplink_bad` passed and showed the allow, no-lease deny, hard network deny, revocation, post-revocation deny, fallback, audit JSONL, and replay-summary markers.
+- Post-review `./scripts/run_validation_checks.sh` passed again after the
+  ledger update.
+
+Review notes:
+
+- Noether reviewed the documentation patch for S1 follow-up spec conformance.
+  The review classified D1-D6 as met and found one valid issue: the ledger still
+  had stale in-progress statuses. This update fixes that finding by recording
+  successful status, met DoD items, concrete validation evidence, and the review
+  outcome.
+- Noether re-review reported no remaining findings and classified D1-D7 as met.
+
 ## T13 Demo + Validation Release Package - 2026-06-25
 
 Status: successful

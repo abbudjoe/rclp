@@ -8,11 +8,13 @@ use this repository as a production robot safety system.
 Security reporting contact:
 
 ```text
-TODO: replace with project security contact before public launch.
+For controlled validation, report security issues to the project maintainer
+through the same private channel that provided access to this repository.
 ```
 
-Until a real contact is published, do not disclose sensitive vulnerability
-details in public issues.
+Do not disclose sensitive vulnerability details in public issues. Before any
+public repository launch, publish a monitored project security address or
+enable private vulnerability reporting in the repository host.
 
 ## Current Known Security Limitations
 

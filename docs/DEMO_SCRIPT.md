@@ -15,10 +15,29 @@ python -m pip install -e '.[dev]'
 
 The packaged validation commands are:
 
+Run the editable dev install first; `run_validation_checks.sh` treats Ruff as
+part of the local validation gate.
+
 ```bash
 ./scripts/run_validation_checks.sh
 ./scripts/run_validation_demo.sh
 ```
+
+## Output Markers
+
+For a live call, point at these sections instead of scrolling through every
+JSON line:
+
+| Demo section | What it proves | Expected marker |
+|---|---|---|
+| `normal_network_decision` | normal local context allows a scoped lease | `POLICY_SATISFIED` |
+| `command_gate_with_valid_lease` | command gate accepts a matching valid lease | `LEASE_VALID` |
+| `command_without_valid_lease` | high-authority command without a lease fails closed | `NO_LEASE` |
+| `impaired_network_decision` | network-state-aware authorization degrades or denies | `NETWORK_LATENCY_DEGRADED` or `NETWORK_UPLINK_TOO_LOW` |
+| `lease_revocation` | degraded local context can revoke prior authority | `NETWORK_PROFILE_REVOKE` |
+| `command_gate_after_network_revocation` | revoked authority cannot be reused | `LEASE_REVOKED` |
+| `audit_jsonl` | authority-changing events are emitted as audit commits | `audit_jsonl` |
+| `incident_replay_summary` | audit replay reconstructs the authority chain | `incident_replay_summary` |
 
 ## Flow
 
@@ -79,7 +98,8 @@ The packaged validation commands are:
    This MVP does not prove formal safety certification, production robot
    safety, real cellular behavior, carrier APIs, production cryptographic trust
    infrastructure, customer willingness to deploy, full robot hardware
-   integration, or hosted commercial-platform behavior.
+   integration, ROS 2 runtime delivery, Isaac Sim execution, or hosted
+   commercial-platform behavior.
 
 9. Point to the validation package.
 

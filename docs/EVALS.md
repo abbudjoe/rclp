@@ -58,6 +58,22 @@ pytest
 python tests/evals/eval_runner.py
 ```
 
+Expected successful eval summary:
+
+```text
+RCLP evals: 33 passed, 0 failed, 33 total
+PASS valid_remote_assist: allow LEASE_VALID
+PASS no_lease_denied: deny NO_LEASE
+PASS scenario_network_degrade_revokes: deny LEASE_REVOKED
+PASS scenario_cloud_partition_expiry: deny LEASE_EXPIRED
+Wrote JSON report: tests/evals/reports/latest.json
+```
+
+The exact path in the final line is absolute when run locally. A passing eval
+summary is evidence for deterministic local reference behavior only; it is not
+evidence of production safety, real cellular behavior, ROS 2 runtime delivery,
+Isaac Sim execution, or hosted-platform readiness.
+
 If Rust is installed:
 
 ```bash
