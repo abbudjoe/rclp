@@ -1,5 +1,110 @@
 # Assembly Ledger
 
+## S7 Customer-Legibility Fix Pass - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: run the S7 customer-legibility follow-up prompt using
+  `assembly`.
+- User-supplied S7 prompt: `S7 - Customer-Legibility Fix Pass After S3 Review`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- Existing customer-facing validation docs and demo/eval package.
+
+Preflight note:
+
+- This is a bounded documentation and validation-packaging pass.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+- No protocol redesign, ROS 2 runtime integration, Isaac Sim integration, real
+  robot integration, hosted control plane, dashboard, production key
+  management, hardware attestation, or carrier integration is in scope.
+
+Target contract:
+
+Make the repository easier for external robotics/platform reviewers to place
+in a real robot stack by adding validation entry points, stack placement,
+remote-assist integration framing, adjacent-protocol comparison, early
+software-actor definitions, concrete capability examples, and blunt feedback
+asks without introducing production-readiness or safety/security overclaims.
+
+Success criterion:
+
+The new validation-facing docs exist, README and customer-facing docs lead with
+clearer software-actor language, concrete gated-capability examples are
+visible, the validation ask is blunt, conservative claim scans pass, local
+tests/evals still pass, spec-conformance review is clean, and this ledger is
+updated with final evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: `docs/START_HERE_FOR_VALIDATION.md` exists with the required read order and validation ask. | met | File exists with one-sentence definition, early software-actor definition, required read order, blunt feedback ask, observe-only/advisory first target, and not-yet feedback list; README links it. |
+| D2: `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md` exists with the required comparison rows and columns. | met | File exists with columns `System`, `What it does`, `What RCLP does not replace`, and `What RCLP adds`; rows cover ROS 2/DDS, SROS2, VDA5050, Open-RMF, MCP, A2A, fleet managers, teleop systems, robot-local safety controllers, and IoT/cellular connectivity platforms. |
+| D3: `docs/STACK_PLACEMENT.md` exists with stack-placement answers, required table, architecture sketch, and observe-only adoption path. | met | File answers where RCLP runs, what calls it, what it gates, what it does not touch, and what remains owned by robot safety; includes required layer table, ASCII architecture, and observe-only adoption ladder. |
+| D4: `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md` exists with insertion point, flow, gated commands, non-gated commands, and audit fields. | met | File includes existing components, RCLP insertion point, `remote_assist` flow, example gated commands, commands not gated by RCLP, and audited fields. |
+| D5: README links to the validation path and related S7 docs while staying concise. | met | README now links `docs/START_HERE_FOR_VALIDATION.md`, `docs/STACK_PLACEMENT.md`, `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md`, `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md`, `docs/EVALS.md`, and `docs/SAFETY_BOUNDARY.md`. |
+| D6: Customer-facing docs define "agent" as "software actor" early and prefer customer-legible wording before protocol-internal agent terms. | met | Targeted scans found the early definition in README, customer memo, call packet, and start-here doc; changed docs no longer use the old first-screen `central-agent`/`edge-agent` phrasing. |
+| D7: Concrete capability examples and short definitions are present. | met | README and `docs/STACK_PLACEMENT.md` define `remote_assist`, `operator_velocity_control`, `recovery_behavior`, `autonomy_escalation`, `temporary_speed_envelope`, `geofence_sensitive_maneuver`, `crossing_assist`, and `dock_recovery`; customer docs reference the set. |
+| D8: Validation ask is blunt in customer-facing docs, including observe-only/advisory first-target framing. | met | `docs/CUSTOMER_CALL_PACKET.md`, `docs/CUSTOMER_VALIDATION_MEMO.md`, and `docs/START_HERE_FOR_VALIDATION.md` state "We are not asking whether you would buy this today" and include the observe-only/advisory first validation target. |
+| D9: No production-safety or production-security overclaims are introduced. | met | Claim scan over changed validation docs found no `production ready`, `guaranteed safe`, `secure by default`, `carrier-grade`, `real-time guaranteed`, `formal safety system`, `field-proven safety`, or `network guarantees`; remaining `certified safety` hits are conservative non-claim/boundary statements. |
+| D10: Required validation commands pass or any unsupported command is clearly reported. | met | System `python -m compileall src tests` passed. Bare `pytest`, `python tests/evals/eval_runner.py`, and `python -m rclp_agents.demo_remote_assist` were unsupported in the global shell due missing pytest/PyYAML/package import, then the local `.venv` validation passed: compileall, 246 pytest tests, 33/33 evals, demo, Ruff, cargo fmt, cargo clippy, and cargo test. |
+
+Changed files:
+
+- `README.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/CUSTOMER_CALL_PACKET.md`
+- `docs/CUSTOMER_VALIDATION_MEMO.md`
+- `docs/DEMO_SCRIPT.md`
+- `docs/DEMO_WALKTHROUGH.md`
+- `docs/START_HERE_FOR_VALIDATION.md`
+- `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md`
+- `docs/STACK_PLACEMENT.md`
+- `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md`
+
+Review notes:
+
+- Local assembly spec-conformance review classified D1-D10 as met after
+  cleanup.
+- Review cleanup replaced remaining later customer-facing
+  `central-agent`/`edge-agent` phrasing in changed docs and removed exact
+  avoid-list phrases from the changed walkthrough while preserving conservative
+  safety-boundary language.
+- Multi-agent tooling is available, but its active rule forbids spawning
+  subagents unless the user explicitly asks for subagents/delegation. Assembly
+  spec-conformance review was therefore completed locally and recorded here.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute were launched,
+  stopped, resized, deleted, or otherwise mutated.
+
+Evidence:
+
+- `python -m compileall src tests` passed with the system Python.
+- Bare `pytest` was not available on PATH (`command not found`).
+- Bare `python tests/evals/eval_runner.py` was not supported because the
+  system Python lacked `yaml`.
+- Bare `python -m rclp_agents.demo_remote_assist` was not supported because the
+  package was not installed into the system Python.
+- `.venv/bin/python -m pip install -e '.[dev]'` installed the local validation
+  environment for this checkout.
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/python -m pytest -q` passed: 246 tests.
+- `.venv/bin/python tests/evals/eval_runner.py` passed: 33 passed, 0 failed,
+  33 total; report written to `tests/evals/reports/latest.json`.
+- `.venv/bin/python -m rclp_agents.demo_remote_assist` passed and produced
+  `POLICY_SATISFIED`, `LEASE_VALID`, `NO_LEASE`,
+  `NETWORK_LATENCY_DEGRADED`, `NETWORK_PROFILE_REVOKE`, `LEASE_REVOKED`,
+  `audit_jsonl`, and `incident_replay_summary`.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format --check .` passed.
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace` passed: 3 Rust unit tests and 47 vector tests.
+- `git diff --check` passed.
+
 ## T13 Demo + Validation Release Package - 2026-06-25
 
 Status: successful

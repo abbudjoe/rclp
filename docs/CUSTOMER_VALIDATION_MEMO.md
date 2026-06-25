@@ -6,7 +6,12 @@ keeps the longer validation questions and framing.
 ## One-Liner
 
 RCLP is an open protocol MVP for short-lived capability leases between
-central/fleet agents and robot-local edge agents operating robots.
+central software actors and robot-local edge authority services that mediate
+selected robot capabilities.
+
+In this repo, "agent" means a software actor. It may be a fleet service,
+autonomy module, remote-assist service, operator-session controller, or AI
+agent. It does not imply an LLM, chatbot, or fully autonomous fleet manager.
 
 ## Problem Statement
 
@@ -17,10 +22,11 @@ right now, under current mission, geofence, network, and fallback conditions.
 
 ## What The MVP Proves
 
-- A central agent can request a scoped physical capability instead of sending a
-  raw high-authority command.
-- A robot-local edge path can evaluate local context and policy before issuing
-  authority.
+- A fleet service, autonomy module, remote-assist service,
+  operator-session controller, or other central software actor can request
+  scoped authority instead of sending a raw high-authority command.
+- A robot-local edge authority service can evaluate local context and policy
+  before issuing authority.
 - A short-lived signed lease can gate command execution.
 - Degraded or unsuitable network state can deny, degrade, or revoke authority.
 - Missing, stale, invalid, mismatched, expired, or revoked leases are rejected.
@@ -28,9 +34,20 @@ right now, under current mission, geofence, network, and fallback conditions.
 
 ## Feedback Being Sought
 
-We are seeking technical validation of whether this authority primitive maps to
-real robotics workflows, especially remote assist, autonomy escalation,
-incident reconstruction, and software-agent permissioning.
+We are not asking whether you would buy this today.
+
+We are asking:
+
+- whether this authority boundary exists in your stack
+- where it would live
+- which capabilities would require scoped authority
+- whether observe-only mode would be useful
+- what evidence would make this worth a pilot
+- what existing systems this would conflict with or complement
+
+The first validation target is not production enforcement. It is whether an
+observe-only or advisory authority layer would produce useful audit, denial,
+degradation, or integration evidence in real robot operations.
 
 ## Explicit Non-Claims
 
@@ -47,7 +64,10 @@ incident reconstruction, and software-agent permissioning.
 1. Where does authority currently live between your fleet/control systems and
    robot-local execution?
 2. Which capabilities would you consider high-authority enough to require a
-   local lease or gate?
+   local lease or gate, such as `remote_assist`,
+   `operator_velocity_control`, `recovery_behavior`,
+   `autonomy_escalation`, `temporary_speed_envelope`,
+   `geofence_sensitive_maneuver`, `crossing_assist`, or `dock_recovery`?
 3. Do you already condition remote assist or autonomy escalation on network
    state?
 4. What robot-local state must be checked before authority can pass?
@@ -57,7 +77,7 @@ incident reconstruction, and software-agent permissioning.
 7. Would an observe-only or advisory mode be useful before command gating?
 8. Which existing systems would RCLP need to compose with first: ROS 2,
    VDA5050, Open-RMF, MCP, A2A, or a proprietary stack?
-9. What would make an edge-side command gate unacceptable operationally?
+9. What would make a robot-local command gate unacceptable operationally?
 10. What production hardening would be mandatory before a pilot?
 11. What evidence would convince your platform or safety engineering team that
     the authority primitive is worth deeper evaluation?
