@@ -1,5 +1,319 @@
 # Assembly Ledger
 
+## S1 Fresh-clone Reproducibility Review Rerun 2 - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: perform the S1 fresh-clone reproducibility review using
+  `assembly`.
+- Required report:
+  `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+- `AGENTS.md`
+- Required repo doctrine and reviewer-facing docs under `docs/`
+
+Preflight note:
+
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this review, and none will be launched, stopped, resized, deleted, or
+  otherwise mutated.
+
+Target contract:
+
+Act as an external reviewer and determine whether a skeptical
+robotics/platform engineer can clone the repo, understand the RCLP MVP, run the
+tests, run the evals, run the demo, and understand what the project proves for
+controlled technical validation calls after the S1 follow-up fixes.
+
+Success criterion:
+
+The required report is refreshed with honest command results, the controlled
+validation scope remains clear, no production-readiness claim is introduced,
+subagent spec-conformance review is clean, and local validation evidence passes.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required docs, local doctrine, and repo surfaces are read or inspected. | met | Read `AGENTS.md`, `README.md`, `docs/RELEASE_READINESS.md`, `docs/DEMO_SCRIPT.md`, `docs/EVALS.md`, `docs/SAFETY_BOUNDARY.md`, `docs/COMMERCIAL_BOUNDARY.md`, and required doctrine files; inspected `src/`, `tests/`, `tests/evals/`, `crates/`, `.github/workflows/`, scripts, and package metadata. |
+| D2: Supported prompt commands and documented setup-path commands are run without concealing failures. | met | Bare prompt commands and documented venv/script equivalents were run; bare `pytest`, bare eval runner, and bare demo command failed outside the activated environment, while documented venv/script paths passed. |
+| D3: Report answers the seven S1 evaluation questions and uses the requested structure. | met | The report uses the requested S1 structure, records the setup, bare-command, venv/script, Rust, packaged-validation, demo, and hygiene outcomes, and answers the README, quickstart, demo, deterministic eval, hidden dependency, claim-support, and reviewer-comfort questions. |
+| D4: Spec-conformance review is clean. | met | Faraday review found the report itself sound and the only initial finding was stale ledger closeout status. The ledger was updated; Faraday re-review returned no findings and the reviewer was closed. |
+| D5: Final hygiene and validation checks pass. | met | `git diff --check` passed; `./scripts/run_validation_checks.sh` passed with 246 pytest tests, 33/33 eval scenarios, Ruff, Rust fmt/clippy, 3 Rust unit tests, and 47 Rust vector tests; hard-deny packaged demo marker scan passed. |
+
+Changed files:
+
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+
+Evidence collected so far:
+
+- `git status --short` was clean before this review updated the ledger/report.
+- `python -m compileall src tests` passed.
+- Bare `pytest` failed outside an activated venv: command not found.
+- Bare `python tests/evals/eval_runner.py` failed outside the venv with
+  `ModuleNotFoundError: No module named 'yaml'`.
+- Bare `python -m rclp_agents.demo_remote_assist` failed outside the venv with
+  `ModuleNotFoundError: No module named 'rclp_agents'`.
+- `python -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'`
+  passed against the existing ignored venv.
+- `.venv/bin/python -m pytest` passed with 246 tests.
+- `.venv/bin/python tests/evals/eval_runner.py` passed with 33/33 eval
+  scenarios and wrote the ignored generated report.
+- `.venv/bin/python -m rclp_agents.demo_remote_assist` passed a marker scan for
+  allow, no-lease deny, degrade, revoke, audit, and replay sections.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D
+  warnings`, and `cargo test --workspace` passed; Cargo briefly waited on
+  normal local file locks while clippy/test ran.
+- `./scripts/run_validation_checks.sh` passed with 246 pytest tests, 33/33 eval
+  scenarios, Ruff, Rust fmt/clippy, 3 Rust unit tests, and 47 Rust vector
+  tests.
+- `./scripts/run_validation_demo.sh --network-profile uplink_bad` passed a
+  marker scan for `POLICY_SATISFIED`, `LEASE_VALID`, `NO_LEASE`,
+  `NETWORK_UPLINK_TOO_LOW`, `NETWORK_PROFILE_REVOKE`, `LEASE_REVOKED`,
+  `audit_jsonl`, and `incident_replay_summary`.
+- `git ls-files --others --exclude-standard` found no untracked required files.
+- Targeted credential/local-path scan found only historical assembly-ledger
+  evidence and a Rust secret-redaction ledger note, not current production
+  credentials or hidden required files.
+- Faraday review found D1-D3 met and the report sound; the only valid finding
+  was stale ledger closeout status for D4/D5.
+- Post-ledger-fix `git diff --check` passed.
+- Post-ledger-fix hard-deny packaged demo marker scan passed.
+- Faraday re-review returned no findings at `2026-06-25T16:19:13Z`; reviewer
+  classified D1-D5 as met/clean and was closed.
+
+## S1 Non-blocking Improvement Implementation - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: implement the non-blocking improvements from the S1
+  fresh-clone reproducibility review using `assembly`.
+- Source report:
+  `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+
+Preflight note:
+
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this follow-up, and none will be launched, stopped, resized, deleted, or
+  otherwise mutated.
+- The public security-channel improvement will be implemented as repository
+  policy/documentation. This pass will not mutate GitHub repository settings.
+
+Target contract:
+
+Resolve the S1 non-blocking reviewer polish items without changing protocol
+behavior: make public-launch security reporting concrete, reduce bare-shell
+quickstart friction, add CI coverage for the demo smoke, and keep controlled
+validation boundaries visible for future docs.
+
+Success criterion:
+
+The non-blocking improvements are implemented in reviewer-facing docs and CI,
+the report is updated to show the follow-up outcome, local validation still
+passes, subagent spec-conformance review is clean, and no production-readiness
+claim is introduced.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Security policy gives a concrete public-launch vulnerability reporting path without claiming production readiness. | met | `SECURITY.md` now names GitHub private vulnerability reporting for `abbudjoe/rclp`, links the private advisory intake, and requires a monitored email if repository-hosted private reporting is unavailable. |
+| D2: README quickstart includes `python -m pytest` and `.venv/bin/python ...` variants next to the local commands. | met | `README.md` now uses `python -m pytest`, states `pytest` is valid after activation, and includes venv-qualified command equivalents. |
+| D3: CI includes a deterministic demo smoke check beyond tests/evals. | met | `.github/workflows/ci.yml` now runs `python -m rclp_agents.demo_remote_assist --network-profile uplink_bad` and greps expected allow, deny, revoke, audit, and replay markers. |
+| D4: Controlled-validation boundaries remain prominent for future docs, covering Rust, ROS 2, Isaac Sim, and hosted platform scope. | met | `README.md` now includes a reviewer boundary checklist for Rust verifier status, ROS 2/Isaac Sim scope, hosted-platform exclusions, and controlled-validation wording. |
+| D5: S1 report reflects that the non-blocking improvements have been implemented or converted to public-launch gates. | met | `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md` now lists the non-blocking improvements as implemented follow-up items and keeps the public-launch security setting as a launch gate. |
+| D6: Smoke tests, subagent review, and post-review validation pass. | met | `git diff --check`, `tests/test_demo_remote_assist.py`, CI-style demo marker smoke, and two `./scripts/run_validation_checks.sh` runs passed. Halley review found one stale CI provenance sentence, it was fixed, and Halley re-review returned no findings. |
+
+Changed files:
+
+- `.github/workflows/ci.yml`
+- `README.md`
+- `SECURITY.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+
+Evidence collected so far:
+
+- `git diff --check` passed.
+- `.venv/bin/python -m pytest tests/test_demo_remote_assist.py` passed with 2
+  tests.
+- CI-style demo marker smoke passed with
+  `.venv/bin/python -m rclp_agents.demo_remote_assist --network-profile
+  uplink_bad` and grep checks for `POLICY_SATISFIED`, `LEASE_VALID`,
+  `NO_LEASE`, `NETWORK_UPLINK_TOO_LOW`, `NETWORK_PROFILE_REVOKE`,
+  `LEASE_REVOKED`, `audit_jsonl`, and `incident_replay_summary`.
+- Initial Halley review classified D1-D4 as met, D5 and D6 as partial, and
+  found one stale S1 report sentence claiming demo execution was not covered by
+  CI.
+- The stale CI provenance sentence was fixed to state that Python CI covers
+  compileall, `python -m pytest`, deterministic evals, and the demo marker
+  smoke; Rust CI covers Rust fmt, clippy, and tests; Ruff remains covered by
+  the local packaged validation script.
+- Post-fix `./scripts/run_validation_checks.sh` passed: 246 pytest tests,
+  33/33 eval scenarios, Ruff, Rust fmt/clippy, 3 Rust unit tests, and 47 Rust
+  vector tests.
+- Halley re-review returned no findings and the reviewer thread was closed.
+
+## S1 Fresh-clone Reproducibility Review Rerun - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: perform the S1 fresh-clone reproducibility review using
+  `assembly`.
+- Required report:
+  `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+- `AGENTS.md`
+- Required repo doctrine and reviewer-facing docs under `docs/`
+
+Preflight note:
+
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this review, and none will be launched, stopped, resized, deleted, or
+  otherwise mutated.
+
+Target contract:
+
+Act as an external reviewer and determine whether a skeptical
+robotics/platform engineer can clone the repo, understand the RCLP MVP, run the
+tests, run the evals, run the demo, and understand what the project proves for
+controlled technical validation calls.
+
+Success criterion:
+
+The required report is updated with honest command results, no production
+readiness claims, and clear answers to the S1 reproducibility questions.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required docs and repo surfaces are read or inspected. | met | Read `AGENTS.md`, `README.md`, `docs/RELEASE_READINESS.md`, `docs/DEMO_SCRIPT.md`, `docs/EVALS.md`, `docs/SAFETY_BOUNDARY.md`, `docs/COMMERCIAL_BOUNDARY.md`; inspected `src/`, `tests/`, `tests/evals/`, `crates/`, `.github/workflows/`, scripts, and package metadata. |
+| D2: Supported Python, eval, demo, Rust, and packaged validation commands are run without concealing failures. | met | Bare prompt commands and venv/script equivalents were run; bare `pytest`, bare eval runner, and bare demo command failed outside the activated environment, while documented venv/script paths passed. |
+| D3: Report answers the seven S1 evaluation questions and uses the requested structure. | met | The report uses the requested S1 structure, records the setup, bare-command, venv/script, Rust, and hygiene command outcomes, and answers the README, quickstart, demo, deterministic eval, hidden dependency, claim-support, and reviewer-comfort questions. |
+| D4: Spec-conformance review is clean. | met | Initial Mencius review found two valid findings: ledger statuses were stale and setup evidence needed to mention the venv/install commands or existing venv. Both were fixed; Mencius re-review returned no findings. |
+| D5: Final hygiene check passes. | met | `git diff --check` passed and post-fix `./scripts/run_validation_checks.sh` passed with 246 pytest tests, 33/33 evals, Ruff, Rust fmt/clippy, 3 Rust unit tests, and 47 Rust vector tests. |
+
+Changed files:
+
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+
+Evidence collected so far:
+
+- `python -m compileall src tests` passed.
+- `python -m venv .venv` passed when rerun against the existing ignored local
+  venv.
+- `.venv/bin/python -m pip install -e '.[dev]'` passed, rebuilt the editable
+  package, and found declared runtime/dev dependencies already satisfied.
+- `pytest` failed outside an activated environment: command not found.
+- `.venv/bin/python -m pytest` passed with 246 tests.
+- `python tests/evals/eval_runner.py` failed outside the venv with
+  `ModuleNotFoundError: No module named 'yaml'`.
+- `.venv/bin/python tests/evals/eval_runner.py` passed with 33/33 eval
+  scenarios.
+- `python -m rclp_agents.demo_remote_assist` failed outside the venv with
+  `ModuleNotFoundError: No module named 'rclp_agents'`.
+- `.venv/bin/python -m rclp_agents.demo_remote_assist` passed and showed the
+  allow, deny, degrade, revoke, audit, and replay-summary markers.
+- `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D
+  warnings`, and `cargo test --workspace` passed.
+- `./scripts/run_validation_checks.sh` passed end to end.
+- `./scripts/run_validation_demo.sh --network-profile uplink_bad` passed and
+  showed `NETWORK_UPLINK_TOO_LOW`, `NETWORK_PROFILE_REVOKE`, `LEASE_REVOKED`,
+  `audit_jsonl`, and `incident_replay_summary`.
+- `git status --short` and `git ls-files --others --exclude-standard` were
+  clean before this report update.
+- Initial Mencius review found the report structure, production-scope language,
+  and bare-command failure disclosure conformant, with findings limited to
+  stale ledger status and under-recorded setup evidence.
+- `git diff --check` passed after the report and ledger updates.
+- Post-fix `./scripts/run_validation_checks.sh` passed: 246 pytest tests,
+  33/33 eval scenarios, Ruff, Rust fmt/clippy, 3 Rust unit tests, and 47 Rust
+  vector tests.
+- Mencius re-review returned no findings and confirmed the report satisfies the
+  S1 contract aside from this final mechanical ledger closeout.
+
+## S1 Fresh-clone Review Follow-up Fixes - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all non-blocking improvements and implement all
+  recommended fixes from the S1 fresh-clone reproducibility review using
+  `assembly`.
+- `docs/reviews/codex_simulated_review/S1_fresh_clone_reproducibility.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+
+Preflight note:
+
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this follow-up, and none will be launched, stopped, resized, deleted, or
+  otherwise mutated.
+
+Target contract:
+
+Close the reviewer-experience gaps identified by S1 without changing protocol
+behavior: make the demo markers easier to point at, make the packaged
+validation setup expectation explicit, show a representative eval success
+summary, replace the public security-contact TODO with controlled-validation
+reporting guidance, and repeat the Rust/Isaac/ROS 2 boundary where reviewers
+will see it.
+
+Success criterion:
+
+The documentation fixes are present, the security-contact TODO is gone, the
+full local validation path still passes, subagent spec-conformance review is
+clean, and the final response states controlled technical validation scope
+without production-readiness claims.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: README or demo script includes exact demo sections and reason-code markers to point at. | met | `README.md` and `docs/DEMO_SCRIPT.md` now include marker tables for `normal_network_decision`, `command_gate_with_valid_lease`, `command_without_valid_lease`, `impaired_network_decision`, `lease_revocation`, `command_gate_after_network_revocation`, `audit_jsonl`, and `incident_replay_summary`, with `POLICY_SATISFIED`, `LEASE_VALID`, `NO_LEASE`, `NETWORK_LATENCY_DEGRADED`, `NETWORK_UPLINK_TOO_LOW`, `NETWORK_PROFILE_REVOKE`, and `LEASE_REVOKED`. |
+| D2: Packaged validation docs say the editable dev install must run before `run_validation_checks.sh`. | met | `README.md` and `docs/DEMO_SCRIPT.md` now state that the editable dev install should be run first because `run_validation_checks.sh` treats Ruff as part of the local validation gate. |
+| D3: `docs/EVALS.md` includes a concise successful eval summary. | met | `docs/EVALS.md` now includes a representative `RCLP evals: 33 passed, 0 failed, 33 total` summary and states that it is deterministic local reference evidence only. |
+| D4: `SECURITY.md` no longer contains the public security-contact TODO. | met | `SECURITY.md` now directs controlled-validation reports to the private maintainer channel and requires a monitored address or private vulnerability reporting before public launch; targeted `rg` found no old contact TODO. |
+| D5: Rust verifier, Isaac Sim, and ROS 2 boundaries are repeated in reviewer-facing docs. | met | `README.md`, `docs/DEMO_SCRIPT.md`, `docs/EVALS.md`, and `SECURITY.md` describe the Rust verifier as a spike/test-only HMAC surface and repeat that ROS 2 and Isaac Sim are scaffold/proof-plan surfaces, not local proof requirements. |
+| D6: Full local validation passes after documentation fixes. | met | `python -m compileall src tests` passed; `./scripts/run_validation_checks.sh` passed before and after review fixes with 246 pytest tests, 33/33 evals, Ruff, Rust fmt/clippy, and Rust unit/vector tests; `./scripts/run_validation_demo.sh --network-profile uplink_bad` passed and showed `NETWORK_UPLINK_TOO_LOW`, `NETWORK_PROFILE_REVOKE`, `LEASE_REVOKED`, `audit_jsonl`, and `incident_replay_summary`. |
+| D7: Spec-conformance review is clean and ledger is updated with evidence. | met | Noether review found the docs changes met D1-D6 and had one ledger-staleness finding; the ledger was updated to `successful` with D1-D7 marked met and concrete evidence, then Noether re-review reported no remaining findings. |
+
+Changed files:
+
+- `README.md`
+- `SECURITY.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/DEMO_SCRIPT.md`
+- `docs/EVALS.md`
+
+Evidence:
+
+- `rg -n "TODO: replace with project security contact|For controlled validation|Output Markers|Expected successful eval summary|RCLP-DEV-HMAC-SHA256|Isaac Sim execution|ROS 2 runtime delivery" README.md docs/DEMO_SCRIPT.md docs/EVALS.md SECURITY.md` found the new documentation anchors and did not report the old security-contact TODO.
+- `python -m compileall src tests` passed.
+- `./scripts/run_validation_checks.sh` passed: Python 3.14.4, 246 pytest tests, 33/33 deterministic eval scenarios, Ruff check/format, Rust fmt, Rust clippy, and Rust tests.
+- `./scripts/run_validation_demo.sh --network-profile uplink_bad` passed and showed the allow, no-lease deny, hard network deny, revocation, post-revocation deny, fallback, audit JSONL, and replay-summary markers.
+- Post-review `./scripts/run_validation_checks.sh` passed again after the
+  ledger update.
+
+Review notes:
+
+- Noether reviewed the documentation patch for S1 follow-up spec conformance.
+  The review classified D1-D6 as met and found one valid issue: the ledger still
+  had stale in-progress statuses. This update fixes that finding by recording
+  successful status, met DoD items, concrete validation evidence, and the review
+  outcome.
+- Noether re-review reported no remaining findings and classified D1-D7 as met.
+
 ## T13 Demo + Validation Release Package - 2026-06-25
 
 Status: successful

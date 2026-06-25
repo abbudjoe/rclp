@@ -8,11 +8,19 @@ use this repository as a production robot safety system.
 Security reporting contact:
 
 ```text
-TODO: replace with project security contact before public launch.
+For controlled validation, report security issues to the project maintainer
+through the same private channel that provided access to this repository.
 ```
 
-Until a real contact is published, do not disclose sensitive vulnerability
-details in public issues.
+Public repository launch reporting gate:
+
+- Enable GitHub private vulnerability reporting for `abbudjoe/rclp`.
+- Once enabled, use the repository's private advisory intake:
+  `https://github.com/abbudjoe/rclp/security/advisories/new`.
+- If repository-hosted private reporting is unavailable, publish a monitored
+  project security email in this file before public launch.
+
+Do not disclose sensitive vulnerability details in public issues.
 
 ## Current Known Security Limitations
 

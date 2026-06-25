@@ -44,6 +44,7 @@ central agent requests authority
 - production cryptographic trust infrastructure
 - customer willingness to deploy
 - full robot hardware integration
+- ROS 2 runtime delivery or Isaac Sim execution
 - hosted commercial platform
 - fleet management, teleoperation media, or mission scheduling
 
@@ -58,12 +59,29 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
 python -m compileall src tests
-pytest
+python -m pytest
 python tests/evals/eval_runner.py
 python -m rclp_agents.demo_remote_assist
 ```
 
+If your shell does not expose venv console scripts or you prefer not to rely on
+activation, use the venv-qualified equivalents:
+
+```bash
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m compileall src tests
+.venv/bin/python -m pytest
+.venv/bin/python tests/evals/eval_runner.py
+.venv/bin/python -m rclp_agents.demo_remote_assist
+```
+
+`pytest` is also valid after the venv is activated; `python -m pytest` is the
+more shell-independent form.
+
 For the packaged validation path:
+
+Run the editable dev install above first; `run_validation_checks.sh` treats
+Ruff as part of the local validation gate.
 
 ```bash
 ./scripts/run_validation_checks.sh
@@ -86,6 +104,12 @@ cargo test --workspace
 
 Rust prerequisites are the standard stable Rust toolchain with `cargo`,
 `rustfmt`, and `clippy`.
+
+The Rust crate is an edge-verifier spike with offline vectors and test-only
+`RCLP-DEV-HMAC-SHA256`, not production cryptographic infrastructure. The ROS 2
+and Isaac Sim surfaces in this repo are scaffolds and proof plans; the local
+validation path does not require ROS 2, Isaac Sim, cloud credentials, or paid
+compute.
 
 ## Validation Release
 
@@ -128,6 +152,19 @@ Expected stable markers include `POLICY_SATISFIED`, `NO_LEASE`,
 `NETWORK_UPLINK_TOO_LOW` for `--network-profile uplink_bad`,
 `NETWORK_PROFILE_REVOKE`, `LEASE_REVOKED`, `audit_jsonl`, and
 `incident_replay_summary`.
+
+For a live review, point at these demo sections and markers:
+
+| Demo section | What it proves | Expected marker |
+|---|---|---|
+| `normal_network_decision` | normal local context allows a scoped lease | `POLICY_SATISFIED` |
+| `command_gate_with_valid_lease` | command gate accepts only a matching valid lease | `LEASE_VALID` |
+| `command_without_valid_lease` | high-authority command without a lease fails closed | `NO_LEASE` |
+| `impaired_network_decision` | network-state-aware authorization degrades or denies | `NETWORK_LATENCY_DEGRADED` or `NETWORK_UPLINK_TOO_LOW` |
+| `lease_revocation` | degraded local context can revoke prior authority | `NETWORK_PROFILE_REVOKE` |
+| `command_gate_after_network_revocation` | revoked authority cannot be reused | `LEASE_REVOKED` |
+| `audit_jsonl` | authority-changing events are emitted as audit commits | `audit_jsonl` |
+| `incident_replay_summary` | audit replay reconstructs the authority chain | `incident_replay_summary` |
 
 Five-minute validation script: `docs/DEMO_SCRIPT.md`.
 
@@ -185,6 +222,17 @@ The target state for this repository is controlled technical validation calls:
 a skeptical robotics/platform engineer should be able to clone it, understand
 the primitive in under one minute, run the demo, inspect the tests, understand
 the safety boundary, and see exactly what this MVP does and does not prove.
+
+Reviewer boundary checklist for future docs and examples:
+
+- Rust edge verifier status stays a spike with offline vectors and test-only
+  `RCLP-DEV-HMAC-SHA256`, not production cryptographic infrastructure.
+- ROS 2 and Isaac Sim content stays scaffold/proof-plan language unless a
+  runnable integration and matching tests are added.
+- Hosted trust roots, managed policy UI, enterprise accounts, carrier/MVNO
+  integrations, and SLAs stay out of this open protocol repo.
+- Claims stay scoped to controlled technical validation, local deterministic
+  proof, and safety-adjacent authority behavior.
 
 Release readiness notes: `docs/RELEASE_READINESS.md`.
 
