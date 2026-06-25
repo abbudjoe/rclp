@@ -7,6 +7,11 @@ gate. The policy and lease path may run as a reference Python service,
 embedded edge service, or future hardened verifier, but command enforcement
 belongs near the robot-facing command path.
 
+The MVP proves the authority primitive; it does not yet prescribe whether the
+edge gate is packaged as a ROS 2 node, gateway plugin, sidecar process, or
+embedded library. See `docs/DEPLOYMENT_SHAPES.md` for common validation-call
+deployment shapes.
+
 ## What calls it
 
 A fleet service, autonomy module, remote-assist service, operator-session
@@ -74,6 +79,9 @@ Robot autonomy + local safety systems
 
 RCLP does not have to block robot commands on day one.
 
+In observe-only mode, RCLP would record allow/deny/degrade decisions without
+blocking commands.
+
 Adoption path:
 
 1. observe-only audit
@@ -81,3 +89,12 @@ Adoption path:
 3. soft gating for non-critical capabilities
 4. hard gating for selected high-authority capabilities
 5. production-hardened edge enforcement after customer-specific safety review
+
+## Policy ownership
+
+In a production program, policy ownership would likely sit with the team that
+already owns robot operational risk: safety/reliability/autonomy/platform, not
+with the protocol itself.
+
+Use `docs/POLICY_OWNERSHIP.md` to discuss who defines, approves, deploys,
+monitors, and reviews capability policies.

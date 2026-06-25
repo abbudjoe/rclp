@@ -28,7 +28,8 @@ right now, under current mission, geofence, network, and fallback conditions.
 - A robot-local edge authority service can evaluate local context and policy
   before issuing authority.
 - A short-lived signed lease can gate command execution.
-- Degraded or unsuitable network state can deny, degrade, or revoke authority.
+- Degraded or unsuitable observed network state used as an authorization input
+  can deny, degrade, or revoke authority.
 - Missing, stale, invalid, mismatched, expired, or revoked leases are rejected.
 - Audit replay can reconstruct the authority chain.
 
@@ -48,6 +49,13 @@ We are asking:
 The first validation target is not production enforcement. It is whether an
 observe-only or advisory authority layer would produce useful audit, denial,
 degradation, or integration evidence in real robot operations.
+
+In observe-only mode, RCLP would record allow/deny/degrade decisions without
+blocking commands.
+
+In a production program, policy ownership would likely sit with the team that
+already owns robot operational risk: safety/reliability/autonomy/platform, not
+with the protocol itself.
 
 ## Explicit Non-Claims
 

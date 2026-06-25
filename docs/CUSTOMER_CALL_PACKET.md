@@ -12,10 +12,10 @@ agent. It does not imply an LLM, chatbot, or fully autonomous fleet manager.
 
 ## Problem Statement
 
-As robot fleets add central AI agents, edge AI, remote assist, and autonomy
-escalation, teams need a way to decide and prove when authority is permitted to
-pass from a central actor to a robot-local runtime under explicit policy and
-local conditions.
+As robot fleets add remote assist, edge autonomy, fleet software, and
+operator-session controllers, teams need a way to decide and prove when
+authority is permitted to pass from a central software actor to a robot-local
+runtime under explicit policy and local conditions.
 
 Many stacks already move missions, telemetry, commands, tools, and operator
 media. RCLP focuses on a narrower authority question:
@@ -31,7 +31,8 @@ media. RCLP focuses on a narrower authority question:
 - robot-local edge authority-service verification
 - signed/scoped/expiring lease semantics
 - denial/revocation on stale, unauthorized, unsuitable, or context-mismatched authority
-- decisions that use observed network state and geofence state as inputs
+- decisions that use observed network state as an authorization input, along
+  with geofence state
 - local command-gating semantics
 - audit replay
 - adversarial eval coverage
@@ -81,10 +82,22 @@ The first validation target is not production enforcement. It is whether an
 observe-only or advisory authority layer would produce useful audit, denial,
 degradation, or integration evidence in real robot operations.
 
+In observe-only mode, RCLP would record allow/deny/degrade decisions without
+blocking commands.
+
 Example capabilities to test against: `remote_assist`,
 `operator_velocity_control`, `recovery_behavior`, `autonomy_escalation`,
 `temporary_speed_envelope`, `geofence_sensitive_maneuver`, `crossing_assist`,
 and `dock_recovery`.
+
+Supporting docs for common objections:
+
+- `docs/DEPLOYMENT_SHAPES.md` maps RCLP to ROS 2 robots, proprietary robot
+  gateways, teleop services, fleet managers, and autonomy modules.
+- `docs/OBSERVE_ONLY_SAMPLE_REPORT.md` shows what shadow-mode audit evidence
+  could look like without changing robot behavior.
+- `docs/POLICY_OWNERSHIP.md` names who would define, approve, deploy, and
+  review policies in a real fleet organization.
 
 ## Suggested Close
 

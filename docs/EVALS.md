@@ -19,7 +19,8 @@ post-review security regressions:
 - valid remote-assist authority
 - missing, expired, not-yet-valid, revoked, replayed, malformed, and
   bad-signature authority
-- wrong central agent, edge agent, robot, mission, and capability
+- wrong central software actor, robot-local edge authority gate, robot,
+  mission, and capability
 - geofence violation, high latency, high packet loss, and partitioned network
 - stale command after expiry and conflicting local state
 - missing or stale current edge state
@@ -80,8 +81,8 @@ audit fields, errors, and notes. The report timestamp is generation metadata;
 scenario decision inputs use `now_unix_ms` from each YAML file.
 
 A passing report means the local reference implementation satisfied the eval
-expectations. It does not mean production safety, real network guarantees, or
-field readiness.
+expectations. It does not mean production safety, real connectivity assurance,
+or field readiness.
 
 ## Audit Completeness
 

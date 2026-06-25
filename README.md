@@ -121,7 +121,10 @@ Related validation docs:
 - `docs/VALIDATION_RELEASE_NOTES.md`
 - `docs/CUSTOMER_CALL_PACKET.md`
 - `docs/STACK_PLACEMENT.md`
+- `docs/DEPLOYMENT_SHAPES.md`
 - `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md`
+- `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`
+- `docs/POLICY_OWNERSHIP.md`
 - `docs/DEMO_WALKTHROUGH.md`
 - `docs/EVALS.md`
 - `docs/SAFETY_BOUNDARY.md`
@@ -164,6 +167,12 @@ Five-minute validation script: `docs/DEMO_SCRIPT.md`.
 Detailed walkthrough: `docs/DEMO_WALKTHROUGH.md`.
 
 Customer call packet: `docs/CUSTOMER_CALL_PACKET.md`.
+
+Deployment-shape mapping: `docs/DEPLOYMENT_SHAPES.md`.
+
+Observe-only sample report: `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`.
+
+Policy ownership guidance: `docs/POLICY_OWNERSHIP.md`.
 
 ## Repository Layout
 

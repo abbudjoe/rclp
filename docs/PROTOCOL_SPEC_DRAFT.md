@@ -770,7 +770,7 @@ authority lease semantics.
 - Edge enforcement can evaluate cached policy and current local state without
   cloud availability.
 - Network impairment used in MVP tests is simulated.
-- Sim proof is not field-proven safety.
+- Sim proof is not field safety evidence.
 - Policy schemas and conformance tests will evolve before v0.1.
 
 ## Open Questions

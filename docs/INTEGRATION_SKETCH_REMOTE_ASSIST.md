@@ -19,6 +19,13 @@ degrade, revoke, and audit command authority locally.
 RCLP does not replace teleop media transport, operator UI, local autonomy, or
 safety controllers.
 
+The MVP proves the authority primitive; it does not yet prescribe whether the
+edge gate is packaged as a ROS 2 node, gateway plugin, sidecar process, or
+embedded library.
+
+In observe-only mode, RCLP would record allow/deny/degrade decisions without
+blocking commands.
+
 ## Example flow
 
 1. Robot reports uncertainty, blockage, low confidence, or failed recovery.
@@ -30,7 +37,7 @@ safety controllers.
    - requested capability
    - lease time window
    - local/geofence state
-   - observed network state
+   - observed network state used as an authorization input
    - fallback policy
 4. RCLP grants, denies, or degrades.
 5. Robot-local edge authority gate accepts selected commands only while a valid lease exists.
@@ -61,7 +68,7 @@ safety controllers.
 - requested capability
 - lease ID
 - local/geofence state
-- observed network state
+- observed network state used as an authorization input
 - allow/deny/degrade reason
 - fallback declaration
 - revocation or expiry event, if applicable

@@ -11,8 +11,8 @@ cases.
 
 - Requires a scoped, short-lived lease before selected high-authority commands
   can pass through the command gate.
-- Lets the edge agent reject unsafe, stale, invalid, unauthorized, or
-  context-mismatched requests locally.
+- Lets the robot-local edge authority gate reject unsafe, stale, invalid,
+  unauthorized, or context-mismatched requests locally.
 - Treats network state, geofence state, mission state, and fallback policy as
   authorization inputs.
 - Records authority-changing paths in audit events so the chain can be replayed.
@@ -30,7 +30,8 @@ cases.
 
 For high-risk authority, edge enforcement should fail closed when required
 inputs are missing, stale, invalid, unauthorized, or inconsistent. The local
-edge agent must be able to reject a command without calling a cloud service.
+robot-local edge authority gate must be able to reject a command without
+calling a cloud service.
 
 Examples of fail-closed behavior in this MVP:
 
@@ -38,7 +39,7 @@ Examples of fail-closed behavior in this MVP:
 - invalid signature -> reject
 - unknown issuer -> reject
 - expired or stale lease -> reject
-- wrong robot, mission, agent, edge agent, or capability -> reject
+- wrong robot, mission, software actor, edge authority gate, or capability -> reject
 - network or geofence constraints violated -> reject
 - known revocation -> reject
 

@@ -19,20 +19,23 @@ maneuvers.
 
 The protocol asks whether a capability authority request from a central
 software actor should be allowed, denied, degraded, revoked, and audited by a
-robot-local edge authority service using identity, mission, geofence, observed
-network state, lease, and fallback constraints.
+robot-local edge authority gate using identity, mission, geofence, observed
+network state used as an authorization input, lease, and fallback constraints.
 
 ## Recommended read order
 
 1. `README.md` - overview and quickstart
 2. `docs/CUSTOMER_CALL_PACKET.md` - validation framing
 3. `docs/STACK_PLACEMENT.md` - where RCLP fits in a robot stack
-4. `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md` - concrete `remote_assist` workflow
-5. `docs/DEMO_SCRIPT.md` - 5-minute technical demo
-6. `docs/SAFETY_BOUNDARY.md` - what RCLP does and does not claim
-7. `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md` - adjacent protocol comparison
-8. `docs/EVALS.md` - adversarial eval coverage
-9. `docs/COMMERCIAL_BOUNDARY.md` - open protocol vs future commercial platform
+4. `docs/DEPLOYMENT_SHAPES.md` - common "where does this fit?" mappings
+5. `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md` - concrete `remote_assist` workflow
+6. `docs/OBSERVE_ONLY_SAMPLE_REPORT.md` - sample shadow-mode evidence format
+7. `docs/POLICY_OWNERSHIP.md` - who defines, approves, deploys, and reviews policy
+8. `docs/DEMO_SCRIPT.md` - 5-minute technical demo
+9. `docs/SAFETY_BOUNDARY.md` - what RCLP does and does not claim
+10. `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md` - adjacent protocol comparison
+11. `docs/EVALS.md` - adversarial eval coverage
+12. `docs/COMMERCIAL_BOUNDARY.md` - open protocol vs future commercial platform
 
 ## What feedback we want
 
@@ -50,6 +53,9 @@ We are asking:
 The first validation target is not production enforcement. It is whether an
 observe-only or advisory authority layer would produce useful audit, denial,
 degradation, or integration evidence in real robot operations.
+
+In observe-only mode, RCLP would record allow/deny/degrade decisions without
+blocking commands.
 
 ## What feedback we are not seeking yet
 

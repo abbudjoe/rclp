@@ -89,7 +89,9 @@ The packaged validation commands are:
 
    Use `docs/START_HERE_FOR_VALIDATION.md`,
    `docs/CUSTOMER_CALL_PACKET.md`, `docs/STACK_PLACEMENT.md`,
+   `docs/DEPLOYMENT_SHAPES.md`,
    `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md`,
+   `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`, `docs/POLICY_OWNERSHIP.md`,
    `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md`, and
    `docs/FIRST_CALL_TARGET_PROFILE.md` for follow-up.
 
