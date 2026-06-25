@@ -1,5 +1,70 @@
 # Assembly Ledger
 
+## S5 Customer-call Simulation Panel - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: `S5 — Customer-call Simulation Panel`.
+- User request to use `assembly`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `README.md`
+- `docs/CUSTOMER_VALIDATION_MEMO.md`
+- `docs/DEMO_SCRIPT.md`
+- `docs/EVALS.md`
+- `docs/SAFETY_BOUNDARY.md`
+- `docs/COMMERCIAL_BOUNDARY.md`
+- `docs/ADOPTION_LADDER.md`
+
+Preflight note:
+
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute were required,
+  and none were launched, stopped, resized, deleted, or otherwise mutated.
+- The requested output is a skeptical report only; no code changes were made.
+- A subagent spec review was not spawned because the available multi-agent tool
+  requires an explicit user request for subagents, delegation, or parallel
+  agent work. Main-agent spec conformance was checked mechanically against the
+  requested report fields.
+
+Target contract:
+
+Create a skeptical customer-call simulation report for five likely target
+personas, grounded in the RCLP validation, safety, commercial, and adoption
+boundaries, and write it to
+`docs/reviews/codex_simulated_review/S5_customer_call_simulation.md`.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required customer-validation and boundary docs were read before writing. | met | Read `README.md`, customer validation memo, demo script, evals, safety boundary, commercial boundary, adoption ladder, and required repo doctrine/spec/test docs before drafting. |
+| D2: Report exists at the requested path with the requested top-level structure. | met | Added `docs/reviews/codex_simulated_review/S5_customer_call_simulation.md` with Overall read, five persona sections, strongest/weakest segment, best validation questions, questions to avoid, and recommended call framing. |
+| D3: Each persona answers all requested customer-validation fields. | met | Mechanical `rg` pass confirmed all five persona sections include current stack, pain, objections, valuable/unnecessary parts, observe-only, enforcement, budget, proof, and signal strength fields. |
+| D4: Each persona includes the first-15-minutes call simulation fields. | met | Mechanical `rg` pass confirmed founder opening, customer reaction, customer questions, founder clarifying questions, likely objections, and best follow-up ask for all five personas. |
+| D5: Report is skeptical and respects RCLP boundaries. | met | Report emphasizes observe-only first, existing customer systems, integration/budget objections, non-production proof limits, safety-adjacent wording, and mature-platform duplication risk. |
+| D6: No code was modified. | met | Changed files are documentation only: the new S5 report and this ledger entry. |
+| D7: Validation and formatting checks completed. | met | `.venv/bin/python -m compileall src tests`, `.venv/bin/python -m pytest`, `.venv/bin/python tests/evals/eval_runner.py`, `.venv/bin/ruff check .`, `.venv/bin/ruff format --check .`, and `git diff --check` passed. |
+
+Changed files:
+
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/reviews/codex_simulated_review/S5_customer_call_simulation.md`
+
+Evidence:
+
+- `python -m compileall src tests` passed with the active interpreter.
+- Bare `pytest` and `python -m pytest` were unavailable before dependency
+  setup because the shell default Python lacked pytest.
+- Created ignored `.venv` with local Python 3.11 and installed `.[dev]`.
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/python -m pytest` passed: 246 tests.
+- `.venv/bin/python tests/evals/eval_runner.py` passed: 33 passed, 0 failed.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format --check .` passed: 24 files already formatted.
+- `git diff --check` passed.
+
 ## S3 Customer-legibility Squash Merge To Main - 2026-06-25
 
 Status: successful
