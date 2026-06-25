@@ -40,6 +40,12 @@ RCLP does not define:
   revokes authority from explicit inputs.
 - **Audit sink:** append-only record of protocol events.
 
+Terminology note: customer-facing docs describe the edge-agent role as a
+robot-local authority service when discussing policy and lease decisioning, and
+as a robot-local authority gate when discussing command-path enforcement. The
+protocol field names remain `central agent` and `edge agent` for this MVP
+draft.
+
 ## Common Message Requirements
 
 Every top-level protocol message defined in this section MUST carry:

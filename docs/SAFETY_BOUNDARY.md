@@ -28,10 +28,10 @@ cases.
 
 ## Robot-local Enforcement
 
-For high-risk authority, edge enforcement should fail closed when required
-inputs are missing, stale, invalid, unauthorized, or inconsistent. The
-robot-local authority gate must be able to reject a command without calling a
-cloud service.
+For high-risk authority, robot-local authority gate enforcement should fail
+closed when required inputs are missing, stale, invalid, unauthorized, or
+inconsistent. The robot-local authority gate must be able to reject a command
+without calling a cloud service.
 
 Examples of fail-closed behavior in this MVP:
 

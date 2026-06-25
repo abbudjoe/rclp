@@ -188,7 +188,7 @@ Customer call packet: `docs/CUSTOMER_CALL_PACKET.md`.
 
 Deployment-shape mapping: `docs/DEPLOYMENT_SHAPES.md`.
 
-Observe-only sample report, illustrative and not generated from field data:
+Observe-only illustrative sample, not generated from field data:
 `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`.
 
 Policy ownership guidance: `docs/POLICY_OWNERSHIP.md`.

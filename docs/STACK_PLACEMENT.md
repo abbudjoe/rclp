@@ -88,7 +88,8 @@ Adoption path:
 2. advisory allow/deny/degrade decisions
 3. soft gating for non-critical capabilities
 4. hard gating for selected high-authority capabilities
-5. production-hardened edge enforcement after customer-specific safety review
+5. production-hardened robot-local authority gate enforcement after
+   customer-specific safety review
 
 ## Policy ownership
 
