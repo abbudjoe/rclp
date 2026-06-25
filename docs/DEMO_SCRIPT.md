@@ -13,6 +13,13 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'
 ```
 
+The packaged validation commands are:
+
+```bash
+./scripts/run_validation_checks.sh
+./scripts/run_validation_demo.sh
+```
+
 ## Flow
 
 1. Explain central-agent <-> edge-agent authority negotiation.
@@ -25,20 +32,13 @@ python -m pip install -e '.[dev]'
 2. Run tests.
 
    ```bash
-   python -m compileall src tests
-   pytest
-   ```
-
-   If Rust is installed:
-
-   ```bash
-   cargo test --workspace
+   ./scripts/run_validation_checks.sh
    ```
 
 3. Run the local demo.
 
    ```bash
-   python -m rclp_agents.demo_remote_assist
+   ./scripts/run_validation_demo.sh
    ```
 
 4. Show the allow path.
@@ -56,7 +56,7 @@ python -m pip install -e '.[dev]'
    Run a hard-deny profile:
 
    ```bash
-   python -m rclp_agents.demo_remote_assist --network-profile uplink_bad
+   ./scripts/run_validation_demo.sh --network-profile uplink_bad
    ```
 
    Expected impaired reason code: `NETWORK_UPLINK_TOO_LOW`.
@@ -80,6 +80,12 @@ python -m pip install -e '.[dev]'
    safety, real cellular behavior, carrier APIs, production cryptographic trust
    infrastructure, customer willingness to deploy, full robot hardware
    integration, or hosted commercial-platform behavior.
+
+9. Point to the validation package.
+
+   Use `docs/VALIDATION_RELEASE_NOTES.md`, `docs/CUSTOMER_CALL_PACKET.md`,
+   `docs/TECHNICAL_FAQ.md`, `docs/WHY_NOT_EXISTING_PROTOCOLS.md`, and
+   `docs/FIRST_CALL_TARGET_PROFILE.md` for follow-up.
 
 ## Closing Statement
 

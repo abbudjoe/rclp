@@ -1,5 +1,8 @@
 # Customer Validation Memo
 
+For the concise sendable packet, use `docs/CUSTOMER_CALL_PACKET.md`. This memo
+keeps the longer validation questions and framing.
+
 ## One-Liner
 
 RCLP is an open protocol MVP for short-lived capability leases between

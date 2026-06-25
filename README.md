@@ -63,6 +63,13 @@ python tests/evals/eval_runner.py
 python -m rclp_agents.demo_remote_assist
 ```
 
+For the packaged validation path:
+
+```bash
+./scripts/run_validation_checks.sh
+./scripts/run_validation_demo.sh
+```
+
 Run a hard-deny deterministic network profile:
 
 ```bash
@@ -79,6 +86,27 @@ cargo test --workspace
 
 Rust prerequisites are the standard stable Rust toolchain with `cargo`,
 `rustfmt`, and `clippy`.
+
+## Validation Release
+
+`v0.1-validation` is the controlled technical validation package for the MVP.
+It is intended for robotics/platform/fleet-operator calls, not production robot
+deployments.
+
+Start here:
+
+- `docs/VALIDATION_RELEASE_NOTES.md`
+- `docs/CUSTOMER_CALL_PACKET.md`
+- `docs/DEMO_WALKTHROUGH.md`
+- `docs/EVALS.md`
+- `docs/WHY_NOT_EXISTING_PROTOCOLS.md`
+
+Run:
+
+```bash
+./scripts/run_validation_checks.sh
+./scripts/run_validation_demo.sh
+```
 
 ## Demo Path
 
@@ -104,6 +132,8 @@ Expected stable markers include `POLICY_SATISFIED`, `NO_LEASE`,
 Five-minute validation script: `docs/DEMO_SCRIPT.md`.
 
 Detailed walkthrough: `docs/DEMO_WALKTHROUGH.md`.
+
+Customer call packet: `docs/CUSTOMER_CALL_PACKET.md`.
 
 ## Repository Layout
 
@@ -158,6 +188,8 @@ the safety boundary, and see exactly what this MVP does and does not prove.
 
 Release readiness notes: `docs/RELEASE_READINESS.md`.
 
+Validation release notes: `docs/VALIDATION_RELEASE_NOTES.md`.
+
 Conformance checklist: `docs/CONFORMANCE_CHECKLIST.md`.
 
 Rust verifier notes: `docs/RUST_EDGE_VERIFIER.md`.
@@ -168,5 +200,11 @@ Post-T12 sequence plan: `docs/POST_T12_SEQUENCE_PLAN.md`.
 
 Customer-call readiness checklist:
 `docs/CUSTOMER_CALL_READINESS_CHECKLIST.md`.
+
+Technical FAQ: `docs/TECHNICAL_FAQ.md`.
+
+First-call target profile: `docs/FIRST_CALL_TARGET_PROFILE.md`.
+
+Comparison with adjacent protocols: `docs/WHY_NOT_EXISTING_PROTOCOLS.md`.
 
 Next thread map: `docs/NEXT_THREAD_MAP.md`.

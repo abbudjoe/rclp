@@ -1,11 +1,16 @@
 # Demo Walkthrough
 
+Use this as a five-minute live-call script for `v0.1-validation`.
+
 The local demo proves the `remote_assist` authority primitive with deterministic
 fixtures. It uses local non-production Ed25519 keys, in-process network
 profiles, a policy YAML file, a signed request, a signed lease, an edge command
 gate, fallback declarations, audit JSONL, and replay summary.
 
-## Run
+No ROS 2, Isaac Sim, root privileges, cloud account, external network calls, or
+robot hardware are required.
+
+## Setup Command
 
 From a fresh checkout with Python 3.11 or newer:
 
@@ -13,20 +18,67 @@ From a fresh checkout with Python 3.11 or newer:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
-python -m pytest
+```
+
+If Rust is installed, the validation script also exercises the Rust verifier
+workspace.
+
+## Validation Command
+
+Run the package validation command:
+
+```bash
+./scripts/run_validation_checks.sh
+```
+
+Expected result:
+
+- Python compile succeeds.
+- `pytest` passes.
+- deterministic eval runner reports all scenarios passing.
+- Ruff passes when dev dependencies are installed.
+- Rust fmt, clippy, and tests pass when Cargo is available.
+
+The command does not require network, ROS 2, Isaac Sim, cloud credentials, or
+robot hardware.
+
+## Demo Command
+
+Run:
+
+```bash
+./scripts/run_validation_demo.sh
+```
+
+The script runs:
+
+```bash
 python -m rclp_agents.demo_remote_assist
 ```
 
-Run a hard-deny network profile:
+You can also run a hard-deny profile:
 
 ```bash
-python -m rclp_agents.demo_remote_assist --network-profile uplink_bad
+./scripts/run_validation_demo.sh --network-profile uplink_bad
 ```
 
-No ROS 2, Isaac Sim, root privileges, cloud account, or external network calls
-are required for the local demo.
+## Expected Story
 
-## Expected Sections
+Tell the story in this order:
+
+1. The central/fleet agent requests `remote_assist` authority.
+2. The edge-side policy path evaluates identity, mission, robot, geofence,
+   network state, replay, revocation, lease scope, and fallback policy.
+3. Normal local state grants a short-lived scoped lease.
+4. The command gate allows one matching command with the valid lease.
+5. A command without a valid lease is rejected.
+6. Network degradation causes degradation or revocation.
+7. Later use of revoked authority is rejected.
+8. Audit replay reconstructs the causal chain.
+
+Keep the framing narrow: RCLP governs authority, not low-level robot safety.
+
+## Expected Output Highlights
 
 The exact IDs, signatures, timestamps, and hashes will change. These section
 headers and reason codes should be stable:
@@ -36,57 +88,44 @@ RCLP remote_assist local protocol demonstration
 Safety note: RCLP is a safety-adjacent authority layer, not a certified safety system.
 
 ### setup
-...
 "policy_id": "remote-assist-authority-v0"
 "deterministic_network_profiles": ["normal", "degraded_teleop", "uplink_bad", "partition"]
 
 ### capability_request
-...
 "message_type": "capability_request"
 "capability": "remote_assist"
 "requesting_agent_id": "fleet-agent:v0.1"
-"signature": "<non-production demo signature>"
 
 ### normal_network_decision
-...
-"message_type": "capability_decision"
 "decision": "allow"
 "reason_code": "POLICY_SATISFIED"
-"deciding_actor_id": "rclp-demo-issuer"
 "policy_id": "remote-assist-authority-v0"
-"lease": {"capability": "remote_assist", "signature": "..."}
+"lease": {"capability": "remote_assist", ...}
 
 ### command_gate_with_valid_lease
-...
 "allowed": true
 "reason_code": "LEASE_VALID"
 
 ### command_without_valid_lease
-...
 "decision": "deny"
 "reason_code": "NO_LEASE"
 "safe_alternatives": ["local_autonomy_only"]
 
 ### impaired_network_decision
-...
 "decision": "degrade"
 "reason_code": "NETWORK_LATENCY_DEGRADED"
 "safe_alternatives": ["crawl_to_safe_zone"]
 
 ### lease_revocation
-...
 "message_type": "lease_revocation"
 "reason_code": "NETWORK_PROFILE_REVOKE"
 
 ### command_gate_after_network_revocation
-...
 "decision": "deny"
 "reason_code": "LEASE_REVOKED"
 
 ### audit_jsonl
-{"message_type":"audit_commit", ... "event_type":"capability_requested", ...}
-{"message_type":"audit_commit", ... "event_type":"capability_allowed", ...}
-{"message_type":"audit_commit", ... "event_type":"command_rejected", ...}
+{"message_type":"audit_commit", ...}
 
 ### incident_replay_summary
 Correlation corr_demo_remote_assist:
@@ -112,17 +151,81 @@ With `--network-profile partition`, the impaired decision should be:
 "reason_code": "NETWORK_DETACHED"
 ```
 
-## What To Notice
+## How To Explain The Allow Path
 
-- The central agent requests a capability; it does not send a raw privileged
-  robot command directly to the edge.
-- Normal network state allows a short-lived lease.
-- The command gate accepts a command only with a valid, matching, unexpired
-  lease.
-- A command without a lease is rejected and produces a fallback declaration.
-- Network degradation changes authority and causes revocation or rejection.
-- Audit replay reconstructs request, state, decision, enforcement, revocation,
-  and fallback.
+Point at `normal_network_decision` and `command_gate_with_valid_lease`.
 
-This is a sim/local proof of a safety-adjacent authority layer, not field-proven
-safety and not a certified safety system.
+The important claim is not that the robot moved safely. The claim is that
+authority was explicitly requested, evaluated against local state and policy,
+scoped to robot/mission/capability/agent/time, signed, and then enforced by a
+robot-local gate.
+
+Use these phrases:
+
+- "short-lived scoped authority"
+- "edge-side local verification"
+- "command gate before robot-facing execution"
+
+## How To Explain Deny, Revoke, And Degrade
+
+Point at `command_without_valid_lease`, `impaired_network_decision`,
+`lease_revocation`, and `command_gate_after_network_revocation`.
+
+The important moment is the rejection or revocation of authority under degraded
+conditions. RCLP is useful because it makes failure states legible and
+auditable:
+
+- no lease -> `NO_LEASE`
+- degraded latency -> `NETWORK_LATENCY_DEGRADED`
+- hard uplink failure -> `NETWORK_UPLINK_TOO_LOW`
+- partition -> `NETWORK_DETACHED`
+- revoked lease reuse -> `LEASE_REVOKED`
+
+Fallbacks are hooks and audit declarations, not certified safe behavior.
+
+## How To Explain Audit Replay
+
+Point at `audit_jsonl` and `incident_replay_summary`.
+
+The replay should reconstruct request, state, decision, enforcement,
+revocation, and fallback events for the same correlation ID. The demo is meant
+to make the authority chain explainable after an incident or near miss.
+
+## How To Explain Evals
+
+After the demo, point to:
+
+- `docs/EVALS.md`
+- `tests/evals/scenarios/`
+- `tests/evals/reports/latest.json`
+
+The deterministic eval suite checks fail-closed behavior across missing,
+stale, malformed, mismatched, replayed, revoked, geofence-violating, and
+network-impaired authority paths. It is local technical validation evidence for
+the authority primitive, not production safety evidence.
+
+Run directly:
+
+```bash
+python tests/evals/eval_runner.py
+```
+
+## How To Explain Limitations
+
+Say these plainly:
+
+- This is a safety-adjacent authority layer, not a certified safety system.
+- This is a local deterministic proof, not field-proven safety.
+- This does not prove real cellular behavior or carrier API behavior.
+- This does not include production key management or hardware roots of trust.
+- This does not include a hosted commercial control plane.
+- ROS 2 and Isaac Sim are integration scaffolds, not validation prerequisites.
+- The current ask is controlled technical validation of the primitive.
+
+## Closing Question
+
+End with:
+
+> Where would this authority boundary live in your stack, and what local
+> conditions would have to gate remote assist or autonomy escalation before you
+> would trust it even in observe-only mode?

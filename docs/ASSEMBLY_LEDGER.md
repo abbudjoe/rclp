@@ -1,5 +1,121 @@
 # Assembly Ledger
 
+## T13 Demo + Validation Release Package - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: proceed with T13 using `assembly`.
+- User-supplied T13 prompt: `T13 - Demo + Validation Release Package`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/POST_T12_SEQUENCE_PLAN.md`
+- `docs/RELEASE_READINESS.md`
+- `docs/SAFETY_BOUNDARY.md`
+- `docs/COMMERCIAL_BOUNDARY.md`
+- `docs/EVALS.md`
+- `docs/RUST_EDGE_VERIFIER.md`
+
+Preflight note:
+
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for T13, and none will be launched, stopped, resized, deleted, or otherwise
+  mutated.
+- `DIRECTION.md` is not present in the current checkout.
+- Baseline validation passed before edits: `.venv/bin/python -m compileall src
+  tests`, `.venv/bin/python -m pytest -q`, `.venv/bin/python
+  tests/evals/eval_runner.py`, `cargo fmt --all -- --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, and `cargo test --workspace`.
+
+Target contract:
+
+Package the working RCLP MVP for 5-8 controlled technical validation calls by
+creating externally legible release notes, customer-call material, FAQ,
+walkthrough, comparison, target-profile docs, and local validation/demo scripts
+without adding protocol features or production-readiness claims.
+
+Success criterion:
+
+The validation package is complete, scripts work without network, ROS 2, Isaac
+Sim, or cloud resources, README points to the package, tests/evals pass, a
+spec-conformance review is clean, and the final readiness assessment is limited
+to controlled technical validation calls.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: `docs/VALIDATION_RELEASE_NOTES.md` exists for `v0.1-validation`. | met | Release notes include purpose, implemented components, demo flow, 33-scenario eval coverage, Rust verifier status, known hardening gaps, non-claims, intended audience, next validation steps, exact controlled-call/non-production sentence, and suggested tag guidance. |
+| D2: `docs/CUSTOMER_CALL_PACKET.md` exists. | met | Customer packet includes the required one-liner, problem statement, MVP proves/does-not-prove lists, feedback sought, five-minute flow, and conservative authority wording after review. |
+| D3: `docs/TECHNICAL_FAQ.md` exists. | met | FAQ covers robot fleet manager, teleoperation, safety controller, ROS 2/VDA5050/Open-RMF/MCP/A2A replacement, short-lived leases, local enforcement, network state, cloud partition, Rust/Python relationship, production readiness, and future commercial platform. |
+| D4: `docs/DEMO_WALKTHROUGH.md` exists and supports a five-minute live call. | met | Walkthrough now includes setup, validation, demo commands, expected story, stable output highlights, allow/deny/revoke/degrade/audit/eval explanations, limitations, and a closing validation question. |
+| D5: `docs/WHY_NOT_EXISTING_PROTOCOLS.md` exists. | met | Comparison doc covers ROS 2/DDS Security, VDA5050, Open-RMF, MassRobotics AMR Interop, MCP, A2A, fleet managers, teleop systems, and IoT connectivity platforms while stating RCLP is a narrow adjacent authority layer. |
+| D6: `docs/FIRST_CALL_TARGET_PROFILE.md` exists. | met | Target profile lists best-fit customers, personas, strong-fit traits, bad-fit traits, discovery priorities, and recommended first ask. |
+| D7: `scripts/run_validation_checks.sh` exists and works. | met | Script uses strict Bash mode, runs compileall, pytest, eval runner, Ruff, and Rust fmt/clippy/test when Cargo is available; `./scripts/run_validation_checks.sh` passed after review fixes. |
+| D8: `scripts/run_validation_demo.sh` exists and works. | met | Script prints concise demo framing, points to `docs/DEMO_WALKTHROUGH.md`, and runs `python -m rclp_agents.demo_remote_assist`; default and `--network-profile uplink_bad` runs passed. |
+| D9: `README.md` links to the validation package and commands. | met | README now links release notes, customer packet, demo walkthrough, evals, comparison doc, technical FAQ, target profile, and validation/demo commands. |
+| D10: Tests/evals pass. | met | Baseline and post-review validation passed: 246 pytest tests, 33/33 evals, Ruff, Rust fmt/clippy, and Rust unit/vector tests. |
+| D11: Final response states controlled-call readiness without production claims. | met | Final response for this assembly item will state controlled technical validation readiness only and will not claim production readiness. |
+
+Changed files:
+
+- `README.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/CUSTOMER_CALL_PACKET.md`
+- `docs/CUSTOMER_VALIDATION_MEMO.md`
+- `docs/DEMO_SCRIPT.md`
+- `docs/DEMO_WALKTHROUGH.md`
+- `docs/FIRST_CALL_TARGET_PROFILE.md`
+- `docs/TECHNICAL_FAQ.md`
+- `docs/VALIDATION_RELEASE_NOTES.md`
+- `docs/WHY_NOT_EXISTING_PROTOCOLS.md`
+- `scripts/run_validation_checks.sh`
+- `scripts/run_validation_demo.sh`
+
+Review notes:
+
+- Avicenna reviewed T13 spec conformance and classified D1-D8 and D10 as met,
+  D9 as partial only because README initially omitted
+  `docs/WHY_NOT_EXISTING_PROTOCOLS.md`.
+- Valid review findings were fixed: ledger provenance was updated, pre-existing
+  local absolute paths in this public ledger were redacted, README now links
+  the comparison doc, and customer-packet wording avoids "safely pass" and
+  "unsafe authority" overclaims.
+- Avicenna re-review returned no blocking findings and classified D1-D10 as
+  met for controlled technical validation readiness. The reviewer was closed
+  after completion, and no cloud changes were made.
+
+Evidence:
+
+- Baseline before edits passed:
+  `.venv/bin/python -m compileall src tests`;
+  `.venv/bin/python -m pytest -q` (246 passed);
+  `.venv/bin/python tests/evals/eval_runner.py` (33 passed);
+  `cargo fmt --all -- --check`;
+  `cargo clippy --workspace --all-targets -- -D warnings`;
+  `cargo test --workspace` (3 unit tests and 47 vector tests).
+- Initial smoke after edits passed:
+  `bash -n scripts/run_validation_checks.sh scripts/run_validation_demo.sh`;
+  `./scripts/run_validation_demo.sh --network-profile uplink_bad` produced
+  `NETWORK_UPLINK_TOO_LOW`, `audit_jsonl`, and `incident_replay_summary`.
+- Full validation package command passed:
+  `./scripts/run_validation_checks.sh` (246 pytest tests, 33/33 evals, Ruff,
+  Rust fmt/clippy, 3 Rust unit tests, and 47 Rust vector tests).
+- Default demo command passed:
+  `./scripts/run_validation_demo.sh` produced `POLICY_SATISFIED`,
+  `LEASE_VALID`, `NO_LEASE`, `NETWORK_LATENCY_DEGRADED`,
+  `NETWORK_PROFILE_REVOKE`, `LEASE_REVOKED`, `audit_jsonl`, and
+  `incident_replay_summary`.
+- Post-review hygiene and validation passed:
+  local absolute-path scan over public docs, scripts, guidance, examples,
+  manifests, agents, and workflows returned no matches;
+  `git diff --check` passed;
+  `bash -n scripts/run_validation_checks.sh scripts/run_validation_demo.sh`
+  passed;
+  `./scripts/run_validation_checks.sh` passed;
+  default and `uplink_bad` demo runs passed.
+
 ## Post-Scan 2-Finding Security Remediation - 2026-06-25 (scan ff73e22a)
 
 Status: successful
@@ -9,7 +125,7 @@ Source contract:
 - User request: resolve the two findings from Codex Security scan
   `ff73e22a-43d8-4ebe-8c31-14d9e44dcd9b` using `assembly`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/46787d7ec659fdcb380b7312790194274c314186_20260625T020045Z_pgmh5g8w/report.md`
+  `local Codex Security report artifact redacted`
 - Findings:
   `csf_b88c842c54b2e57b23544d31` and
   `csf_bac2df8348c750866b4e43d0`.
@@ -106,7 +222,7 @@ Source contract:
 - User request: resolve all four findings from Codex Security scan
   `6eba756f-be06-4876-adbc-336f3a3a7271` using `assembly`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/46787d7ec659fdcb380b7312790194274c314186_20260625T010150Z_am_1f_i_/report.md`
+  `local Codex Security report artifact redacted`
 - Findings:
   `csf_64d842e5a53d7e92519cdf9a`,
   `csf_22c57b9b68fc8ec1228f5edb`,
@@ -214,7 +330,7 @@ Source contract:
 - User request: resolve all five findings from Codex Security scan
   `a6759ec9-0b09-4053-a71c-338d081bdaf2` using `assembly`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/46787d7ec659fdcb380b7312790194274c314186_20260624T213854Z_xvcccu4e/report.md`
+  `local Codex Security report artifact redacted`
 - Findings:
   `csf_fcf962ab89e1a38173c7e2cc`,
   `csf_bf47df01065ce7ffecface5e`,
@@ -308,7 +424,7 @@ Source contract:
   from Codex Security scan `72e1cd1f-641c-4e46-9792-2c2739931ca5`
   using `assembly`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/fdcee457e95913f3f53d4a3d83a935ac5db6bdb8_20260624T203102Z_gb4b8vpk/report.md`
+  `local Codex Security report artifact redacted`
 - Findings:
   `RCLP-SHARD-72E1CD1F-GEOFENCE-BOUNDS-001`,
   `72e1cd1f-conformance-fallback-bound-001`,
@@ -391,7 +507,7 @@ Source contract:
 - Finding `CAND-0006-001`: Edge verification trusts signed lease constraints
   without policy-bound value checks.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/c09f959c361229eb963551d21534bcfb949677a4_20260624T184210Z_fojofzs8/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -455,7 +571,7 @@ Source contract:
 - User request: resolve all four findings from Codex Security scan
   `52c0d522-150d-4a46-a0ca-b2bfd6630212` using `assembly`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-9ePqUs/rclp/c09f959c361229eb963551d21534bcfb949677a4_20260624T171928Z_1r5qjp_s/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -528,7 +644,7 @@ Source contract:
 - User request: resolve all six findings from Codex Security scan
   `ccd6c9e8-b196-443b-8587-f6b28540312a` using `assembly` and lambda.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-9ePqUs/rclp/c09f959c361229eb963551d21534bcfb949677a4_20260624T155945Z_9u_79ccy/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -624,7 +740,7 @@ Source contract:
   using `assembly`.
 - Completed Codex Security scan `fe1e1ee8-6dc6-4ec4-8f30-5d91d883afc0`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-3f9Gv0/rclp/c09f959c361229eb963551d21534bcfb949677a4_20260624T031041Z_3s_acpce/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -695,7 +811,7 @@ Source contract:
   using `assembly`.
 - Completed Codex Security scan `e2918d26-8d2f-4eb1-81e1-6a26c2f36bdd`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-3f9Gv0/rclp/c09f959c361229eb963551d21534bcfb949677a4_20260624T020217Z_xokd8hlf/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -780,7 +896,7 @@ Source contract:
   using `assembly`.
 - Completed Codex Security scan `b62a8bb7-0f0e-48fb-bad2-b0a390b989f1`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-3f9Gv0/rclp/e7cf2722f26a764e25b918d3deaa2a08a78a21ab_20260624T004902Z_bqw_06ma/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -846,7 +962,7 @@ Source contract:
   using `assembly`.
 - Completed Codex Security scan `c3b45b5d-eeef-4363-b1f6-52e2b36a6539`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/e7cf2722f26a764e25b918d3deaa2a08a78a21ab_20260623T222957Z_c1i2r7s0/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -911,7 +1027,7 @@ Source contract:
 - User request: resolve all three Codex Security findings using `assembly`.
 - Completed Codex Security scan `0babed54-469b-4f62-b7b5-201359a5bc02`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/e7cf2722f26a764e25b918d3deaa2a08a78a21ab_20260623T210345Z_3fxnfg28/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -986,7 +1102,7 @@ Source contract:
 - User request: resolve all Codex Security findings using `assembly`.
 - Completed Codex Security scan `d43b49d8-a432-4000-a90b-0e1c8fcf74cf`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/e7cf2722f26a764e25b918d3deaa2a08a78a21ab_20260623T193034Z_bsbfw_gv/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -1050,7 +1166,7 @@ Source contract:
 - User request: resolve all five Codex Security findings using `assembly`.
 - Completed Codex Security scan `7539de62-1d6d-4a01-9b30-426f39d6717c`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T174025Z_oxoe3_6l/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -1113,7 +1229,7 @@ Source contract:
 - User request: resolve all four Codex Security findings using `assembly`.
 - Completed fresh Codex Security scan `0aab2b4e-d69b-4eb4-830f-edcde6bbf656`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T165856Z_r90lo99j/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -1171,7 +1287,7 @@ Source contract:
 - User request: resolve all six Codex Security findings using `assembly`.
 - Completed Codex Security scan `c3c5a16a-9f5b-4d0e-9805-99314da56f24`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T141934Z_j9b_oj7r/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -1227,7 +1343,7 @@ Review notes:
 Status: successful
 
 Source contract:
-- Codex Security scan `eb7bed48-4cd6-41db-b868-66d4fa26f023` report at `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-XVS5WG/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T030156Z_69_emnx1/report.md`.
+- Codex Security scan `eb7bed48-4cd6-41db-b868-66d4fa26f023` report at `local Codex Security report artifact redacted`.
 - AGENTS-required doctrine read before edits. `DIRECTION.md` is intentionally deleted in the working tree per user request; historical `HEAD:DIRECTION.md` was used as non-authoritative context only.
 - No cloud job mutation authorized or performed.
 
@@ -1252,7 +1368,7 @@ Source contract:
 - User request: resolve the three Codex Security findings using `assembly`.
 - Completed Codex Security scan `1a82e261-a7ff-4db1-868e-bae9c5a42599`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-f4cVft/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T014350Z_7yfom2zj/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -1314,7 +1430,7 @@ Source contract:
 - User request: fix all 10 Codex Security findings using `assembly`.
 - Completed Codex Security scan `2b19d816-a775-4733-9e1f-6319bc54e547`.
 - Scan report:
-  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-f4cVft/rclp/4ad0fe8e14eeb0d47e9f051f24ef5eee4ba76273_20260623T004740Z_17myo_fj/report.md`
+  `local Codex Security report artifact redacted`
 - `AGENTS.md`
 - Required repo doctrine under `docs/`
 - `docs/PROTOCOL_SPEC_DRAFT.md`
@@ -1813,7 +1929,7 @@ Evidence:
   was not opened.
 - `.github/workflows/ci.yml` and `.github/workflows/rust.yml` already run the
   expected Python and Rust gates.
-- `/Users/joseph/rclp` is not a Git checkout, so `git status` and `git diff`
+- `local workspace` is not a Git checkout, so `git status` and `git diff`
   are unavailable in this workspace.
 
 Cloud/job status:
@@ -1870,7 +1986,7 @@ Review status:
 - Fixes preserved hard denial for partition/detached/unknown profiles, added stale/mission/edge/hard-network and malformed numeric vectors, added a first-use/second-use replay regression, split trust roots/secret/revocations/time/TTL-age policy into `TrustedVerifierContext`, and kept `VerificationInput` to lease/command/observed local state.
 - Final review found only a Rust formatting drift; `cargo fmt --all` fixed it, and the reviewer confirmed DoD items 1-8 met with no remaining findings.
 - No cloud jobs or paid compute were launched, stopped, resized, deleted, or otherwise mutated.
-- `/Users/joseph/rclp` is not a Git checkout, so scoped git staging/status could not be performed in this workspace.
+- `local workspace` is not a Git checkout, so scoped git staging/status could not be performed in this workspace.
 
 Evidence:
 
