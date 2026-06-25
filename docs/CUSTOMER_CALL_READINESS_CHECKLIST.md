@@ -48,14 +48,15 @@ not a public launch checklist and not a production readiness claim.
   safety system.
 - [ ] Fallback behavior is described as a fallback hook, not guaranteed safe
   behavior.
-- [ ] Network state is described as an authorization input, not a network
-  guarantee.
+- [ ] Network state is described as an authorization input, not a promise about
+  connectivity quality.
 
 ## Customer-Call Packet
 
 - [ ] Customer validation memo or customer-call packet exists.
 - [ ] One-liner is clear.
-- [ ] Problem statement is centered on central-agent to edge-agent authority.
+- [ ] Problem statement is centered on the central software actor to
+  robot-local authority gate boundary.
 - [ ] What the MVP proves is listed.
 - [ ] What the MVP does not prove is listed.
 - [ ] Feedback questions ask where the primitive would live in the customer
@@ -87,4 +88,3 @@ not a public launch checklist and not a production readiness claim.
 - [ ] Requests for SaaS, billing, carrier integration, or managed trust roots
   are captured as future commercial-platform inputs, not added to this repo.
 - [ ] Protocol feedback is separated from demo polish and commercial feedback.
-

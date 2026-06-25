@@ -1,17 +1,19 @@
 # RCLP
 
 RCLP is an open protocol MVP for short-lived, locally enforced capability
-leases between central software actors and robot-local edge authority services
-that mediate selected robot capabilities.
+leases: central software actors request selected robot capabilities, a
+robot-local authority service evaluates policy, and a robot-local authority
+gate enforces the result near the command path.
 
-In this repo, "agent" means a software actor. It may be a fleet service,
-autonomy module, remote-assist service, operator-session controller, or AI
-agent. It does not imply an LLM, chatbot, or fully autonomous fleet manager.
+In this repo, "agent" means a software actor. It may be a remote-assist
+service, operator-session controller, fleet service, autonomy module, or other
+software actor. It does not imply an LLM, chatbot, or fully autonomous fleet
+manager.
 
 The Robot Capability Lease Protocol focuses on a narrow authority gap:
 existing robot, fleet, network, and agent protocols move commands, state,
 tools, or missions, while RCLP asks whether authority may pass from a central
-software actor to a robot-local edge authority service for a physical
+software actor to a robot-local authority service and gate for a physical
 capability under current conditions.
 
 This repository is the open reference implementation for that primitive. It is
@@ -19,13 +21,16 @@ not the future hosted commercial platform.
 
 ## What This MVP Demonstrates
 
-- capability authority requests from central software actors
-- robot-local edge authority-service verification
+- capability authority requests from central software actors such as
+  remote-assist services, operator-session controllers, fleet services, and
+  autonomy modules
+- robot-local authority service policy and lease verification
 - signed short-lived leases
 - allow, deny, degrade, and revoke decisions
 - authority decisions that use observed network state as one input
 - geofence-conditioned authority
-- command gating before a robot-facing command path
+- robot-local authority gate command enforcement before a robot-facing command
+  path
 - audit JSONL and replay of the authority chain
 - Python reference implementation
 - Rust edge verifier spike
@@ -35,9 +40,9 @@ main flow is:
 
 ```text
 central software actor requests authority
--> robot-local edge authority service verifies local context and policy
+-> robot-local authority service verifies local context and policy
 -> lease is granted, denied, degraded, or revoked
--> command gate enforces locally
+-> robot-local authority gate enforces the lease locally
 -> audit replay reconstructs the event chain
 ```
 
@@ -123,7 +128,8 @@ Related validation docs:
 - `docs/STACK_PLACEMENT.md`
 - `docs/DEPLOYMENT_SHAPES.md`
 - `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md`
-- `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`
+- `docs/OBSERVE_ONLY_SAMPLE_REPORT.md` (illustrative sample; not generated
+  from field data)
 - `docs/POLICY_OWNERSHIP.md`
 - `docs/DEMO_WALKTHROUGH.md`
 - `docs/EVALS.md`
@@ -138,13 +144,25 @@ Run:
 ./scripts/run_validation_demo.sh
 ```
 
+Artifact map for validation:
+
+- Python reference implementation: protocol behavior, policy, leases, command
+  gate, demo, eval harness, and audit replay.
+- Rust edge verifier spike: deterministic edge-verifier shape with offline
+  vectors; not a replacement for the Python reference.
+- ROS 2 command-gate scaffold: adapter direction for robot middleware.
+- Eval runner: deterministic local evidence for allow, deny, degrade, revoke,
+  and audit paths.
+- Future commercial platform: out of this repo.
+
 ## Demo Path
 
 `python -m rclp_agents.demo_remote_assist` runs a complete local
 `remote_assist` authority negotiation:
 
-1. Creates local central software actor, edge authority service, robot,
-   mission, geofence, policy, and non-production key fixtures.
+1. Creates local central software actor, authority service, robot-local
+   authority gate, robot, mission, geofence, policy, and non-production key
+   fixtures.
 2. Signs a `CapabilityRequest`.
 3. Allows a short-lived lease under the normal deterministic network profile.
 4. Accepts a matching command through the command gate.
@@ -170,7 +188,8 @@ Customer call packet: `docs/CUSTOMER_CALL_PACKET.md`.
 
 Deployment-shape mapping: `docs/DEPLOYMENT_SHAPES.md`.
 
-Observe-only sample report: `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`.
+Observe-only sample report, illustrative and not generated from field data:
+`docs/OBSERVE_ONLY_SAMPLE_REPORT.md`.
 
 Policy ownership guidance: `docs/POLICY_OWNERSHIP.md`.
 
@@ -180,7 +199,7 @@ Policy ownership guidance: `docs/POLICY_OWNERSHIP.md`.
 AGENTS.md                         Project-level agent guidance
 docs/                             Protocol, doctrine, threat, readiness docs
 src/rclp_core/                    Protocol models, policy, leases, crypto, audit
-src/rclp_agents/                  Central actor and edge authority MVP mocks/demo
+src/rclp_agents/                  Central actor and robot-local authority MVP mocks/demo
 src/rclp_ros2/                    ROS 2 command-gate adapter scaffold
 crates/rclp-edge-verifier/        Rust edge lease verifier spike
 examples/                         Policies, scenarios, manifests, audit examples

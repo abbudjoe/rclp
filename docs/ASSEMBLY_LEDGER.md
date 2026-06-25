@@ -1,5 +1,183 @@
 # Assembly Ledger
 
+## S3 Recommended Wording Implementation - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: implement the recommended wording changes from the S3
+  robotics/customer-legibility review using `assembly`.
+- Authoritative review:
+  `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`.
+
+Target contract:
+
+Apply the S3 recommended wording changes to validation-facing documentation
+without changing code, protocol behavior, or conservative safety/commercial
+boundaries.
+
+Success criterion:
+
+Customer-facing docs consistently separate authority-service decisioning from
+authority-gate enforcement, avoid confusing "agent" and network-assurance
+language, lead outreach with concrete remote-assist capabilities, label the
+observe-only sample as illustrative rather than field data, include an artifact
+map near the validation entry path, fix the known wording friction, and record
+evidence in this ledger.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Customer-facing docs prefer robot-local authority gate wording and reserve edge-agent language for protocol contexts. | met | Targeted scan over validation/customer-facing docs found no `edge agent`, `edge-agent`, `central-agent`, `edge authority`, `edge authority-service`, `robot-local edge authority`, or `local robot-local` hits. Protocol/internal docs retain protocol model terms where appropriate. |
+| D2: Customer-facing docs distinguish authority service decisioning from authority gate command-path enforcement. | met | README, start-here, customer-call packet, customer memo, stack placement, demo script, integration sketch, demo walkthrough, release readiness, and architecture docs now separate authority-service policy/lease decisioning from authority-gate enforcement. |
+| D3: Outreach docs lead with `remote_assist`, `operator_velocity_control`, and `recovery_behavior`; AI/broader autonomy language is later or caveated. | met | README, start-here, customer-call packet, customer memo, and stack placement lead with remote-assist/operator/recovery capability examples; `AI agent` appears only as a later caveat in stack placement. |
+| D4: A short artifact map exists near the validation entry path. | met | README and `docs/START_HERE_FOR_VALIDATION.md` include an artifact map for Python reference, Rust edge verifier spike, ROS 2 command-gate scaffold, eval runner, and future commercial platform. |
+| D5: Observe-only sample links/description state it is illustrative and not generated from field data. | met | README, start-here, customer-call packet, demo script, and `docs/OBSERVE_ONLY_SAMPLE_REPORT.md` label the sample as illustrative/not generated from field data. |
+| D6: Network wording remains "observed network state used as an authorization input" and avoids connectivity/QoS/carrier assurance. | met | Targeted scan over validation/customer-facing docs found no `network guarantees`, `QoS assurance`, `connectivity assurance`, or `carrier behavior` hits; docs use conservative non-claim wording. |
+| D7: Known small wording friction, including "local robot-local edge authority gate", is fixed. | met | `docs/SAFETY_BOUNDARY.md` now says `robot-local authority gate`; targeted scan found no `local robot-local` hits. |
+| D8: No code files are modified; assembly evidence is recorded. | met | `git status --short --branch` shows documentation changes only; validation and wording-scan evidence are recorded below. |
+
+Changed files:
+
+- `README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/CUSTOMER_CALL_PACKET.md`
+- `docs/CUSTOMER_CALL_READINESS_CHECKLIST.md`
+- `docs/CUSTOMER_VALIDATION_MEMO.md`
+- `docs/DEMO_SCRIPT.md`
+- `docs/DEMO_WALKTHROUGH.md`
+- `docs/DEPLOYMENT_SHAPES.md`
+- `docs/EVALS.md`
+- `docs/FIRST_CALL_TARGET_PROFILE.md`
+- `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md`
+- `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`
+- `docs/POST_T12_SEQUENCE_PLAN.md`
+- `docs/RELEASE_CHECKLIST.md`
+- `docs/RELEASE_READINESS.md`
+- `docs/SAFETY_BOUNDARY.md`
+- `docs/STACK_PLACEMENT.md`
+- `docs/START_HERE_FOR_VALIDATION.md`
+- `docs/TECHNICAL_FAQ.md`
+- `docs/VALIDATION_RELEASE_NOTES.md`
+- `docs/WHY_NOT_EXISTING_PROTOCOLS.md`
+- `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md`
+- `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`
+
+Review notes:
+
+- The wording pass is documentation-only. It does not change protocol models,
+  code behavior, tests, cloud jobs, GPU jobs, AWS Lambda functions, or paid
+  compute.
+- The S3 review report remains in the worktree from the preceding review
+  refresh; this pass implements the report's recommendations in
+  validation-facing docs.
+- Multi-agent tooling is available, but its tool instructions forbid spawning
+  subagents unless the user explicitly asks for subagents, delegation, or
+  parallel agent work. No subagent was spawned; spec-conformance review was
+  performed locally against the extracted DoD and recorded here.
+
+Evidence:
+
+- Required repo guidance and doctrine were read before edits:
+  `AGENTS.md`, `docs/ENGINEERING_DOCTRINE.md`,
+  `docs/SECURITY_DOCTRINE.md`, `docs/DESIGN_TASTE.md`,
+  `docs/PROTOCOL_SPEC_DRAFT.md`, `docs/THREAT_MODEL.md`, and
+  `docs/TEST_STRATEGY.md`.
+- Source contract read:
+  `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`.
+- Wording scan passed:
+  `rg -n "authority-service|authority-gate|remote assist, autonomy|service/gate|edge agent|edge-agent|central-agent|edge authority|edge authority-service|robot-local edge authority|local robot-local|network guarantees|QoS assurance|connectivity assurance|carrier behavior" README.md docs/START_HERE_FOR_VALIDATION.md docs/CUSTOMER_CALL_PACKET.md docs/CUSTOMER_VALIDATION_MEMO.md docs/STACK_PLACEMENT.md docs/DEPLOYMENT_SHAPES.md docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md docs/DEMO_SCRIPT.md docs/DEMO_WALKTHROUGH.md docs/VALIDATION_RELEASE_NOTES.md docs/FIRST_CALL_TARGET_PROFILE.md docs/CUSTOMER_CALL_READINESS_CHECKLIST.md docs/TECHNICAL_FAQ.md docs/SAFETY_BOUNDARY.md docs/WHY_NOT_EXISTING_PROTOCOLS.md docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md docs/EVALS.md docs/RELEASE_READINESS.md docs/ARCHITECTURE.md docs/RELEASE_CHECKLIST.md docs/POST_T12_SEQUENCE_PLAN.md`
+  returned no matches.
+- Artifact/observe-only scan found the artifact map and "not generated from
+  field data" labels in README, start-here, customer-call packet, demo script,
+  and observe-only sample report.
+- `python -m compileall src tests` passed with the system Python.
+- `python -m pytest -q` failed before running tests because the system Python
+  lacks `pytest`; `.venv/bin/python -m pytest -q` passed: 246 tests.
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format --check .` passed.
+- `.venv/bin/python tests/evals/eval_runner.py` passed: 33 passed, 0 failed,
+  33 total.
+- `git diff --check` passed.
+
+## S3 Robotics Platform / Customer-legibility Review Refresh - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: run `S3 - Robotics Platform / Customer-legibility Reviewer`
+  using `assembly`.
+- Required output path:
+  `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`.
+
+Target contract:
+
+Refresh the S3 robotics/customer-legibility review against the current
+validation-facing repository state, without modifying code, so the report helps
+decide whether RCLP is ready for controlled customer validation.
+
+Success criterion:
+
+The report uses the requested structure, answers the 10 evaluation questions,
+stays skeptical, reflects the current docs rather than stale blockers, and this
+ledger records evidence with every mapped DoD item classified.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required docs are read first in the order specified by the user. | met | Read `README.md`, `docs/CUSTOMER_VALIDATION_MEMO.md`, `docs/DEMO_SCRIPT.md`, `docs/EVALS.md`, `docs/SAFETY_BOUNDARY.md`, `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md`, and `docs/COMMERCIAL_BOUNDARY.md` in the requested order after repo doctrine. |
+| D2: Report exists at the requested path with the requested sections. | met | `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md` was refreshed; heading smoke found every requested section. |
+| D3: Report answers all 10 evaluation questions through the requested sections. | met | Report includes one-sentence interpretation, authority-gap clarity, protocol/product/safety/fleet-manager distinction, adjacent-protocol distinction, demo workflow fit, agent-language assessment, stack fit, validation-call feedback clarity, likely objections, and clarity gaps before outreach. |
+| D4: Report is skeptical and current, not a stale repeat of previously resolved blockers. | met | Report now treats deployment-shape mapping, observe-only sample, and policy ownership as present, while preserving caveats about synthetic evidence, integration specificity, network-state trust, and policy lifecycle. |
+| D5: No code files are modified. | met | `git diff --name-only` shows only `docs/ASSEMBLY_LEDGER.md` and `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`. |
+| D6: Assembly evidence and DoD statuses are recorded. | met | This ledger entry records source contract, target contract, success criterion, DoD statuses, changed files, review notes, and smoke evidence. |
+
+Changed files:
+
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`
+
+Review notes:
+
+- The current verdict is green for tightly scoped technical validation with
+  robotics platform/fleet reliability teams, and yellow for broader outreach.
+- The report explicitly avoids production, safety, pilot, hosted product, or
+  customer-deployment claims.
+- Multi-agent tooling is available, but its tool instructions forbid spawning
+  subagents unless the user explicitly asks for subagents, delegation, or
+  parallel agent work. No subagent was spawned; spec-conformance review was
+  performed locally against the extracted DoD and recorded here.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute were launched,
+  stopped, resized, deleted, or otherwise mutated.
+
+Evidence:
+
+- Required repo guidance and doctrine were read before edits:
+  `AGENTS.md`, `docs/ENGINEERING_DOCTRINE.md`,
+  `docs/SECURITY_DOCTRINE.md`, `docs/DESIGN_TASTE.md`,
+  `docs/PROTOCOL_SPEC_DRAFT.md`, `docs/THREAT_MODEL.md`, and
+  `docs/TEST_STRATEGY.md`.
+- Required S3 review packet was read in the user-specified order.
+- Additional validation docs read for current stack-fit context:
+  `docs/START_HERE_FOR_VALIDATION.md`, `docs/CUSTOMER_CALL_PACKET.md`,
+  `docs/STACK_PLACEMENT.md`, `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md`,
+  `docs/DEPLOYMENT_SHAPES.md`, `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`, and
+  `docs/POLICY_OWNERSHIP.md`.
+- `rg -n "^# S3|^## Verdict|^## One-sentence interpretation|^## What is clear|^## What is confusing|^## Likely customer objections|^## Where this fits in a robot stack|^## Where this does not fit|^## Blocking issues before technical validation calls|^## Recommended wording changes" docs/reviews/codex_simulated_review/S3_robotics_customer_legibility.md`
+  found every required heading.
+- `git diff --check` passed.
+- `git diff --name-only` showed only documentation changes.
+
 ## S3 Blocking-Issue Resolution + Wording Pass - 2026-06-25
 
 Status: successful

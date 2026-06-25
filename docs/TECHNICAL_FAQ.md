@@ -33,10 +33,10 @@ lease should expire quickly instead of remaining a broad standing permission.
 
 ## Q: Why does enforcement need to be local?
 
-The edge agent must be able to reject unsafe, stale, invalid, unauthorized, or
-context-mismatched requests even when cloud connectivity is unavailable. RCLP's
-command gate is designed so high-authority actions fail closed at the robot
-edge when required inputs are missing or invalid.
+The robot-local authority gate must be able to reject unsafe, stale, invalid,
+unauthorized, or context-mismatched requests even when cloud connectivity is
+unavailable. RCLP's command gate is designed so high-authority actions fail
+closed near the robot when required inputs are missing or invalid.
 
 ## Q: Why does network state matter?
 
@@ -50,7 +50,7 @@ network profile no longer satisfies policy.
 The MVP models partition as deterministic local network state. New authority is
 denied when the network is detached, and command-gate enforcement uses local
 state and cached policy/lease data to fail closed. The MVP does not claim real
-cellular or cloud network guarantees.
+cellular, cloud connectivity, or QoS behavior.
 
 ## Q: How does Rust relate to Python?
 

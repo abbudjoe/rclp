@@ -4,8 +4,8 @@ Use this as a five-minute live-call script for `v0.1-validation`.
 
 The local demo proves the `remote_assist` authority primitive with deterministic
 fixtures. It uses local non-production Ed25519 keys, in-process network
-profiles, a policy YAML file, a signed request, a signed lease, an edge command
-gate, fallback declarations, audit JSONL, and replay summary.
+profiles, a policy YAML file, a signed request, a signed lease, a robot-local
+command gate, fallback declarations, audit JSONL, and replay summary.
 
 No ROS 2, Isaac Sim, root privileges, cloud account, external network calls, or
 robot hardware are required.
@@ -66,11 +66,12 @@ You can also run a hard-deny profile:
 
 Tell the story in this order:
 
-1. The fleet service, remote-assist service, autonomy module, or other central
-   software actor requests `remote_assist` authority.
-2. The robot-local edge authority path evaluates identity, mission, robot,
-   geofence, network state, replay, revocation, lease scope, and fallback
-   policy.
+1. The remote-assist service, operator-session controller, fleet service,
+   autonomy module, or other central software actor requests `remote_assist`
+   authority.
+2. The robot-local authority service evaluates identity, mission, robot,
+   geofence, observed network state used as an authorization input, replay,
+   revocation, lease scope, and fallback policy.
 3. Normal local state grants a short-lived scoped lease.
 4. The command gate allows one matching command with the valid lease.
 5. A command without a valid lease is rejected.

@@ -1,7 +1,8 @@
 # Observe-only Shadow-mode Sample Report
 
-This is an illustrative report format for validation calls. It is not field
-evidence and it does not claim production readiness.
+This is an illustrative report format for validation calls. It is not generated
+from field data, it is not field evidence, and it does not claim production
+readiness.
 
 In observe-only mode, RCLP would record allow/deny/degrade decisions without
 blocking commands.
@@ -34,7 +35,7 @@ blocking commands.
 | 10:16:42 | `operator-session-controller` | `operator_velocity_control` | send bounded velocity command | would deny | `NO_LEASE` | missing authority event recorded; command not blocked in observe-only mode |
 | 10:18:03 | `remote-assist-service` | `remote_assist` | continue operator assist | would degrade | `NETWORK_LATENCY_DEGRADED` | observed network state used as an authorization input; safe alternative recorded |
 | 10:19:11 | `fleet-service` | `recovery_behavior` | bounded recovery maneuver | would deny | `GEOFENCE_CONSTRAINT_VIOLATED` | local geofence state and denial reason recorded |
-| 10:20:29 | `edge-authority-gate` | `remote_assist` | continued use of prior lease | would revoke | `NETWORK_PROFILE_REVOKE` | revocation and fallback hook declaration recorded |
+| 10:20:29 | `robot-local-authority-gate` | `remote_assist` | continued use of prior lease | would revoke | `NETWORK_PROFILE_REVOKE` | revocation and fallback hook declaration recorded |
 
 ## Sample findings for a validation call
 

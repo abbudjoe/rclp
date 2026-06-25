@@ -89,8 +89,8 @@ Step 5: Begin 5-8 controlled technical validation calls.
 
 - Use the customer-call packet, demo walkthrough, release notes, and field-notes
   template.
-- Keep the ask narrow: validate whether RCLP maps to a real central-agent to
-  edge-agent authority gap.
+- Keep the ask narrow: validate whether RCLP maps to a real central software
+  actor to robot-local authority gate gap.
 - Record feedback as issues or field notes; do not expand protocol scope during
   calls.
 
@@ -98,9 +98,9 @@ Step 6: Run T14 Isaac Sim Visual POC on Lambda.ai.
 
 - Use the supplied T14 prompt as the source contract.
 - Reuse the existing RCLP protocol implementation and eval semantics.
-- Keep the first visual demo to one simulated robot, one central-agent mock,
-  one edge-agent/runtime process, one command gate, one deterministic network
-  impairment trigger, one fallback hook, and one audit replay.
+- Keep the first visual demo to one simulated robot, one central-software-actor
+  mock, one robot-local authority process, one command gate, one deterministic
+  network impairment trigger, one fallback hook, and one audit replay.
 - Do not claim real robot safety, real cellular behavior, or production
   readiness.
 
@@ -188,7 +188,7 @@ Do not treat controlled technical validation as public launch.
 
 Strong signal:
 
-- customer has a central/edge authority gap
+- customer has a central-software-actor to robot-local authority gap
 - remote assist or autonomy escalation depends on network, geofence, or mission
   state
 - current audit is fragmented

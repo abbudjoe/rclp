@@ -5,146 +5,173 @@
 GREEN for controlled technical validation with robotics platform, autonomy
 infrastructure, remote-assist, or fleet reliability teams.
 
-Not green for broad fleet-operator outreach, pilot sales, or production
-deployment framing.
+YELLOW for broader outreach. The repository is now legible enough to ask a
+high-context robotics team for technical feedback, but it is not ready to be
+read as a pilot offer, operator-facing product, safety system, or production
+integration package.
 
 ## One-sentence interpretation
 
-- RCLP is an open protocol MVP for short-lived, locally enforced authority
-  leases that let a central software actor request selected robot capabilities
-  while a robot-local edge authority gate allows, denies, degrades, revokes,
-  and audits that authority under local context.
+- RCLP is an open protocol MVP for short-lived, locally enforced capability
+  leases that let central software actors request selected robot capabilities
+  while a robot-local authority gate allows, denies, degrades, revokes, and
+  audits that authority under local context.
 
 ## What is clear
 
-- The authority gap is now understandable: many robot stacks already move
-  commands, telemetry, missions, media, and tasks, but they do not always make
-  the authority boundary explicit for high-authority capabilities.
-- The repo mostly sounds like a protocol/reference implementation, not a fleet
-  manager, teleop product, safety controller, or hosted platform.
-- The README and validation docs now define "agent" as a software actor early,
-  which reduces the risk that a reviewer reads it as "LLM chatbot controls a
-  robot."
+- The authority gap is understandable: existing robot stacks already move
+  missions, commands, telemetry, media, tasks, and tools, while RCLP asks
+  whether a specific actor is currently allowed to exercise a specific
+  physical capability on a specific robot.
+- The repository mostly sounds like a protocol and reference implementation,
+  not a fleet manager, teleop system, SaaS product, certified safety system,
+  or robot controller.
+- The customer-facing docs now define "agent" as a software actor early
+  enough that a technical reviewer is less likely to assume "LLM chatbot
+  drives robot."
 - The distinction from ROS 2, SROS2, VDA5050, Open-RMF, MCP, A2A, fleet
   managers, teleop systems, robot-local safety controllers, and connectivity
-  platforms is clear enough for a technical reviewer.
-- `docs/STACK_PLACEMENT.md` and
-  `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md` make the stack insertion point
-  concrete: RCLP sits before selected high-authority robot-facing commands,
-  with local enforcement near the robot gateway or middleware path.
-- The demo maps to a recognizable remote-assist workflow: robot uncertainty or
-  failed recovery leads to a `remote_assist` authority request; local context
-  can allow, degrade, deny, revoke, and audit.
-- The validation ask is clear: this is not a buying conversation; it is a call
-  to test whether the authority boundary exists, where it would live, which
-  capabilities need scoped authority, and what evidence would justify a pilot.
+  platforms is clear enough for a controlled validation call.
+- The demo maps to a recognizable remote-assist workflow: a fleet or
+  remote-assist service requests `remote_assist`, local context can allow,
+  deny, degrade, or revoke authority, and the audit chain reconstructs the
+  decision path.
+- `docs/STACK_PLACEMENT.md` and `docs/DEPLOYMENT_SHAPES.md` now give a robot
+  fleet team a reasonable first answer to "where would this sit in my stack?"
+  across ROS 2, proprietary gateways, teleop services, fleet managers, and
+  autonomy modules.
+- The validation-call ask is explicit: the repo wants feedback on whether this
+  authority boundary exists, where it would live, which capabilities need
+  scoped authority, whether observe-only mode is useful, and what evidence
+  would justify a pilot.
+- The safety and commercial boundaries are appropriately conservative: the
+  repo does not claim certified safety, real cellular behavior, production key
+  management, customer willingness to deploy, hosted control-plane behavior, or
+  fleet management.
 
 ## What is confusing
 
-- The phrase "edge authority service" is clearer than "edge agent," but the
-  exact deployable shape is still underspecified. Is it a sidecar, ROS 2 node,
-  gateway plugin, fleet-agent component, or library embedded in a robot
-  gateway?
-- The repo explains what RCLP does not replace, but less clearly explains who
-  owns policy in a real organization: fleet ops, safety engineering, autonomy,
-  security, site ops, or a customer-specific authority board.
-- The demo uses deterministic network profiles, which is acceptable, but a
-  fleet reliability lead will immediately ask how observed network state is
-  sourced, trusted, debounced, and reconciled against stale robot-local state.
-- The "capability" examples are useful, but some are still conceptual. A
-  customer will want a precise mapping from each capability to actual command
-  topics/actions/API calls in their stack.
-- The protocol/reference split is mostly clear, but the Python reference,
-  Rust verifier spike, ROS scaffold, and future commercial platform could still
-  blur for reviewers who skim quickly.
-- The audit story is promising but high level. The repo does not yet show how
-  an operator, incident reviewer, or reliability engineer would consume audit
-  output inside existing logging/SIEM/incident tooling.
-- "Observe-only" is the right adoption path, but the repo does not yet show an
-  observe-only integration artifact or sample report from a shadow-mode run.
+- The customer docs use clearer language, but the normative protocol still
+  uses "central agent" and "edge agent." That is probably acceptable for the
+  spec, but reviewers who jump between README, spec, and package names may
+  still need the "agent means software actor" caveat repeated.
+- "Robot-local edge authority service" and "robot-local edge authority gate"
+  are both used. The difference between the policy/lease service and the
+  command-path gate should be crisp before less technical outreach.
+- The deployment-shape mapping is useful but still illustrative. It does not
+  map example capabilities to actual ROS 2 actions/topics, gateway API calls,
+  teleop session transitions, or fleet-manager command objects.
+- The observe-only sample report helps, but it is synthetic. A fleet
+  reliability lead will ask for a real shadow-mode trace against recorded
+  command streams before treating the audit story as evidence.
+- Network state is correctly framed as an authorization input, but the source
+  of truth remains open: who measures it, how it is authenticated, how it is
+  debounced, and how conflicting robot-local observations are resolved.
+- Policy ownership is now named, but the production lifecycle is still only a
+  validation discussion: review gates, emergency narrowing, rollout, rollback,
+  incident review, and policy version ownership are not operationally
+  specified.
+- The Python reference implementation, Rust verifier spike, ROS 2 scaffold,
+  eval runner, Isaac Sim scaffold, and future commercial platform are separated
+  in prose, but a skimming reviewer may still need a short "which artifact is
+  authoritative for what?" table.
+- The demo is a good authority-flow proof, but it is not yet a robot workflow
+  proof. It does not show timing, operator UX, robot command latency, ROS 2
+  delivery, gateway deployment, or degraded real-network behavior.
 
 ## Likely customer objections
 
-- "We already enforce authority in our fleet manager, teleop service, IAM, ROS
-  permissions, or robot gateway. Why add another gate?"
-- "A robot-local gate in the command path could add latency, operational
-  fragility, or false denials during incidents."
-- "Who writes and owns these policies, and how do they pass safety/security
-  review?"
-- "How do leases and revocations propagate across intermittent connectivity,
-  multiple edge processes, and robot restarts?"
-- "What is the source of truth for observed network state, geofence state, and
-  mission state?"
-- "How does this compose with our existing emergency stop, safety PLC,
-  braking, autonomy fallback, and certified safety stack?"
-- "Can this run observe-only against our current command stream without
-  changing robot behavior?"
-- "What evidence distinguishes this from a well-designed teleop permission
-  check plus audit logging?"
-- "How do we avoid creating a new vendor-neutral standard before proving that
-  enough teams share the same authority boundary?"
+- "We already enforce this in our fleet manager, teleop service, IAM layer,
+  ROS permissions, gateway, or operations process. What failure mode does RCLP
+  catch that we do not?"
+- "A gate near the command path can add latency, false denials, integration
+  fragility, and new incident modes during remote assist."
+- "Who owns these policies, and what safety, reliability, security, and
+  operations review is required before enforcement?"
+- "Where does observed network state come from, and why should the authority
+  layer trust it?"
+- "How do leases, revocations, and replay caches behave across partitions,
+  robot restarts, multiple edge processes, and clock skew?"
+- "How does this compose with our existing e-stop, braking, safety PLC,
+  autonomy fallback, and certified safety stack?"
+- "Can it run observe-only against our current command stream without touching
+  robot behavior, and what would the first useful report look like?"
+- "What evidence distinguishes this from adding better permission checks and
+  audit logging to our existing teleop or gateway stack?"
+- "Is a vendor-neutral protocol premature before there is field evidence that
+  multiple fleets share this exact authority boundary?"
 
 ## Where this fits in a robot stack
 
 - Between central software actors and selected robot-facing command paths.
 - Near a robot gateway, edge runtime, ROS 2 bridge, DDS boundary, custom
-  command router, or remote-assist command ingress point.
+  command router, remote-assist command ingress point, or autonomy escalation
+  boundary.
 - Beside fleet managers and teleop systems: those systems may request leases,
-  but RCLP would decide whether selected capabilities are currently
-  authorized.
-- Above robot-local autonomy and safety controls: RCLP can deny or revoke
-  authority, but local autonomy and safety systems remain responsible for
-  physical behavior.
-- In audit and incident-review workflows, where the value is reconstructing
-  who requested authority, under what context, what was allowed or denied, and
-  why authority changed.
+  but RCLP decides whether selected capabilities are currently authorized under
+  local context.
+- Above robot-local autonomy and safety controls: RCLP can deny, degrade, or
+  revoke software authority, but the local autonomy and safety stack remains
+  responsible for physical behavior.
+- In observe-only audit first, where it mirrors selected command intents and
+  records would-allow, would-deny, would-degrade, and would-revoke decisions
+  without blocking robot behavior.
+- In incident review, where the value is reconstructing who requested
+  authority, for which robot and mission, under what local state, and why the
+  authority decision changed.
 
 ## Where this does not fit
 
 - It does not belong in low-level control loops, braking, obstacle avoidance,
-  e-stop, safety PLC behavior, perception, or certified safety functions.
-- It does not replace ROS 2, DDS, VDA5050, Open-RMF, MCP, A2A, fleet managers,
-  teleop session managers, carrier platforms, or network operations tooling.
-- It is not a hosted SaaS control plane in this repo.
-- It is not a production key-management, attestation, policy lifecycle, or
-  fleet-scale audit backend.
-- It is not evidence of real cellular behavior, field safety, customer
-  willingness to deploy, or production readiness.
+  e-stop, safety PLC logic, perception, planning, or certified safety
+  functions.
+- It does not replace ROS 2, DDS, SROS2, VDA5050, Open-RMF, MCP, A2A, fleet
+  managers, teleop session managers, carrier platforms, or network operations
+  tooling.
+- It is not the hosted commercial platform, managed trust root, policy UI,
+  fleet-scale audit backend, enterprise IAM integration, billing system, or
+  carrier integration.
+- It is not production key management, hardware-backed trust, attestation,
+  policy lifecycle management, or a field-proven safety case.
+- It is not evidence that customers will deploy, buy, or accept hard command
+  gating.
 
 ## Blocking issues before technical validation calls
 
-- No blocking issue for controlled technical validation calls with friendly or
-  high-context robotics platform teams, provided the call is framed narrowly
-  around authority-boundary validation.
-- For broader outreach, the main blocker is still lack of a one-page
-  "show me my stack" mapping for common deployment shapes: ROS 2 robot,
-  proprietary robot gateway, teleop service, fleet manager, and autonomy
-  module.
-- The second blocker for broader outreach is missing observe-only evidence:
-  a sample shadow-mode report showing what RCLP would have allowed, denied,
-  degraded, and audited without touching robot behavior.
-- A third blocker is policy ownership. Before outreach beyond technical
-  validators, the docs should say who is expected to define, approve, deploy,
-  and review capability policies in a real fleet organization.
+- No blocker for tightly scoped technical validation calls with robotics
+  platform, autonomy infrastructure, remote-assist, or fleet reliability teams.
+  The repo is now clear enough to ask whether the authority primitive is real
+  and where it would fit.
+- Do not broaden the audience yet. Operator-facing, sales, pilot, or
+  production-readiness outreach would still overrun the evidence.
+- The main pre-call caveat is that the observe-only report is illustrative, not
+  generated from customer telemetry. Say that plainly before a reviewer has to
+  discover it.
+- The second pre-call caveat is integration specificity: be ready to ask the
+  customer for one concrete command path to map, because the repo does not yet
+  provide ROS 2 topic/action, gateway API, or teleop-session adapter details.
+- The third pre-call caveat is policy lifecycle: the repo identifies likely
+  policy owners, but it does not yet define an operational policy change and
+  approval process.
 
 ## Recommended wording changes
 
-- Prefer: "robot-local edge authority gate" over "edge agent" in customer
-  docs unless the sentence immediately defines "agent."
-- Prefer: "capability authority request from a fleet service, autonomy module,
-  remote-assist service, or operator-session controller" over "central-agent
-  request."
-- Add a repeated sentence near stack/integration docs: "In observe-only mode,
-  RCLP would record allow/deny/degrade decisions without blocking commands."
-- Add a concrete policy-ownership sentence: "In a production program, policy
-  ownership would likely sit with the team that already owns robot operational
-  risk: safety/reliability/autonomy/platform, not with the protocol itself."
-- Add a deployment-shape caveat: "The MVP proves the authority primitive; it
-  does not yet prescribe whether the edge gate is packaged as a ROS 2 node,
-  gateway plugin, sidecar process, or embedded library."
-- When describing network inputs, prefer: "observed network state used as an
-  authorization input" rather than any phrase that sounds like connectivity or
-  QoS assurance.
-- For outreach, lead with `remote_assist`, `operator_velocity_control`, and
-  `recovery_behavior`; leave `AI agent` and broader autonomy language later so
-  operators do not assume this is an LLM control product.
+- Prefer "robot-local authority gate" or "robot-local edge authority gate" in
+  customer-facing docs; reserve "edge agent" for protocol-spec contexts that
+  immediately define the term.
+- Use one consistent distinction: "authority service" for policy/lease
+  decisioning and "authority gate" for command-path enforcement.
+- In outreach, lead with `remote_assist`, `operator_velocity_control`, and
+  `recovery_behavior`; move `AI agent` and broader autonomy language later so
+  operators do not read this as an LLM-control product.
+- Add a short artifact map near the validation entry path: Python reference =
+  protocol behavior, Rust verifier = edge-verifier spike, ROS 2 scaffold =
+  adapter direction, eval runner = deterministic local evidence, future
+  commercial platform = out of repo.
+- Label the observe-only sample as "illustrative, not generated from field
+  data" anywhere it is linked from a customer packet.
+- Keep using "observed network state used as an authorization input"; avoid
+  wording that sounds like connectivity assurance, QoS assurance, or carrier
+  behavior.
+- Fix small wording friction such as "local robot-local edge authority gate" in
+  safety docs before sending the packet externally.

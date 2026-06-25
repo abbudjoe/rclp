@@ -5,8 +5,8 @@ evidence in this repository.
 
 ## v0.0.1 - Local Protocol Proof
 
-Scope: a local, dependency-light reference implementation for the
-central-agent to edge-agent `remote_assist` lease primitive.
+Scope: a local, dependency-light reference implementation for the central
+software actor to robot-local authority gate `remote_assist` lease primitive.
 
 - README quickstart runs from a fresh checkout with Python 3.11 or newer.
 - `docs/DEMO_WALKTHROUGH.md` matches current demo output.

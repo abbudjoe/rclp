@@ -2,18 +2,19 @@
 
 ## One-Liner
 
-RCLP is an open protocol MVP for short-lived capability leases between
-central software actors and robot-local edge authority services that mediate
-selected robot capabilities.
+RCLP is an open protocol MVP for short-lived capability leases: central
+software actors request selected robot capabilities, a robot-local authority
+service evaluates policy, and a robot-local authority gate enforces the result.
 
-In this repo, "agent" means a software actor. It may be a fleet service,
-autonomy module, remote-assist service, operator-session controller, or AI
-agent. It does not imply an LLM, chatbot, or fully autonomous fleet manager.
+In this repo, "agent" means a software actor. It may be a remote-assist
+service, operator-session controller, fleet service, autonomy module, or other
+software actor. It does not imply an LLM, chatbot, or fully autonomous fleet
+manager.
 
 ## Problem Statement
 
-As robot fleets add remote assist, edge autonomy, fleet software, and
-operator-session controllers, teams need a way to decide and prove when
+As robot fleets add remote assist, operator-session controllers, fleet
+software, and edge autonomy, teams need a way to decide and prove when
 authority is permitted to pass from a central software actor to a robot-local
 runtime under explicit policy and local conditions.
 
@@ -25,15 +26,15 @@ media. RCLP focuses on a narrower authority question:
 
 ## What The MVP Proves
 
-- capability authority request from a fleet service, autonomy module,
-  remote-assist service, operator-session controller, or other central
-  software actor
-- robot-local edge authority-service verification
+- capability authority request from a remote-assist service,
+  operator-session controller, fleet service, autonomy module, or other
+  central software actor
+- robot-local authority service policy and lease verification
 - signed/scoped/expiring lease semantics
 - denial/revocation on stale, unauthorized, unsuitable, or context-mismatched authority
 - decisions that use observed network state as an authorization input, along
   with geofence state
-- local command-gating semantics
+- robot-local authority gate command enforcement
 - audit replay
 - adversarial eval coverage
 
@@ -94,8 +95,9 @@ Supporting docs for common objections:
 
 - `docs/DEPLOYMENT_SHAPES.md` maps RCLP to ROS 2 robots, proprietary robot
   gateways, teleop services, fleet managers, and autonomy modules.
-- `docs/OBSERVE_ONLY_SAMPLE_REPORT.md` shows what shadow-mode audit evidence
-  could look like without changing robot behavior.
+- `docs/OBSERVE_ONLY_SAMPLE_REPORT.md` shows illustrative shadow-mode audit
+  evidence that is not generated from field data and does not change robot
+  behavior.
 - `docs/POLICY_OWNERSHIP.md` names who would define, approve, deploy, and
   review policies in a real fleet organization.
 

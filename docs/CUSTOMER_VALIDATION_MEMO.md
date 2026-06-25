@@ -5,13 +5,14 @@ keeps the longer validation questions and framing.
 
 ## One-Liner
 
-RCLP is an open protocol MVP for short-lived capability leases between
-central software actors and robot-local edge authority services that mediate
-selected robot capabilities.
+RCLP is an open protocol MVP for short-lived capability leases: central
+software actors request selected robot capabilities, a robot-local authority
+service evaluates policy, and a robot-local authority gate enforces the result.
 
-In this repo, "agent" means a software actor. It may be a fleet service,
-autonomy module, remote-assist service, operator-session controller, or AI
-agent. It does not imply an LLM, chatbot, or fully autonomous fleet manager.
+In this repo, "agent" means a software actor. It may be a remote-assist
+service, operator-session controller, fleet service, autonomy module, or other
+software actor. It does not imply an LLM, chatbot, or fully autonomous fleet
+manager.
 
 ## Problem Statement
 
@@ -22,12 +23,13 @@ right now, under current mission, geofence, network, and fallback conditions.
 
 ## What The MVP Proves
 
-- A fleet service, autonomy module, remote-assist service,
-  operator-session controller, or other central software actor can request
-  scoped authority instead of sending a raw high-authority command.
-- A robot-local edge authority service can evaluate local context and policy
-  before issuing authority.
-- A short-lived signed lease can gate command execution.
+- A remote-assist service, operator-session controller, fleet service,
+  autonomy module, or other central software actor can request scoped authority
+  instead of sending a raw high-authority command.
+- A robot-local authority service can evaluate local context and policy before
+  issuing authority.
+- A robot-local authority gate can enforce a short-lived signed lease near the
+  command path.
 - Degraded or unsuitable observed network state used as an authorization input
   can deny, degrade, or revoke authority.
 - Missing, stale, invalid, mismatched, expired, or revoked leases are rejected.

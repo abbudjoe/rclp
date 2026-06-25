@@ -12,15 +12,16 @@
 ## RCLP insertion point
 
 RCLP sits before selected high-authority robot-facing commands. It evaluates a
-capability authority request from a central software actor and gives a
-robot-local edge authority gate enough signed, scoped context to allow, deny,
-degrade, revoke, and audit command authority locally.
+capability authority request from a central software actor through a
+robot-local authority service, then gives a robot-local authority gate enough
+signed, scoped context to allow, deny, degrade, revoke, and audit command
+authority locally.
 
 RCLP does not replace teleop media transport, operator UI, local autonomy, or
 safety controllers.
 
 The MVP proves the authority primitive; it does not yet prescribe whether the
-edge gate is packaged as a ROS 2 node, gateway plugin, sidecar process, or
+authority gate is packaged as a ROS 2 node, gateway plugin, sidecar process, or
 embedded library.
 
 In observe-only mode, RCLP would record allow/deny/degrade decisions without
@@ -40,7 +41,7 @@ blocking commands.
    - observed network state used as an authorization input
    - fallback policy
 4. RCLP grants, denies, or degrades.
-5. Robot-local edge authority gate accepts selected commands only while a valid lease exists.
+5. Robot-local authority gate accepts selected commands only while a valid lease exists.
 6. If lease, network, geofence, or mission state becomes invalid, the gate rejects further high-authority commands and emits fallback/audit events.
 
 ## Example gated commands

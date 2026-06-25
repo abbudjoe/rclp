@@ -10,10 +10,10 @@ RCLP currently demonstrates a local reference profile for the `remote_assist`
 authority primitive:
 
 ```text
-central agent requests authority
--> edge agent evaluates policy and local state
+central software actor requests authority
+-> robot-local authority service evaluates policy and local state
 -> a signed short-lived lease is issued, denied, degraded, or revoked
--> command gate enforces locally
+-> robot-local authority gate enforces locally
 -> audit replay reconstructs the event chain
 ```
 
@@ -31,7 +31,7 @@ authority primitive.
   cache.
 - Deterministic network profiles: `normal`, `degraded_teleop`, `uplink_bad`,
   and `partition`.
-- Edge command gate that rejects missing, invalid, expired, stale, revoked,
+- Robot-local command gate that rejects missing, invalid, expired, stale, revoked,
   mismatched, overlong, or constraint-violating leases.
 - Fallback declarations as events and hooks, not certified safety behavior.
 - Audit JSONL, payload hashes, local hash-chain integrity proof, and replay
@@ -47,8 +47,8 @@ authority primitive.
   full simulator implementation.
 - Rust verifier is a spike, not a replacement for the Python reference and not
   production cryptographic infrastructure.
-- Carrier/MVNO, real QoS, real cellular impairment, and managed connectivity
-  integrations are out of scope.
+- Carrier/MVNO, real cellular impairment, carrier-network behavior, and
+  managed connectivity integrations are out of scope.
 - Hosted trust root, managed policy UI, accounts, billing, and fleet-scale
   audit backend are out of scope for this repo.
 

@@ -22,13 +22,14 @@ The packaged validation commands are:
 
 ## Flow
 
-1. Explain central software actor to robot-local edge authority-service
-   negotiation.
+1. Explain central software actor to robot-local authority service and
+   authority gate negotiation.
 
    RCLP does not send raw high-authority commands directly from a central
    software actor to a robot-local command path. The central software actor
-   requests a physical capability, and the edge authority service evaluates
-   local policy and context before authority passes.
+   requests a physical capability, the authority service evaluates local
+   policy and context, and the authority gate enforces valid leases near the
+   command path.
 
    The important result is not robot motion; it is local rejection,
    revocation, and auditability of selected robot authority.
@@ -91,7 +92,8 @@ The packaged validation commands are:
    `docs/CUSTOMER_CALL_PACKET.md`, `docs/STACK_PLACEMENT.md`,
    `docs/DEPLOYMENT_SHAPES.md`,
    `docs/INTEGRATION_SKETCH_REMOTE_ASSIST.md`,
-   `docs/OBSERVE_ONLY_SAMPLE_REPORT.md`, `docs/POLICY_OWNERSHIP.md`,
+   `docs/OBSERVE_ONLY_SAMPLE_REPORT.md` (illustrative, not generated from
+   field data), `docs/POLICY_OWNERSHIP.md`,
    `docs/WHY_NOT_ROS_VDA5050_MCP_A2A.md`, and
    `docs/FIRST_CALL_TARGET_PROFILE.md` for follow-up.
 

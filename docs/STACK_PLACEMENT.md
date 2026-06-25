@@ -2,22 +2,22 @@
 
 ## Where RCLP runs
 
-RCLP runs between central software actors and a robot-local edge authority
-gate. The policy and lease path may run as a reference Python service,
-embedded edge service, or future hardened verifier, but command enforcement
-belongs near the robot-facing command path.
+RCLP runs between central software actors and a robot-local authority gate. A
+robot-local authority service handles policy and lease decisioning; the
+authority gate enforces the result near the robot-facing command path.
 
 The MVP proves the authority primitive; it does not yet prescribe whether the
-edge gate is packaged as a ROS 2 node, gateway plugin, sidecar process, or
+authority gate is packaged as a ROS 2 node, gateway plugin, sidecar process, or
 embedded library. See `docs/DEPLOYMENT_SHAPES.md` for common validation-call
 deployment shapes.
 
 ## What calls it
 
-A fleet service, autonomy module, remote-assist service, operator-session
-controller, or AI agent can submit a capability authority request. In this
-repo, "agent" means that kind of software actor; it does not imply an LLM,
-chatbot, or fully autonomous fleet manager.
+A remote-assist service, operator-session controller, fleet service, autonomy
+module, or other central software actor can submit a capability authority
+request. In this repo, "agent" means that kind of software actor; it does not
+imply an LLM, chatbot, or fully autonomous fleet manager. A future caller could
+be an AI agent, but RCLP is not an LLM-control product.
 
 ## What it gates
 
@@ -49,23 +49,23 @@ certified safety system.
 |---|---|---|---|
 | Fleet manager | Viam, Formant, custom fleet ops | Dispatch, observe, coordinate | May request leases; not replaced |
 | Remote-assist service | Teleop session manager, operator UI | Human/operator intervention | May request `remote_assist` authority |
-| Central software actor | Fleet service, autonomy module, AI agent, operator-session controller | Requests capability authority | RCLP caller |
-| RCLP policy/lease layer | RCLP reference implementation | Issues allow/deny/degrade decisions | Core protocol |
-| Edge authority gate | Robot-local verifier / command gate | Enforces lease locally | Core enforcement point |
+| Central software actor | Remote-assist service, operator-session controller, fleet service, autonomy module | Requests capability authority | RCLP caller |
+| Authority service | RCLP reference implementation | Issues allow/deny/degrade decisions | Core protocol |
+| Robot-local authority gate | Robot-local verifier / command gate | Enforces lease locally | Core enforcement point |
 | Robot middleware | ROS 2, custom C++, DDS | Carries commands/actions | Selected commands may be gated |
 | Robot autonomy/safety | planning, controls, e-stop, braking | Local robot behavior and safety | Not replaced |
 | Audit sink | logs, SIEM, incident review | Records decisions | Receives RCLP audit events |
 
 ```text
-Fleet service / remote-assist service / autonomy module
+Remote-assist service / operator-session controller / fleet service / autonomy module
         |
         | capability authority request
         v
-RCLP policy + lease issuer
+Robot-local authority service / lease issuer
         |
         | signed short-lived lease
         v
-Robot-local edge authority gate
+Robot-local authority gate
         |
         | gated command path
         v

@@ -2,7 +2,7 @@
 
 RCLP is not replacing ROS 2, VDA5050, Open-RMF, MassRobotics AMR Interop, MCP,
 A2A, fleet managers, teleop systems, or IoT connectivity platforms. It targets
-a narrower central-agent to edge-agent authority negotiation gap.
+a narrower central software actor to robot-local authority gate gap.
 
 Existing systems move state, missions, tools, messages, or commands. RCLP asks
 whether a specific actor has bounded, current authority to exercise a specific
@@ -43,7 +43,7 @@ signals across systems.
 
 RCLP is not a fleet-state reporting format. It could consume local state as an
 authorization input, but its core primitive is scoped authority leasing and
-edge-side command gating.
+robot-local command gating.
 
 ## MCP
 
@@ -58,17 +58,17 @@ authority to exercise the robot-facing capability.
 A2A-style agent protocols coordinate communication between software agents.
 
 RCLP is narrower: it gates physical capability authority between a central or
-fleet actor and a robot-local edge runtime. It does not try to become a general
-agent messaging layer.
+fleet actor and a robot-local authority gate. It does not try to become a
+general agent messaging layer.
 
 ## Fleet Managers
 
 Fleet managers handle scheduling, allocation, routing, state, policies,
 operator workflows, and operational dashboards.
 
-RCLP does not replace those systems. A fleet manager or agent may request a
-lease, but the edge agent still enforces whether the requested authority is
-valid under local conditions.
+RCLP does not replace those systems. A fleet manager or other software actor
+may request a lease, but the robot-local authority gate still enforces whether
+the requested authority is valid under local conditions.
 
 ## Teleop Systems
 
