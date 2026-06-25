@@ -35,6 +35,10 @@ Minimum v0.0.1 message checklist:
   the local demo embeds network state in `RobotStateAssertion`. Trust-boundary
   use requires an authenticated envelope; the v0.0.1 local demo does not verify
   standalone network assertion signatures.
+- `ControlPlaneReachabilityAssertion` is signed edge-local evidence for policies
+  that explicitly require hosted-control-plane reachability as a distinct input.
+  Missing, stale, unsigned, untrusted, partitioned, unknown, or explicitly
+  unreachable assertions fail closed only when the policy requires them.
 - `CapabilityRequest` is signed and includes requesting agent, edge agent,
   robot, mission, capability, reason, requested duration, and request nonce.
 - `CapabilityDecision` records allow, deny, or degrade with reason code,
@@ -59,6 +63,9 @@ Minimum v0.0.1 message checklist:
 - `AuditCommit` records every authority-relevant request, decision, command
   allow/reject, revocation, and fallback path. The MVP schema lives at
   `manifests/rclp_audit_conformance_schema.json`.
+- `AuditBatchCommit` signs a finite ordered batch of committed audit events and
+  their chain head as local validation evidence. It is not a production
+  append-only audit backend.
 
 ## Authority Evaluation
 
@@ -69,6 +76,8 @@ The policy path MUST:
   request signatures, missing replay protection, unauthenticated or stale state,
   unknown future policy fields, and unaccepted policy digests;
 - treat network state as an authorization input, not a network guarantee;
+- treat control-plane reachability as a separate authorization input only when a
+  policy explicitly requires it;
 - allow `remote_assist` only when identity, mission, geofence, human-operator,
   network, policy-digest, and request-signature checks pass;
 - degrade or deny when deterministic network profiles cross configured
@@ -119,6 +128,7 @@ Run these before claiming v0.0.1 local conformance:
 ```bash
 python -m compileall src tests
 python -m pytest
+python scripts/run_cross_language_conformance.py
 python -m rclp_agents.demo_remote_assist
 python -m rclp_agents.demo_remote_assist --network-profile uplink_bad
 ```
@@ -136,5 +146,5 @@ The local profile does not prove field safety, real cellular behavior,
 production key management, signed policy bundle distribution, standalone
 network-state assertion signature verification, signed decision verification
 across a trust boundary, production fallback execution semantics, fleet-scale
-revocation propagation, or hosted SaaS behavior. Those are v0.1+ hardening
-items.
+revocation propagation, production append-only audit storage, or hosted SaaS
+behavior. Those are v0.1+ hardening items.

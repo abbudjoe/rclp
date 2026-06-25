@@ -19,6 +19,8 @@ from rclp_core.models import (
     Capability,
     CapabilityConstraintBounds,
     CapabilityRequest,
+    ControlPlaneReachability,
+    ControlPlaneReachabilityAssertion,
     Decision,
     FallbackAction,
     LeaseConstraints,
@@ -30,6 +32,8 @@ from rclp_core.models import (
 from rclp_core.state import (
     DEFAULT_STATE_MAX_AGE_SECONDS,
     ROBOT_STATE_REQUIRED_WIRE_FIELDS,
+    control_plane_reachability_auth_violation,
+    control_plane_reachability_time_violation,
     network_state_authority_violation,
     state_auth_violation,
     state_time_violation,
@@ -238,6 +242,8 @@ class PolicyRequirements(BaseModel):
     geofence_id: str | None = None
     geofence_allowed: bool = True
     human_operator_available: bool = True
+    control_plane_required: bool = False
+    control_plane_must_be_reachable: bool = True
     network: NetworkRequirements = Field(default_factory=NetworkRequirements)
 
     _validate_max_speed_number = field_validator("max_speed_mps", mode="before")(
@@ -247,6 +253,8 @@ class PolicyRequirements(BaseModel):
         "geofence_required",
         "geofence_allowed",
         "human_operator_available",
+        "control_plane_required",
+        "control_plane_must_be_reachable",
         mode="before",
     )(_reject_coerced_bool)
 
@@ -342,6 +350,23 @@ def _network_requirements_malformed(req: NetworkRequirements) -> bool:
 
 def _geofence_requirements_malformed(req: PolicyRequirements) -> bool:
     return req.geofence_required and (req.geofence_id is None or not req.geofence_id.strip())
+
+
+def _control_plane_reachability_violation(
+    assertion: ControlPlaneReachabilityAssertion,
+    *,
+    must_be_reachable: bool,
+) -> str | None:
+    if not must_be_reachable:
+        return None
+    if assertion.reachability in {
+        ControlPlaneReachability.UNKNOWN,
+        ControlPlaneReachability.PARTITIONED,
+    }:
+        return "CONTROL_PLANE_UNREACHABLE"
+    if not assertion.reachable:
+        return "CONTROL_PLANE_UNREACHABLE"
+    return None
 
 
 def _requested_constraint_violation(
@@ -543,6 +568,7 @@ def _evaluate_policy_inputs(
     edge_public_keys_by_id: Mapping[str, str],
     accepted_policy_digests: set[str],
     replay_cache: RequestReplayCache,
+    control_plane_state: ControlPlaneReachabilityAssertion | None = None,
     now: datetime | None = None,
     max_request_age_seconds: int = DEFAULT_REQUEST_MAX_AGE_SECONDS,
     max_state_age_seconds: int = DEFAULT_STATE_MAX_AGE_SECONDS,
@@ -551,7 +577,10 @@ def _evaluate_policy_inputs(
     net = state.network_state
     now = now or datetime.now(timezone.utc)
 
-    if version_reason := protocol_version_violation(request, state):
+    version_checked_messages = (request, state)
+    if control_plane_state is not None:
+        version_checked_messages = (request, state, control_plane_state)
+    if version_reason := protocol_version_violation(*version_checked_messages):
         return Decision.DENY, version_reason, [policy.fallback.on_deny], None
     if time_reason := _request_time_violation(
         request,
@@ -607,6 +636,36 @@ def _evaluate_policy_inputs(
         max_age_seconds=max_state_age_seconds,
     ):
         return Decision.DENY, state_time_reason, [policy.fallback.on_deny], None
+    if req.control_plane_required:
+        if control_plane_state is None:
+            return Decision.DENY, "CONTROL_PLANE_STATE_REQUIRED", [policy.fallback.on_deny], None
+        if (
+            control_plane_state.robot_id != request.robot_id
+            or control_plane_state.edge_agent_id != request.edge_agent_id
+            or control_plane_state.mission_id != request.mission_id
+        ):
+            return Decision.DENY, "CONTROL_PLANE_STATE_MISMATCH", [policy.fallback.on_deny], None
+        if control_plane_auth_reason := control_plane_reachability_auth_violation(
+            control_plane_state,
+            edge_public_keys_by_id,
+        ):
+            return Decision.DENY, control_plane_auth_reason, [policy.fallback.on_deny], None
+        if control_plane_time_reason := control_plane_reachability_time_violation(
+            control_plane_state,
+            now=now,
+            max_age_seconds=max_state_age_seconds,
+        ):
+            return Decision.DENY, control_plane_time_reason, [policy.fallback.on_deny], None
+        if control_plane_reachability_reason := _control_plane_reachability_violation(
+            control_plane_state,
+            must_be_reachable=req.control_plane_must_be_reachable,
+        ):
+            return (
+                Decision.DENY,
+                control_plane_reachability_reason,
+                [policy.fallback.on_disconnect],
+                None,
+            )
     if _network_requirements_malformed(req.network):
         return (
             Decision.DENY,
@@ -678,6 +737,7 @@ def evaluate_policy(
     edge_public_keys_by_id: Mapping[str, str],
     accepted_policy_digests: set[str],
     replay_cache: RequestReplayCache,
+    control_plane_state: ControlPlaneReachabilityAssertion | None = None,
     now: datetime | None = None,
     max_request_age_seconds: int = DEFAULT_REQUEST_MAX_AGE_SECONDS,
     max_state_age_seconds: int = DEFAULT_STATE_MAX_AGE_SECONDS,
@@ -690,6 +750,7 @@ def evaluate_policy(
         edge_public_keys_by_id=edge_public_keys_by_id,
         accepted_policy_digests=accepted_policy_digests,
         replay_cache=replay_cache,
+        control_plane_state=control_plane_state,
         now=now,
         max_request_age_seconds=max_request_age_seconds,
         max_state_age_seconds=max_state_age_seconds,
@@ -702,6 +763,9 @@ def evaluate_policy(
     payload = {
         "request_id": request.message_id,
         "state_assertion_id": state.message_id,
+        "control_plane_reachability_assertion_id": (
+            control_plane_state.message_id if control_plane_state is not None else None
+        ),
         "decision": decision,
         "reason_code": reason,
         "safe_alternatives": alternatives,
@@ -709,7 +773,15 @@ def evaluate_policy(
         "constraints": constraints.model_dump(mode="json") if constraints else None,
         "network_state": state.network_state.model_dump(mode="json"),
         "geofence_state": state.geofence_state.model_dump(mode="json"),
+        "control_plane_reachability": (
+            control_plane_state.model_dump(mode="json") if control_plane_state is not None else None
+        ),
     }
+    state_refs = [state.message_id]
+    related_message_ids = [request.message_id, state.message_id]
+    if control_plane_state is not None:
+        state_refs.append(control_plane_state.message_id)
+        related_message_ids.append(control_plane_state.message_id)
     event = audit_log.record(
         event_type=event_type,
         actor_id=deciding_actor_id,
@@ -720,7 +792,7 @@ def evaluate_policy(
         payload=payload,
         policy_id=policy.policy_id,
         policy_digest=policy_digest(policy),
-        state_refs=[state.message_id],
-        related_message_ids=[request.message_id, state.message_id],
+        state_refs=state_refs,
+        related_message_ids=related_message_ids,
     )
     return decision, reason, alternatives, constraints, event

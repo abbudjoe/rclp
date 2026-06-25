@@ -141,6 +141,15 @@ def test_sample_replay_events_are_valid_audit_commits():
     ]
 
 
+def test_crypto_profiles_name_current_dev_algorithms_and_parity_runner():
+    profiles = (ROOT / "docs/CRYPTO_PROFILES.md").read_text(encoding="utf-8")
+
+    assert "RCLP-DEV-ED25519" in profiles
+    assert "RCLP-DEV-HMAC-SHA256" in profiles
+    assert "canonical_json()" in profiles
+    assert "scripts/run_cross_language_conformance.py" in profiles
+
+
 def test_network_degrade_scenario_matches_current_policy_profile_behavior(tmp_path):
     scenario = load_yaml("examples/scenarios/network_degrade.yaml")
     policy = Policy.from_yaml(ROOT / "examples/policies/remote_assist_policy.yaml")

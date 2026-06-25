@@ -93,6 +93,13 @@ class NetworkProfile(StrEnum):
     PARTITION = "partition"
 
 
+class ControlPlaneReachability(StrEnum):
+    UNKNOWN = "unknown"
+    REACHABLE = "reachable"
+    DEGRADED = "degraded"
+    PARTITIONED = "partitioned"
+
+
 class StrictModel(BaseModel):
     model_config = STRICT_MODEL_CONFIG
 
@@ -235,6 +242,29 @@ class NetworkStateAssertion(BaseMessage):
         "uplink_mbps",
         mode="before",
     )(_reject_coerced_number)
+    _validate_measurement_window_seconds_int = field_validator(
+        "measurement_window_seconds",
+        mode="before",
+    )(_reject_coerced_int)
+
+
+class ControlPlaneReachabilityAssertion(BaseMessage):
+    message_type: Literal["control_plane_reachability_assertion"] = (
+        "control_plane_reachability_assertion"
+    )
+    edge_agent_id: str
+    authenticated_edge_agent_id: str | None = None
+    robot_id: str
+    mission_id: str
+    reachability: ControlPlaneReachability
+    reachable: bool
+    observed_at: datetime = Field(default_factory=utc_now)
+    measurement_window_seconds: int = Field(gt=0)
+    source: str
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
+    signature: str | None = None
+
+    _validate_reachable_bool = field_validator("reachable", mode="before")(_reject_coerced_bool)
     _validate_measurement_window_seconds_int = field_validator(
         "measurement_window_seconds",
         mode="before",
@@ -436,3 +466,32 @@ class AuditCommit(BaseMessage):
 
 
 AuditEvent = AuditCommit
+
+
+class AuditBatchCommit(BaseMessage):
+    message_type: Literal["audit_batch_commit"] = "audit_batch_commit"
+    batch_id: str = Field(default_factory=lambda: f"audit_batch_{uuid4().hex}")
+    audit_ids: list[str]
+    event_count: int = Field(gt=0)
+    chain_head: str
+    batch_hash: str
+    signed_by: str
+    authenticated_signed_by: str | None = None
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
+    signature: str | None = None
+
+    _validate_event_count_int = field_validator("event_count", mode="before")(_reject_coerced_int)
+
+    @model_validator(mode="after")
+    def validate_batch_commit(self) -> "AuditBatchCommit":
+        if not self.audit_ids:
+            raise ValueError("audit batch must include at least one audit_id")
+        if self.event_count != len(self.audit_ids):
+            raise ValueError("audit batch event_count must match audit_ids")
+        if not self.chain_head.startswith("sha256:"):
+            raise ValueError("audit batch chain_head must be a sha256 reference")
+        if not self.batch_hash.startswith("sha256:"):
+            raise ValueError("audit batch_hash must be a sha256 reference")
+        if not self.signed_by.strip():
+            raise ValueError("audit batch signed_by is required")
+        return self

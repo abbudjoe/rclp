@@ -87,6 +87,7 @@ message names are `AuditCommit` and `AgentAttestation`.
 | `AgentAttestation` | `AgentAttestation` | `agent_attestation` |
 | `RobotStateAssertion` | `RobotStateAssertion` | `robot_state_assertion` |
 | `NetworkStateAssertion` | `NetworkStateAssertion` | `network_state_assertion` |
+| `ControlPlaneReachabilityAssertion` | `ControlPlaneReachabilityAssertion` | `control_plane_reachability_assertion` |
 | `CapabilityRequest` | `CapabilityRequest` | `capability_request` |
 | `CapabilityDecision` | `CapabilityDecision` | `capability_decision` |
 | `CapabilityLease` | `CapabilityLease` | `capability_lease` |
@@ -94,12 +95,16 @@ message names are `AuditCommit` and `AgentAttestation`.
 | `LeaseRevocation` | `LeaseRevocation` | `lease_revocation` |
 | `FallbackDeclaration` | `FallbackDeclaration` | `fallback_declaration` |
 | `AuditCommit` | `AuditCommit` | `audit_commit` |
+| `AuditBatchCommit` | `AuditBatchCommit` | `audit_batch_commit` |
 
 The local v0.0.1 implementation enforces signed `CapabilityRequest`, signed
 edge-local `RobotStateAssertion`, signed `CapabilityLease`, and signed
 `LeaseRevocation` paths. `FallbackDeclaration` has a signable and verifiable
 trust-boundary profile in the MVP, but local fallback hooks remain
 safety-adjacent declarations, not certified safety behavior. Standalone
+`ControlPlaneReachabilityAssertion` is signed and can be required by policy when
+control-plane reachability is a distinct authorization input. `AuditBatchCommit`
+is a signed local evidence artifact over committed audit events. Standalone
 `NetworkStateAssertion` and `CapabilityDecision` trust-boundary signature
 verification remain v0.1 release blockers, so those messages MUST be treated as
 local/in-process demo messages unless a downstream implementation adds
@@ -570,6 +575,66 @@ Audit impact:
 - Network-triggered denial, degradation, fallback, or revocation MUST be
   auditable with the relevant thresholds and observed values.
 
+### ControlPlaneReachabilityAssertion
+
+Purpose: reports whether the robot-local edge agent can reach the configured
+central/control-plane endpoint when a policy treats that reachability as distinct
+from generic robot network state.
+
+Required fields:
+
+- `edge_agent_id`
+- `authenticated_edge_agent_id`
+- `robot_id`
+- `mission_id`
+- `reachability`
+- `reachable`
+- `observed_at`
+- `measurement_window_seconds`
+- `source`
+- `signature_alg`
+- `signature` or equivalent authenticated envelope
+
+Normative behavior:
+
+- This assertion is optional by default. A policy MUST explicitly set
+  `control_plane_required=true` before missing or unreachable control-plane state
+  can deny authority.
+- `reachability` MUST be one of `reachable`, `degraded`, `partitioned`, or
+  `unknown`.
+- `reachable` MUST be an explicit JSON boolean on the signed wire object; a
+  receiver MUST NOT authorize from a default-filled reachability value.
+- The assertion MUST bind the edge agent, robot, and mission whose authority
+  decision may use it.
+- Measurements MUST be bounded to an explicit observation time and measurement
+  window.
+- A receiver that requires control-plane reachability MUST deny when the
+  assertion is missing, stale, unsigned, signed by an untrusted edge identity, or
+  reports `unknown`, `partitioned`, or `reachable=false`.
+- Edge command enforcement MUST remain local. A required
+  `ControlPlaneReachabilityAssertion` MAY affect new authority issuance, but it
+  MUST NOT make command enforcement depend on a live cloud call.
+
+Rejection conditions:
+
+- assertion is required by policy but missing
+- `reachable` is missing, non-boolean, or false when reachability is required
+- `reachability` is `unknown` or `partitioned` when reachability is required
+- edge agent, robot, or mission does not match the request or state context
+- assertion is stale or from the future for the active policy profile
+- authenticated identity does not match `edge_agent_id`
+- signature algorithm is missing or unsupported
+- signature is missing, malformed, or invalid
+- signed material exceeds the receiver's pre-auth text budget
+
+Audit impact:
+
+- A decision that depends on control-plane reachability MUST reference the
+  assertion `message_id`, payload hash, or equivalent state snapshot.
+- The decision audit payload SHOULD include the reachability state and reason
+  code needed to distinguish hosted-control-plane partition from generic robot
+  network degradation.
+
 ### FallbackDeclaration
 
 Purpose: declares the fallback hook selected after denial, expiry, degradation,
@@ -725,6 +790,65 @@ Audit impact:
   operationally significant because missing audit can make an authority chain
   unreconstructable.
 
+### AuditBatchCommit
+
+Purpose: signs a finite batch of committed audit events and their current hash
+chain head for portable local validation evidence.
+
+Required fields:
+
+- `batch_id`
+- `audit_ids`
+- `event_count`
+- `chain_head`
+- `batch_hash`
+- `signed_by`
+- `authenticated_signed_by`
+- `signature_alg`
+- `signature`
+
+Normative behavior:
+
+- `audit_ids` MUST list at least one committed `AuditCommit.audit_id`.
+- `event_count` MUST equal the number of `audit_ids`.
+- The MVP signed-batch profile MUST contain a contiguous local audit chain
+  starting with `previous_audit_hash=null`. Profiles that sign partial chain
+  windows need an explicit external starting anchor before they can claim the
+  same evidence strength.
+- `chain_head` MUST be the final `integrity_proof` of the committed events in
+  the batch.
+- `batch_hash` MUST commit to the ordered audit ids, event count, chain head, and
+  serialized committed audit events.
+- Signers and verifiers MUST recompute every event `payload_hash`, rolling
+  `previous_audit_hash`, and `integrity_proof` before accepting the batch.
+- `signed_by` MUST identify the audit signer; `authenticated_signed_by` MUST
+  match it for the MVP dev profile.
+- The MVP batch signature profile uses `signature_alg="RCLP-DEV-ED25519"` and is
+  local validation evidence only. It is not a production append-only audit
+  backend.
+
+Rejection conditions:
+
+- the referenced event list is empty
+- the event list has duplicate `audit_id` values, broken previous-hash
+  continuity, invalid payload hashes, invalid integrity proofs, or events from
+  mixed/non-contiguous chains
+- event ids, event count, chain head, or batch hash do not match the committed
+  events
+- `chain_head` or `batch_hash` is not a SHA-256 reference
+- signer identity is missing, unauthenticated, mismatched, or not trusted
+- signature algorithm is missing or unsupported
+- signature is missing, malformed, or invalid
+- signed material exceeds the receiver's pre-auth text budget
+
+Audit impact:
+
+- A batch commit does not replace the individual `AuditCommit` records. It is an
+  additional signed evidence artifact that can prove a local report contains the
+  same ordered audit events and chain head reviewed during validation.
+- Production audit claims require an append-only or otherwise tamper-evident
+  backend beyond this local signed-batch reference artifact.
+
 ## Lease Validation Rules
 
 An edge agent MUST reject a physical command if:
@@ -764,14 +888,18 @@ policy.
 
 ## Cloud / Control-Plane Reachability
 
-The MVP does not define a separate cloud-reachability or hosted-control-plane
-message. Current cloud-partition scenarios are deterministic local network
-state simulations, typically `NetworkProfile.PARTITION`, and claims about those
-scenarios MUST be phrased as local network-state-aware authorization behavior.
+The MVP defines optional `ControlPlaneReachabilityAssertion` as a distinct
+protocol input for profiles that need to distinguish hosted-control-plane
+reachability from generic robot network state. Policies do not require it by
+default. When `control_plane_required=true`, new authority issuance MUST fail
+closed if the assertion is missing, stale, unsigned, untrusted, or reports
+`unknown`, `partitioned`, or `reachable=false`.
 
-Future profiles MAY add a dedicated control-plane reachability assertion, but
-edge command enforcement MUST remain local and fail closed without requiring
-cloud availability.
+Current cloud-partition scenarios remain deterministic local simulations.
+Claims about those scenarios MUST be phrased as local network-state-aware or
+control-plane-reachability-aware authorization behavior, not field network
+guarantees. Edge command enforcement MUST remain local and fail closed without
+requiring cloud availability.
 
 ## Fallback Semantics
 
@@ -814,6 +942,8 @@ authority lease semantics.
 - Policy schemas and conformance tests will evolve before v0.1.
 - Python and Rust now both treat an accepted lease nonce as single-use in their
   edge-verifier replay windows.
+- Control-plane reachability is optional policy input in the Python MVP; it is
+  not a hosted-control-plane implementation.
 
 ## Open Questions
 
@@ -825,8 +955,7 @@ authority lease semantics.
 - How should revocation propagation behave during long network partitions?
 - What network measurement windows and hysteresis profiles are sufficient for
   the MVP remote-assist profile?
-- Which audit integrity proof should the v0.1 conformance profile require:
-  hash chaining, signed batches, append-only storage with signed commit
-  digests, or another narrow mechanism?
+- Which production audit integrity proof should the v0.1 conformance profile
+  require beyond local hash chaining and signed batches?
 - Which fields should be mandatory in the ROS 2, VDA5050, Open-RMF, MCP, and
   A2A adapter profiles beyond the base command-gate contract?

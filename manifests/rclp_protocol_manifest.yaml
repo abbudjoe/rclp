@@ -7,6 +7,7 @@ messages:
   - AgentAttestation
   - RobotStateAssertion
   - NetworkStateAssertion
+  - ControlPlaneReachabilityAssertion
   - CapabilityRequest
   - CapabilityDecision
   - CapabilityLease
@@ -14,6 +15,7 @@ messages:
   - LeaseRevocation
   - FallbackDeclaration
   - AuditCommit
+  - AuditBatchCommit
 message_models:
   AgentAttestation:
     python_model: rclp_core.models.AgentAttestation
@@ -99,6 +101,36 @@ message_models:
       - correlation_id
       - created_at
       - message_type
+      - observed_at
+      - signature_alg
+      - signature
+  ControlPlaneReachabilityAssertion:
+    python_model: rclp_core.models.ControlPlaneReachabilityAssertion
+    message_type: control_plane_reachability_assertion
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - edge_agent_id
+      - authenticated_edge_agent_id
+      - robot_id
+      - mission_id
+      - reachability
+      - reachable
+      - observed_at
+      - measurement_window_seconds
+      - source
+      - signature_alg
+      - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - authenticated_edge_agent_id
       - observed_at
       - signature_alg
       - signature
@@ -312,6 +344,34 @@ message_models:
       - authority_relevant
       - integrity_profile
       - integrity_proof
+  AuditBatchCommit:
+    python_model: rclp_core.models.AuditBatchCommit
+    message_type: audit_batch_commit
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - batch_id
+      - audit_ids
+      - event_count
+      - chain_head
+      - batch_hash
+      - signed_by
+      - authenticated_signed_by
+      - signature_alg
+      - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - batch_id
+      - authenticated_signed_by
+      - signature_alg
+      - signature
 non_goals:
   - fleet_dispatch
   - low_level_safety_control

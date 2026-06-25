@@ -88,9 +88,10 @@ It is a safety-adjacent authority verifier, not a certified safety system.
 
 The Python implementation remains the MVP reference. The Rust verifier mirrors
 the edge command-gate semantics: short-lived scoped leases, explicit local
-context, trusted issuers, revocation, replay rejection, geofence/network checks,
-speed constraints, command actor authentication, command freshness/replay
-rejection, local-state freshness, and auditable fail-closed decisions.
+context, trusted issuers, local revocation state, replay rejection,
+geofence/network checks, speed constraints, command actor authentication,
+command freshness/replay rejection, local-state freshness, and auditable
+fail-closed decisions.
 
 Python and Rust now share the MVP replay decision that an accepted lease nonce
 is single-use in the edge verifier replay window. Python reports
@@ -111,6 +112,16 @@ cargo run -p rclp-edge-verifier --bin rclp-edge-verify -- \
 
 The CLI runs the same `verify_json_value` library path and writes a JSON
 decision with `decision`, `reason_code`, and `audit_event`.
+
+Run the combined Python/Rust parity gate with:
+
+```bash
+python scripts/run_cross_language_conformance.py
+```
+
+The runner executes Python evals and Rust vector tests when Cargo is available,
+then writes `tests/evals/reports/cross_language_latest.json`. It compares shared
+decision semantics while preserving each implementation's native reason codes.
 
 `ReplayCache::consume_nonce()` is intentionally a single check-and-mark
 operation from the verifier's perspective. `ReplayCache::durability()` must
@@ -143,6 +154,9 @@ Python demo uses the explicit non-production
 `signature_alg="RCLP-DEV-ED25519"` profile; the Rust HMAC profile is only to
 keep shared vectors deterministic and offline during this spike.
 
+The normative development-profile details for both Python and Rust live in
+`docs/CRYPTO_PROFILES.md`.
+
 ## Running Tests
 
 From the repository root:
@@ -173,5 +187,8 @@ Use the repo virtualenv if the system Python does not have pytest installed:
   revocation messages in the MVP reference path.
 - Fallback declaration signature verification is implemented in the Python MVP
   reference path, but not in the Rust spike.
+- `ControlPlaneReachabilityAssertion` and `AuditBatchCommit` are Python MVP
+  reference paths in this pass. Rust parity is limited to the edge verifier's
+  command/lease/local-context vectors.
 - Clock trust and monotonic time handling are still assumptions.
 - Audit persistence and hash-chain integration remain in the Python reference.

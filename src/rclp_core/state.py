@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from rclp_core.crypto import verify_with_public_key_b64
 from rclp_core.models import (
+    ControlPlaneReachabilityAssertion,
     NetworkProfile,
     NetworkState,
     RobotStateAssertion,
@@ -16,6 +17,7 @@ DEFAULT_STATE_MAX_AGE_SECONDS = 30
 STATE_CLOCK_SKEW_SECONDS = 30
 ROBOT_STATE_REQUIRED_WIRE_FIELDS = frozenset({"safety_state"})
 NETWORK_STATE_REQUIRED_WIRE_FIELDS = frozenset({"attached"})
+CONTROL_PLANE_REACHABILITY_REQUIRED_WIRE_FIELDS = frozenset({"reachable"})
 MAX_SIGNED_TEXT_FIELD_BYTES = 1_024
 MAX_SIGNED_TEXT_TOTAL_BYTES = 16_384
 
@@ -66,6 +68,33 @@ def robot_state_signed_material_too_large(state: RobotStateAssertion) -> bool:
     return False
 
 
+def control_plane_reachability_signed_material_too_large(
+    assertion: ControlPlaneReachabilityAssertion,
+) -> bool:
+    text_budget = _SignedTextBudget()
+    for value in (
+        assertion.protocol_version,
+        assertion.message_id,
+        assertion.correlation_id,
+        assertion.created_at.isoformat(),
+        assertion.message_type,
+        assertion.edge_agent_id,
+        assertion.authenticated_edge_agent_id,
+        assertion.robot_id,
+        assertion.mission_id,
+        assertion.reachability,
+        assertion.reachable,
+        assertion.observed_at.isoformat(),
+        assertion.measurement_window_seconds,
+        assertion.source,
+        assertion.signature_alg,
+        assertion.signature,
+    ):
+        if text_budget.exceeded(value):
+            return True
+    return False
+
+
 def network_state_required_fields_missing(network: NetworkState) -> bool:
     return not NETWORK_STATE_REQUIRED_WIRE_FIELDS.issubset(network.model_fields_set)
 
@@ -104,6 +133,26 @@ def state_time_violation(
     return None
 
 
+def control_plane_reachability_time_violation(
+    assertion: ControlPlaneReachabilityAssertion,
+    *,
+    now: datetime | None = None,
+    max_age_seconds: int = DEFAULT_STATE_MAX_AGE_SECONDS,
+) -> str | None:
+    now = now or datetime.now(timezone.utc)
+    for timestamp in [
+        assertion.created_at,
+        assertion.observed_at,
+    ]:
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            return "CONTROL_PLANE_TIMESTAMP_INVALID"
+        if timestamp > now + timedelta(seconds=STATE_CLOCK_SKEW_SECONDS):
+            return "CONTROL_PLANE_NOT_YET_VALID"
+        if now - timestamp > timedelta(seconds=max_age_seconds + STATE_CLOCK_SKEW_SECONDS):
+            return "CONTROL_PLANE_STATE_STALE"
+    return None
+
+
 def state_auth_violation(
     state: RobotStateAssertion,
     edge_public_keys_by_id: Mapping[str, str],
@@ -133,4 +182,34 @@ def state_auth_violation(
         return "STATE_SIGNED_MATERIAL_TOO_LARGE"
     if not verify_with_public_key_b64(state, state.signature, public_key):
         return "STATE_SIGNATURE_INVALID"
+    return None
+
+
+def control_plane_reachability_auth_violation(
+    assertion: ControlPlaneReachabilityAssertion,
+    edge_public_keys_by_id: Mapping[str, str],
+    *,
+    required_wire_fields: Collection[str] = CONTROL_PLANE_REACHABILITY_REQUIRED_WIRE_FIELDS,
+) -> str | None:
+    if not set(required_wire_fields).issubset(assertion.model_fields_set):
+        return "CONTROL_PLANE_REQUIRED_FIELD_MISSING"
+    if alg_reason := signature_algorithm_violation(
+        assertion,
+        missing_reason="CONTROL_PLANE_SIGNATURE_ALGORITHM_MISSING",
+        unsupported_reason="CONTROL_PLANE_SIGNATURE_ALGORITHM_UNSUPPORTED",
+    ):
+        return alg_reason
+    if assertion.authenticated_edge_agent_id is None:
+        return "CONTROL_PLANE_AUTHENTICATED_EDGE_MISSING"
+    if assertion.authenticated_edge_agent_id != assertion.edge_agent_id:
+        return "CONTROL_PLANE_AUTHENTICATED_EDGE_MISMATCH"
+    if assertion.signature is None:
+        return "CONTROL_PLANE_SIGNATURE_MISSING"
+    public_key = edge_public_keys_by_id.get(assertion.authenticated_edge_agent_id)
+    if public_key is None:
+        return "CONTROL_PLANE_KEY_NOT_TRUSTED"
+    if control_plane_reachability_signed_material_too_large(assertion):
+        return "CONTROL_PLANE_SIGNED_MATERIAL_TOO_LARGE"
+    if not verify_with_public_key_b64(assertion, assertion.signature, public_key):
+        return "CONTROL_PLANE_SIGNATURE_INVALID"
     return None

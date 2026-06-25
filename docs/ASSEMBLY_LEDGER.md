@@ -1,5 +1,134 @@
 # Assembly Ledger
 
+## S2 Recommended Fixes Hardening Pass - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: implement all recommended fixes from
+  `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`
+  using `assembly`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/SECURITY_DOCTRINE.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- This is a bounded MVP hardening pass. The S2 report explicitly says no
+  blocking fixes are required before technical validation calls, so this pass
+  implements the non-blocking recommendations as reference protocol/test
+  artifacts without claiming production safety, production security, hosted
+  control-plane readiness, or production audit infrastructure.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+- The working tree already contained the updated S2 review report and prior
+  review ledger entry before this implementation pass began.
+
+Target contract:
+
+Close the S2 report's remaining recommended hardening items in the local MVP
+reference implementation: cross-language crypto/canonicalization profile
+documentation, one command for Python/Rust conformance evidence, bounded Rust
+trust-boundary extensions where appropriate for the verifier spike, adapter
+bypass tests, an explicit control-plane reachability input, and signed-batch
+audit evidence. Keep production-safety/security claims out of scope.
+
+Success criterion:
+
+Every recommended fix maps to a concrete artifact or an explicit MVP-scope
+implementation boundary, focused and full validation gates pass, a subagent
+spec-conformance review returns clean or all valid findings are fixed, and the
+S2 report/ledger are updated with final evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: A normative dev cross-language signature and canonicalization profile is documented and has conformance evidence. | met | Added `docs/CRYPTO_PROFILES.md`, spec/checklist references, and `test_crypto_profiles_name_current_dev_algorithms_and_parity_runner`. |
+| D2: One local conformance command runs Python eval scenarios and Rust verifier vectors/CLI evidence. | met | Added `scripts/run_cross_language_conformance.py`; latest run with `--require-rust` passed 15 mapped Python/Rust cases with decision and reason-code checks. |
+| D3: Rust extension scope is explicit and covers the feasible verifier-side trust-boundary artifacts without pretending to be a production trust service. | met | Updated `docs/RUST_EDGE_VERIFIER.md` to keep Rust scoped to verifier vectors and list Python-only/future trust-boundary work. |
+| D4: Current adapter/daemon command routes have bypass-resistant tests tied to `CommandGate`; future adapter scope remains documented. | met | Added `test_edge_daemon_delegates_every_command_to_configured_command_gate`; real ROS 2/VDA5050/Open-RMF/MCP/A2A adapters remain future documented scope. |
+| D5: Control-plane reachability exists as a distinct protocol input and cannot be confused with network-state guarantees. | met | Added `ControlPlaneReachabilityAssertion`, policy-required fail-closed checks, audit linkage, manifest/spec docs, and negative/allow tests. |
+| D6: Audit has signed-batch reference evidence while production append-only backend claims remain out of scope. | met | Added `AuditBatchCommit`, signed batch helpers, chain validation before signing/verification, and tests for tampered, duplicate, out-of-order, mixed, and non-contiguous chains. |
+| D7: Focused and full validation gates pass after implementation. | met | Focused `pytest tests/test_audit.py tests/test_cross_language_conformance.py -q` passed 25 tests; `./scripts/run_validation_checks.sh` passed compileall, 267 pytest tests, 33 evals, Ruff, Cargo fmt/clippy/tests, and cross-language conformance. |
+| D8: Assembly subagent spec-conformance review is clean, or valid findings are fixed and rerun. | met | Subagent first found audit batch chain-validation and paperwork gaps; fixes were applied; re-review returned no remaining blocking code findings, and the clean subagent was closed. |
+
+Changed files:
+
+- `README.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/CONFORMANCE_CHECKLIST.md`
+- `docs/CRYPTO_PROFILES.md`
+- `docs/EVALS.md`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/RUST_EDGE_VERIFIER.md`
+- `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`
+- `manifests/rclp_protocol_manifest.yaml`
+- `scripts/run_cross_language_conformance.py`
+- `scripts/run_validation_checks.sh`
+- `src/rclp_core/audit.py`
+- `src/rclp_core/models.py`
+- `src/rclp_core/policy.py`
+- `src/rclp_core/state.py`
+- `tests/test_audit.py`
+- `tests/test_conformance_contract.py`
+- `tests/test_cross_language_conformance.py`
+- `tests/test_security_negative_paths.py`
+
+Final evidence:
+
+- `.venv/bin/python -m pytest tests/test_audit.py tests/test_cross_language_conformance.py -q` passed: 25 tests.
+- `.venv/bin/python scripts/run_cross_language_conformance.py --require-rust` passed: 15 mapped Python/Rust cases.
+- `./scripts/run_validation_checks.sh` passed: compileall, 267 pytest tests, 33 eval scenarios, Ruff check/format, `cargo fmt`, `cargo clippy -D warnings`, `cargo test --workspace`, and cross-language conformance.
+- Assembly subagent re-review: clean after audit-batch chain validation and reason-code parity fixes.
+
+## S2 Protocol/Security Red-team Review - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: run the S2 protocol/security red-team review using `assembly`.
+- Required read list in the S2 prompt.
+- Attack/failure-mode list in the S2 prompt.
+- Required report path:
+  `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+
+Preflight note:
+
+- This is a review/report phase, not a protocol implementation phase.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+- No subagent was spawned because the deliverable is a scoped hostile review
+  report with no implementation changes.
+
+Target contract:
+
+Assess whether the MVP hardening claim is credible enough for controlled
+technical validation calls, without claiming production safety or production
+security and without making broad code changes.
+
+Success criterion:
+
+The required docs/code/eval surfaces are read, the requested commands are run
+when supported, every listed attack/failure mode is reviewed, and the S2 report
+is written in the required structure with a clear GREEN/YELLOW/RED verdict.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required repository docs and protocol/security doctrine are read. | done | Read `AGENTS.md`, `README.md`, `docs/SAFETY_BOUNDARY.md`, `docs/EVALS.md`, `docs/RUST_EDGE_VERIFIER.md`, `docs/DEMO_SCRIPT.md`, and local doctrine/spec/threat/test docs. |
+| D2: Required Python/Rust authority surfaces and eval scenarios are reviewed. | done | Reviewed `tests/evals/scenarios/`, `src/rclp_core/`, `src/rclp_ros2/command_gate.py`, and `crates/rclp-edge-verifier/`. |
+| D3: All listed attack/failure modes are evaluated against code/tests/docs. | done | Report includes each S2 attack/failure mode under "Attack paths reviewed." |
+| D4: Requested tests/evals/lints are run where supported. | done | `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest -q` (251 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed); `cargo fmt --all -- --check`; `cargo test --workspace` (3 unit, 48 vector tests); `cargo clippy --workspace --all-targets -- -D warnings`; `.venv/bin/ruff check .`; `.venv/bin/ruff format --check .`. |
+| D5: S2 report is written at the requested path with required headings and no production-safety/security claim. | done | Updated `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md` with GREEN verdict scoped to controlled technical validation calls. |
+
 ## S2 Protocol/Security Red-team Fixes - 2026-06-25
 
 Status: successful

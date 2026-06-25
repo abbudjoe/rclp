@@ -47,6 +47,8 @@ if [[ -f "Cargo.toml" ]]; then
     cargo fmt --all -- --check
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace
+    section "Cross-language conformance"
+    "$PYTHON" scripts/run_cross_language_conformance.py --require-rust
   else
     printf 'Cargo unavailable; skipping Rust workspace checks.\n'
   fi

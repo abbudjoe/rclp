@@ -19,9 +19,11 @@ not the future hosted commercial platform.
 - explicit MVP signature algorithm metadata
 - allow, deny, degrade, and revoke decisions
 - network-state-conditioned authority
+- optional control-plane-reachability-conditioned authority
 - geofence-conditioned authority
 - command gating before a robot-facing command path
 - audit JSONL and replay of the authority chain
+- signed local audit batches for validation evidence
 - audit conformance schema for the MVP authority chain
 - Python reference implementation
 - Rust edge verifier spike
@@ -62,6 +64,7 @@ python -m pip install -e '.[dev]'
 python -m compileall src tests
 pytest
 python tests/evals/eval_runner.py
+python scripts/run_cross_language_conformance.py
 python -m rclp_agents.demo_remote_assist
 ```
 
@@ -142,6 +145,8 @@ Customer call packet: `docs/CUSTOMER_CALL_PACKET.md`.
 Adapter enforcement contract: `docs/ADAPTER_ENFORCEMENT_CONTRACT.md`.
 
 Audit conformance schema: `manifests/rclp_audit_conformance_schema.json`.
+
+Development crypto profiles: `docs/CRYPTO_PROFILES.md`.
 
 ## Repository Layout
 

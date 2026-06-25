@@ -4,8 +4,16 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from rclp_core.audit import LOAD_REQUIRED_FIELDS, AuditLog, load_jsonl
-from rclp_core.models import AuditCommit, AuditEventType, stable_json_hash
+from rclp_core.audit import (
+    LOAD_REQUIRED_FIELDS,
+    AuditLog,
+    audit_batch_auth_violation,
+    audit_batch_event_violation,
+    create_signed_audit_batch,
+    load_jsonl,
+)
+from rclp_core.crypto import DemoKeyPair
+from rclp_core.models import AuditBatchCommit, AuditCommit, AuditEventType, stable_json_hash
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -374,3 +382,199 @@ def test_audit_log_rejects_duplicate_audit_ids():
     log.append(event)
     with pytest.raises(ValueError, match="duplicate audit_id"):
         log.append(event)
+
+
+def test_signed_audit_batch_authenticates_committed_hash_chain():
+    key = DemoKeyPair()
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.CAPABILITY_ALLOWED,
+        actor_id="issuer",
+        robot_id="robot",
+        mission_id="mission",
+        summary="allow",
+        payload={"reason_code": "POLICY_SATISFIED"},
+    )
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.COMMAND_ALLOWED,
+        actor_id="edge",
+        robot_id="robot",
+        mission_id="mission",
+        summary="forward",
+        payload={"command_id": "cmd_1"},
+    )
+
+    batch = create_signed_audit_batch(
+        log.events,
+        signed_by="audit-signer",
+        signer=key.sign,
+    )
+
+    assert audit_batch_event_violation(batch, log.events) is None
+    assert audit_batch_auth_violation(batch, {"audit-signer": key.public_key_b64}) is None
+
+
+def test_signed_audit_batch_rejects_tampered_events_and_batch_metadata():
+    key = DemoKeyPair()
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.COMMAND_REJECTED,
+        actor_id="edge",
+        robot_id="robot",
+        mission_id="mission",
+        summary="reject",
+        payload={"reason_code": "NO_LEASE"},
+    )
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.FALLBACK_DECLARED,
+        actor_id="edge",
+        robot_id="robot",
+        mission_id="mission",
+        summary="fallback",
+        payload={"fallback_action": "local_autonomy_only"},
+    )
+    batch = create_signed_audit_batch(
+        log.events,
+        signed_by="audit-signer",
+        signer=key.sign,
+    )
+    tampered_events = [
+        log.events[0],
+        log.events[1].model_copy(update={"summary": "forged fallback"}),
+    ]
+    tampered_batch = batch.model_copy(update={"batch_hash": "sha256:" + ("0" * 64)})
+
+    assert (
+        audit_batch_event_violation(batch, tampered_events) == "AUDIT_BATCH_INTEGRITY_PROOF_INVALID"
+    )
+    assert (
+        audit_batch_auth_violation(tampered_batch, {"audit-signer": key.public_key_b64})
+        == "AUDIT_BATCH_SIGNATURE_INVALID"
+    )
+
+
+def test_signed_audit_batch_refuses_to_sign_tampered_committed_events():
+    key = DemoKeyPair()
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.COMMAND_REJECTED,
+        actor_id="edge",
+        robot_id="robot",
+        mission_id="mission",
+        summary="reject",
+        payload={"reason_code": "NO_LEASE"},
+    )
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.FALLBACK_DECLARED,
+        actor_id="edge",
+        robot_id="robot",
+        mission_id="mission",
+        summary="fallback",
+        payload={"fallback_action": "local_autonomy_only"},
+    )
+    tampered_events = [
+        log.events[0],
+        log.events[1].model_copy(update={"payload": {"fallback_action": "forged"}}),
+    ]
+
+    with pytest.raises(ValueError, match="AUDIT_BATCH_EVENT_PAYLOAD_HASH_INVALID"):
+        create_signed_audit_batch(
+            tampered_events,
+            signed_by="audit-signer",
+            signer=key.sign,
+        )
+
+
+def test_signed_audit_batch_rejects_non_contiguous_or_duplicate_event_batches():
+    key = DemoKeyPair()
+    first_log = AuditLog()
+    second_log = AuditLog()
+    for log, correlation_id in [
+        (first_log, "corr_1"),
+        (second_log, "corr_2"),
+    ]:
+        log.record(
+            correlation_id=correlation_id,
+            event_type=AuditEventType.COMMAND_REJECTED,
+            actor_id="edge",
+            robot_id="robot",
+            mission_id="mission",
+            summary="reject",
+            payload={"reason_code": "NO_LEASE"},
+        )
+        log.record(
+            correlation_id=correlation_id,
+            event_type=AuditEventType.FALLBACK_DECLARED,
+            actor_id="edge",
+            robot_id="robot",
+            mission_id="mission",
+            summary="fallback",
+            payload={"fallback_action": "local_autonomy_only"},
+        )
+    batch = create_signed_audit_batch(
+        first_log.events,
+        signed_by="audit-signer",
+        signer=key.sign,
+    )
+
+    out_of_order = list(reversed(first_log.events))
+    duplicate_id = [first_log.events[0], first_log.events[0]]
+    mixed_log = [first_log.events[0], second_log.events[1]]
+
+    assert audit_batch_event_violation(batch, out_of_order) == "AUDIT_BATCH_PREVIOUS_HASH_MISMATCH"
+    assert audit_batch_event_violation(batch, duplicate_id) == "AUDIT_BATCH_DUPLICATE_AUDIT_ID"
+    assert audit_batch_event_violation(batch, mixed_log) == "AUDIT_BATCH_PREVIOUS_HASH_MISMATCH"
+    with pytest.raises(ValueError, match="AUDIT_BATCH_PREVIOUS_HASH_MISMATCH"):
+        create_signed_audit_batch(
+            out_of_order,
+            signed_by="audit-signer",
+            signer=key.sign,
+        )
+    with pytest.raises(ValueError, match="AUDIT_BATCH_DUPLICATE_AUDIT_ID"):
+        create_signed_audit_batch(
+            duplicate_id,
+            signed_by="audit-signer",
+            signer=key.sign,
+        )
+    with pytest.raises(ValueError, match="AUDIT_BATCH_PREVIOUS_HASH_MISMATCH"):
+        create_signed_audit_batch(
+            mixed_log,
+            signed_by="audit-signer",
+            signer=key.sign,
+        )
+
+
+def test_signed_audit_batch_rejects_missing_or_unknown_signature_algorithm():
+    key = DemoKeyPair()
+    log = AuditLog()
+    log.record(
+        correlation_id="corr_1",
+        event_type=AuditEventType.DIAGNOSTIC,
+        actor_id="diagnostic-agent",
+        summary="diagnostic",
+        authority_relevant=False,
+    )
+    batch = create_signed_audit_batch(
+        log.events,
+        signed_by="audit-signer",
+        signer=key.sign,
+    )
+    raw_batch = batch.model_dump(mode="json")
+    raw_batch.pop("signature_alg")
+    missing_alg = AuditBatchCommit.model_validate(raw_batch)
+    unknown_alg = batch.model_copy(update={"signature_alg": "RCLP-UNKNOWN"})
+
+    assert (
+        audit_batch_auth_violation(missing_alg, {"audit-signer": key.public_key_b64})
+        == "AUDIT_BATCH_SIGNATURE_ALGORITHM_MISSING"
+    )
+    assert (
+        audit_batch_auth_violation(unknown_alg, {"audit-signer": key.public_key_b64})
+        == "AUDIT_BATCH_SIGNATURE_ALGORITHM_UNSUPPORTED"
+    )
