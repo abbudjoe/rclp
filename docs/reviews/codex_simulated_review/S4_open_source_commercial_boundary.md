@@ -106,12 +106,19 @@ excludes planning docs unless deliberately included.
 
 ## Recommended fixes
 
-- Keep `docs/CONTROLLED_REVIEW_PACKET.md` as the source of truth for external
-  technical-review bundles.
-- Confirm the named project owner or private review channel before sending the
-  packet.
-- Keep all safety language anchored to "safety-adjacent authority layer",
-  "fallback hook", "network-state-aware authorization", and "sim proof".
-- Keep using deterministic local fixtures and labeled non-production keys for
-  validation demos; do not add real customer logs, cloud identifiers, account
-  names, pricing, carrier details, or proprietary workflows to this repo.
+- No remaining repository implementation fixes are required before controlled
+  external technical validation.
+- `docs/CONTROLLED_REVIEW_PACKET.md` is the source of truth for external
+  technical-review bundles and now carries the distribution checks for this
+  review posture.
+- The private security-reporting contact is a pre-distribution human gate:
+  before any packet is sent, the sender must name the project owner or private
+  review channel. `SECURITY.md` and `docs/CONTROLLED_REVIEW_PACKET.md` both
+  state that external review should not begin until this channel exists.
+- Continue to keep all safety language anchored to "safety-adjacent authority
+  layer", "fallback hook", "network-state-aware authorization", and
+  "sim proof".
+- Continue to use deterministic local fixtures and labeled non-production keys
+  for validation demos; do not add real customer logs, cloud identifiers,
+  account names, pricing, carrier details, or proprietary workflows to this
+  repo.

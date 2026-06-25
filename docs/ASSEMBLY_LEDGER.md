@@ -1,5 +1,67 @@
 # Assembly Ledger
 
+## S4 Recommended-fix Closure Follow-up - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all blocking issues and implement the recommended fixes
+  from `docs/reviews/codex_simulated_review/S4_open_source_commercial_boundary.md`
+  using `assembly`.
+- `AGENTS.md`
+- `docs/ENGINEERING_DOCTRINE.md`
+- `docs/SECURITY_DOCTRINE.md`
+- `docs/DESIGN_TASTE.md`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+- `docs/COMMERCIAL_BOUNDARY.md`
+- `docs/GOVERNANCE.md`
+- `docs/SAFETY_BOUNDARY.md`
+- `docs/CONTROLLED_REVIEW_PACKET.md`
+- `SECURITY.md`
+
+Preflight note:
+
+- No cloud jobs, GPU jobs, Lambda instances, or paid compute mutations are
+  required for this item. None will be launched, stopped, resized, deleted, or
+  otherwise mutated.
+
+Target contract:
+
+Close the current S4 follow-up by ensuring the review report has no unresolved
+controlled-validation blockers and that each recommended fix is either already
+implemented in repository docs or explicitly represented as a pre-distribution
+human gate. Keep the repo suitable for controlled external technical
+validation, not public standardization or production deployment.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| No controlled-validation blocking issues remain in the S4 report. | met | `docs/reviews/codex_simulated_review/S4_open_source_commercial_boundary.md` keeps the verdict GREEN and states there are no blocking issues for controlled external technical validation. |
+| Recommended fixes are represented as implemented repo controls or explicit pre-distribution gates. | met | The S4 report now states no remaining repository implementation fixes are required for controlled validation, names `docs/CONTROLLED_REVIEW_PACKET.md` as the technical-review source of truth, and treats the private security-reporting contact as a pre-distribution human gate. `docs/CONTROLLED_REVIEW_PACKET.md` now says not to send the packet until the project owner or private review channel for security reports is named. |
+| Safety, security, and commercial-boundary language remains conservative. | met | The changed docs preserve controlled technical validation framing and use the existing non-production, safety-adjacent, fallback-hook, network-state-aware authorization, and sim-proof wording without public standardization, production deployment, carrier behavior, or certified-safety claims. |
+| No secrets, local paths, pricing, named customer lists, carrier-contract details, or sensitive company references are introduced. | met | Targeted tracked-file scans found no local absolute paths and no secret-pattern matches; the broader requested-term scan showed expected non-claim, doctrine, checklist, environment-placeholder, and deterministic dev-HMAC fixture hits only. The changed files add no credentials, local paths, account identifiers, pricing, customer names, carrier contracts, or proprietary workflows. |
+| Validation gates and subagent review complete. | met | `.venv/bin/python -m compileall src tests`, `.venv/bin/python -m pytest -q` (246 passed), `.venv/bin/ruff check .`, `.venv/bin/ruff format . --check`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (3 unit tests and 47 vector tests), `.venv/bin/python tests/evals/eval_runner.py` (33 passed), and `git diff --check` passed. Pasteur's independent review classified the report and packet changes as met and found only this ledger-closure gap, which this update resolves. |
+
+Changed files:
+
+- `docs/reviews/codex_simulated_review/S4_open_source_commercial_boundary.md`
+- `docs/CONTROLLED_REVIEW_PACKET.md`
+- `docs/ASSEMBLY_LEDGER.md`
+
+Review notes:
+
+- Pasteur reviewed the S4 follow-up and found no additional governance,
+  safety-wording, provenance, or data-leakage blockers. The only valid finding
+  was that this ledger entry still said `in-progress` and had pending DoD rows;
+  this ledger update resolves that finding.
+- Pasteur re-reviewed after the ledger correction and found no remaining
+  blocking, partial, or evidence risks; all five DoD items were classified as
+  met.
+
 ## S4 Open-source / Commercial-boundary Fixes - 2026-06-25
 
 Status: successful

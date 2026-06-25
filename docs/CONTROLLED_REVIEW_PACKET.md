@@ -41,8 +41,8 @@ public packet unless intentionally reviewed first.
 
 ## Distribution Checks
 
-- Name the project owner or private review channel for security reports before
-  sending the packet.
+- Do not send the packet until the project owner or private review channel for
+  security reports is named.
 - Confirm the packet is framed as controlled technical validation, not
   deployment approval.
 - Keep hosted commercial platform, billing, customer accounts, carrier/MVNO
