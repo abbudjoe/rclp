@@ -99,8 +99,8 @@ audit fields, errors, and notes. The report timestamp is generation metadata;
 scenario decision inputs use `now_unix_ms` from each YAML file.
 
 A passing report means the local reference implementation satisfied the eval
-expectations. It does not mean production safety, real network guarantees, or
-field readiness.
+expectations. It does not mean production safety, real connectivity behavior,
+or field readiness.
 
 ## Audit Completeness
 

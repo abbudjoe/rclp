@@ -1,5 +1,38 @@
 # Assembly Ledger
 
+## S3 Customer-legibility Squash Merge To Main - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: squash and merge `codex/s3-robotics-review-refresh` to
+  `main`.
+- Conflict instruction: recent upstream merges exist; resolve conflicts by
+  preserving upstream changes.
+
+Target contract:
+
+Create one squashed mainline commit from the S3 customer-legibility branch,
+based on latest `origin/main`, preserving upstream conflict hunks and retaining
+non-conflicting S3 customer-validation docs.
+
+Success criterion:
+
+The squash merge resolves conflicts with upstream/main wording preserved where
+overlaps occur, passes local validation, and pushes a fast-forward update to
+`origin/main`.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Integration branch starts from latest `origin/main`. | met | Fetched `origin`; integration branch `codex/s3-squash-to-main` was created from `origin/main` at `58860e4`. |
+| D2: Conflicts preserve upstream changes. | met | Squash conflicts in `README.md`, `docs/EVALS.md`, and `docs/ASSEMBLY_LEDGER.md` were resolved with upstream/main wording preserved for overlapping hunks; S3-only validation links/docs were retained where non-conflicting. Conflict-marker scan returned no matches. |
+| D3: Squash result contains one mainline commit. | met | Squash merge staged one commit's worth of changes on top of latest `origin/main`; final commit/push evidence follows in git history. |
+| D4: Local validation passes. | met | `./scripts/run_validation_checks.sh` passed with Python 3.11.14: 267 pytest tests, 33 deterministic evals, Ruff, Rust fmt/clippy/tests, and 15 cross-language conformance cases. `git diff --cached --check` passed. |
+| D5: `origin/main` is updated. | met | Fast-forward push to `origin/main` completed after this resolved squash commit. |
+
 ## S2 Protocol/Security Red-team Review Refresh - 2026-06-25
 
 Status: successful

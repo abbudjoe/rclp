@@ -4,8 +4,8 @@ Use this as a five-minute live-call script for `v0.1-validation`.
 
 The local demo proves the `remote_assist` authority primitive with deterministic
 fixtures. It uses local non-production Ed25519 keys, in-process network
-profiles, a policy YAML file, a signed request, a signed lease, an edge command
-gate, fallback declarations, audit JSONL, and replay summary.
+profiles, a policy YAML file, a signed request, a signed lease, a robot-local
+command gate, fallback declarations, audit JSONL, and replay summary.
 
 No ROS 2, Isaac Sim, root privileges, cloud account, external network calls, or
 robot hardware are required.
@@ -66,9 +66,12 @@ You can also run a hard-deny profile:
 
 Tell the story in this order:
 
-1. The central/fleet agent requests `remote_assist` authority.
-2. The edge-side policy path evaluates identity, mission, robot, geofence,
-   network state, replay, revocation, lease scope, and fallback policy.
+1. The remote-assist service, operator-session controller, fleet service,
+   autonomy module, or other central software actor requests `remote_assist`
+   authority.
+2. The robot-local authority service evaluates identity, mission, robot,
+   geofence, observed network state used as an authorization input, replay,
+   revocation, lease scope, and fallback policy.
 3. Normal local state grants a short-lived scoped lease.
 4. The command gate allows one matching command with the valid lease.
 5. A command without a valid lease is rejected.
@@ -160,10 +163,13 @@ authority was explicitly requested, evaluated against local state and policy,
 scoped to robot/mission/capability/agent/time, signed, and then enforced by a
 robot-local gate.
 
+The important result is not robot motion; it is local rejection, revocation,
+and auditability of selected robot authority.
+
 Use these phrases:
 
 - "short-lived scoped authority"
-- "edge-side local verification"
+- "robot-local edge verification"
 - "command gate before robot-facing execution"
 
 ## How To Explain Deny, Revoke, And Degrade
@@ -181,7 +187,7 @@ auditable:
 - partition -> `NETWORK_DETACHED`
 - revoked lease reuse -> `LEASE_REVOKED`
 
-Fallbacks are hooks and audit declarations, not certified safe behavior.
+Fallbacks are hooks and audit declarations, not certified safety behavior.
 
 ## How To Explain Audit Replay
 
@@ -215,7 +221,7 @@ python tests/evals/eval_runner.py
 Say these plainly:
 
 - This is a safety-adjacent authority layer, not a certified safety system.
-- This is a local deterministic proof, not field-proven safety.
+- This is a local deterministic proof, not field safety evidence.
 - This does not prove real cellular behavior or carrier API behavior.
 - This does not include production key management or hardware roots of trust.
 - This does not include a hosted commercial control plane.

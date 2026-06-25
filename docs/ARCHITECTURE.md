@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-Central fleet agent
+Central software actor
   ├── requests capabilities
   ├── explains intent
   └── consumes decisions/audit
@@ -16,7 +16,7 @@ RCLP policy + lease layer
   └── conformance checks
         │
         ▼
-Edge agent / robot-local daemon
+Robot-local authority gate / daemon
   ├── verifies leases locally
   ├── observes network/geofence/robot state
   ├── gates command paths
@@ -34,7 +34,9 @@ Robot autonomy + safety stack
 
 ## Key boundary
 
-The central agent requests authority. The edge agent enforces authority. The local robot safety stack handles physical safety constraints.
+The central software actor requests authority. The robot-local authority gate
+enforces authority. The local robot safety stack handles physical safety
+constraints.
 
 ## MVP runtime components
 

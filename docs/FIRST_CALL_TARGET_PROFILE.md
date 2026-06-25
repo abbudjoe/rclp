@@ -2,7 +2,8 @@
 
 Use this profile to prioritize the first 5-8 controlled technical validation
 calls. The goal is not broad market coverage; it is to find operators and
-platform teams with a concrete central-agent to edge-agent authority gap.
+platform teams with a concrete central-software-actor to robot-local
+authority gate gap.
 
 ## Best-Fit Customers
 
@@ -30,7 +31,7 @@ platform teams with a concrete central-agent to edge-agent authority gap.
 - has central fleet orchestration
 - cares about network/geofence/mission state
 - has fragmented incident audit
-- expects more AI-assisted operations
+- expects more software-assisted or AI-assisted operations
 
 Additional strong signals:
 
@@ -60,7 +61,7 @@ In the first calls, optimize for learning:
 
 - whether the authority primitive maps to a real workflow
 - which actor would request a lease
-- where an edge-side verifier could live
+- where a robot-local authority gate could live
 - which local conditions should gate authority
 - what fallback declarations would mean operationally
 - what audit chain is needed after an incident
@@ -70,7 +71,9 @@ In the first calls, optimize for learning:
 
 Ask for a technical validation conversation with a platform or operations owner:
 
-> We have an open MVP for short-lived robot capability leases between central
-> agents and robot-local edge runtimes. We are not asking you to deploy it. We
-> want to validate whether this authority boundary exists in your stack and
-> what evidence would make it worth deeper evaluation.
+> We have an open MVP for short-lived robot capability leases: central software
+> actors request selected robot capabilities, a robot-local authority service
+> evaluates policy, and a robot-local authority gate enforces the result. We
+> are not asking you to deploy it. We want to validate whether this authority
+> boundary exists in your stack and what evidence would make it worth deeper
+> evaluation.

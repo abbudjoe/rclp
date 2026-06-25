@@ -7,8 +7,8 @@ production robot deployments.
 
 `v0.1-validation` packages the RCLP MVP for 5-8 controlled calls with
 robotics, platform, fleet operations, teleoperation, and safety/compliance
-stakeholders. The goal is to validate whether the central-agent to edge-agent
-authority primitive maps to real robot-fleet workflows.
+stakeholders. The goal is to validate whether the central software actor to
+robot-local authority gate primitive maps to real robot-fleet workflows.
 
 This is not a broad public launch and not a production-readiness claim.
 
@@ -32,9 +32,10 @@ This is not a broad public launch and not a production-readiness claim.
 
 The five-minute local flow shows:
 
-1. A central/fleet agent requests `remote_assist` authority.
-2. The edge-side policy path checks identity, mission, robot, geofence, network
-   state, replay state, lease scope, revocation, and fallback policy.
+1. A remote-assist service or fleet service requests `remote_assist` authority.
+2. The robot-local authority service checks identity, mission, robot,
+   geofence, observed network state used as an authorization input, replay
+   state, lease scope, revocation, and fallback policy.
 3. A valid scoped lease allows a gated command.
 4. A command without a valid lease fails closed.
 5. Network degradation causes degradation or revocation.
@@ -58,7 +59,8 @@ The current deterministic eval suite has 33 scenarios. It covers:
 - no lease, expired lease, not-yet-valid lease, revoked lease, and replayed
   request nonce paths
 - malformed input and invalid signature paths
-- wrong central agent, edge agent, robot, mission, and capability
+- wrong central software actor, robot-local authority gate, robot, mission,
+  and capability
 - geofence violation
 - degraded latency, packet loss, uplink failure, and partitioned network state
 - stale command and stale current edge state
@@ -122,8 +124,8 @@ MVP.
 ## Intended Audience
 
 Best-fit reviewers are skeptical technical stakeholders who operate or build
-robot fleets with remote assist, autonomy escalation, central orchestration,
-edge runtimes, and incident/audit needs:
+robot fleets with remote assist, operator intervention workflows, central
+orchestration, edge runtimes, autonomy escalation, and incident/audit needs:
 
 - robotics platform engineers
 - fleet reliability leads
