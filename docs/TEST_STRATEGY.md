@@ -23,6 +23,9 @@ contract that conformance tests should check against the Pydantic models.
 - signed command without a lease does not consume command replay state or emit
   fallback declarations
 - invalid request signature rejected
+- missing or unsupported request, state, lease, command, revocation, fallback,
+  or attestation signature algorithm metadata rejected before signature
+  acceptance
 - authenticated request actor mismatch rejected
 - expired lease rejected
 - stale request rejected
@@ -56,6 +59,8 @@ contract that conformance tests should check against the Pydantic models.
   context-conflicting revocation rejected
 - replayed context rejected
 - replayed request nonce rejected
+- accepted lease nonce replay rejected by the Python command gate and Rust
+  verifier, including across verifier/gate restart with durable replay state
 - policy input with unknown top-level or nested future authority fields rejected
   before policy digest acceptance
 - temporary request replay, command replay, and revocation stores rejected as
@@ -92,6 +97,8 @@ contract that conformance tests should check against the Pydantic models.
 - audit event created for allow
 - audit event created for deny
 - audit event created for fallback
+- audit conformance schema in `manifests/rclp_audit_conformance_schema.json`
+  matches runtime required audit import fields
 - audit replay rejects top-level context tampering
 - audit JSONL import rejects appended unknown context outside the integrity
   proof

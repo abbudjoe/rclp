@@ -15,6 +15,7 @@ import rclp_core.policy as policy_module
 import rclp_core.state as state_module
 from rclp_core.audit import AuditLog
 from rclp_core.crypto import DemoKeyPair
+from rclp_core.fallback import fallback_declaration_auth_violation
 from rclp_core.leases import issue_lease
 from rclp_core.models import (
     AgentAttestation,
@@ -25,7 +26,10 @@ from rclp_core.models import (
     CapabilityConstraintRequirement,
     CapabilityLease,
     CapabilityRequest,
+    ControlPlaneReachability,
+    ControlPlaneReachabilityAssertion,
     Decision,
+    ED25519_SIGNATURE_ALGORITHM,
     FallbackAction,
     GeofenceState,
     LeaseConstraints,
@@ -47,7 +51,13 @@ from rclp_core.policy import (
     policy_digest,
 )
 import rclp_ros2.command_gate as command_gate_module
-from rclp_ros2.command_gate import Command, CommandGate, CommandReplayCache, RevocationStore
+from rclp_ros2.command_gate import (
+    Command,
+    CommandGate,
+    CommandReplayCache,
+    GateResult,
+    RevocationStore,
+)
 
 
 CENTRAL_AGENT_ID = "fleet-agent:v0.1"
@@ -78,6 +88,7 @@ def remote_assist_constraint_bounds(
 
 def sign_request(request: CapabilityRequest, key: DemoKeyPair = CENTRAL_KEY) -> CapabilityRequest:
     request.authenticated_agent_id = request.requesting_agent_id
+    request.signature_alg = ED25519_SIGNATURE_ALGORITHM
     request.signature = None
     request.signature = key.sign(request)
     return request
@@ -85,9 +96,21 @@ def sign_request(request: CapabilityRequest, key: DemoKeyPair = CENTRAL_KEY) -> 
 
 def sign_state(state: RobotStateAssertion, key: DemoKeyPair = EDGE_KEY) -> RobotStateAssertion:
     state.authenticated_edge_agent_id = state.edge_agent_id
+    state.signature_alg = ED25519_SIGNATURE_ALGORITHM
     state.signature = None
     state.signature = key.sign(state)
     return state
+
+
+def sign_control_plane(
+    assertion: ControlPlaneReachabilityAssertion,
+    key: DemoKeyPair = EDGE_KEY,
+) -> ControlPlaneReachabilityAssertion:
+    assertion.authenticated_edge_agent_id = assertion.edge_agent_id
+    assertion.signature_alg = ED25519_SIGNATURE_ALGORITHM
+    assertion.signature = None
+    assertion.signature = key.sign(assertion)
+    return assertion
 
 
 def sign_attestation(
@@ -95,6 +118,7 @@ def sign_attestation(
     key: DemoKeyPair = CENTRAL_KEY,
 ) -> AgentAttestation:
     attestation.authenticated_agent_id = attestation.agent_id
+    attestation.signature_alg = ED25519_SIGNATURE_ALGORITHM
     attestation.signature = None
     attestation.signature = key.sign(attestation)
     return attestation
@@ -104,6 +128,7 @@ def sign_revocation(
     revocation: LeaseRevocation,
     key: DemoKeyPair = EDGE_KEY,
 ) -> LeaseRevocation:
+    revocation.signature_alg = ED25519_SIGNATURE_ALGORITHM
     revocation.signature = None
     revocation.signature = key.sign(revocation)
     return revocation
@@ -111,6 +136,7 @@ def sign_revocation(
 
 def sign_command(command: Command, key: DemoKeyPair = CENTRAL_KEY) -> Command:
     command.authenticated_agent_id = command.agent_id
+    command.signature_alg = ED25519_SIGNATURE_ALGORITHM
     command.signature = None
     command.signature = key.sign(command)
     return command
@@ -131,6 +157,12 @@ def make_request(**updates) -> CapabilityRequest:
     return sign_request(request)
 
 
+def parsed_without_field(message, field_name: str):
+    data = message.model_dump(mode="python")
+    data.pop(field_name, None)
+    return type(message).model_validate(data)
+
+
 def make_state() -> RobotStateAssertion:
     return sign_state(
         RobotStateAssertion(
@@ -143,6 +175,21 @@ def make_state() -> RobotStateAssertion:
             human_operator_available=True,
         )
     )
+
+
+def make_control_plane(**updates) -> ControlPlaneReachabilityAssertion:
+    assertion = ControlPlaneReachabilityAssertion(
+        edge_agent_id=EDGE_AGENT_ID,
+        robot_id="rover-001",
+        mission_id="mission-001",
+        reachability=ControlPlaneReachability.REACHABLE,
+        reachable=True,
+        measurement_window_seconds=5,
+        source="test-local-control-plane-observer",
+    )
+    if updates:
+        assertion = assertion.model_copy(update=updates)
+    return sign_control_plane(assertion)
 
 
 def make_command(**updates) -> Command:
@@ -300,6 +347,7 @@ def issue_speed_limited_lease(
 
 
 def resign(lease: CapabilityLease, key: DemoKeyPair) -> CapabilityLease:
+    lease.signature_alg = ED25519_SIGNATURE_ALGORITHM
     lease.signature = key.sign(lease)
     return lease
 
@@ -581,6 +629,163 @@ def test_malformed_request_signature_encoding_is_rejected():
     assert constraints is None
 
 
+def test_signed_trust_boundary_messages_require_explicit_signature_algorithm():
+    key = DemoKeyPair()
+
+    request = parsed_without_field(make_request(), "signature_alg")
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        request, make_state(), make_policy()
+    )
+    assert decision == Decision.DENY
+    assert reason == "REQUEST_SIGNATURE_ALGORITHM_MISSING"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+    state = parsed_without_field(make_state(), "signature_alg")
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        make_request(), state, make_policy()
+    )
+    assert decision == Decision.DENY
+    assert reason == "STATE_SIGNATURE_ALGORITHM_MISSING"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+    policy = make_policy().model_copy(deep=True)
+    policy.requirements.control_plane_required = True
+    control_plane = parsed_without_field(make_control_plane(), "signature_alg")
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        make_request(),
+        make_state(),
+        policy,
+        control_plane_state=control_plane,
+    )
+    assert decision == Decision.DENY
+    assert reason == "CONTROL_PLANE_SIGNATURE_ALGORITHM_MISSING"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+    attestation = parsed_without_field(make_attestation(), "signature_alg")
+    assert (
+        attestation_auth_violation(
+            attestation,
+            {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+        )
+        == "ATTESTATION_SIGNATURE_ALGORITHM_MISSING"
+    )
+
+    lease = parsed_without_field(issue_valid_lease(key), "signature_alg")
+    result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_SIGNATURE_ALGORITHM_MISSING"
+
+    command = parsed_without_field(make_command(), "signature_alg")
+    result = make_gate(key).evaluate(command, issue_valid_lease(key), current_state=make_state())
+    assert result.allowed is False
+    assert result.reason_code == "COMMAND_SIGNATURE_ALGORITHM_MISSING"
+
+    revocation_lease = issue_valid_lease(key)
+    revocation = parsed_without_field(
+        sign_revocation(
+            LeaseRevocation(
+                lease_id=revocation_lease.lease_id,
+                revoked_by=EDGE_AGENT_ID,
+                edge_agent_id=EDGE_AGENT_ID,
+                reason_code="COMPROMISE_SUSPECTED",
+                fallback_action=FallbackAction.HOLD_POSITION,
+                robot_id=revocation_lease.robot_id,
+                mission_id=revocation_lease.mission_id,
+                capability=revocation_lease.capability,
+            )
+        ),
+        "signature_alg",
+    )
+    gate = make_gate(key)
+    with pytest.raises(ValueError, match="revocation signature algorithm is unsupported"):
+        gate.revoke(revocation, lease=revocation_lease)
+    assert gate.audit_log.events[-1].payload["reason_code"] == (
+        "REVOCATION_SIGNATURE_ALGORITHM_MISSING"
+    )
+
+
+def test_unsupported_signature_algorithms_are_denied_before_signature_verification():
+    key = DemoKeyPair()
+
+    request = make_request()
+    request.signature_alg = "RCLP-UNKNOWN"
+    request.signature = CENTRAL_KEY.sign(request)
+    decision, reason, _, _ = evaluate_inputs(request, make_state(), make_policy())
+    assert decision == Decision.DENY
+    assert reason == "REQUEST_SIGNATURE_ALGORITHM_UNSUPPORTED"
+
+    state = make_state()
+    state.signature_alg = "RCLP-UNKNOWN"
+    state.signature = EDGE_KEY.sign(state)
+    decision, reason, _, _ = evaluate_inputs(make_request(), state, make_policy())
+    assert decision == Decision.DENY
+    assert reason == "STATE_SIGNATURE_ALGORITHM_UNSUPPORTED"
+
+    policy = make_policy().model_copy(deep=True)
+    policy.requirements.control_plane_required = True
+    control_plane = make_control_plane()
+    control_plane.signature_alg = "RCLP-UNKNOWN"
+    control_plane.signature = EDGE_KEY.sign(control_plane)
+    decision, reason, _, _ = evaluate_inputs(
+        make_request(),
+        make_state(),
+        policy,
+        control_plane_state=control_plane,
+    )
+    assert decision == Decision.DENY
+    assert reason == "CONTROL_PLANE_SIGNATURE_ALGORITHM_UNSUPPORTED"
+
+    attestation = make_attestation()
+    attestation.signature_alg = "RCLP-UNKNOWN"
+    attestation.signature = CENTRAL_KEY.sign(attestation)
+    assert (
+        attestation_auth_violation(
+            attestation,
+            {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+        )
+        == "ATTESTATION_SIGNATURE_ALGORITHM_UNSUPPORTED"
+    )
+
+    lease = issue_valid_lease(key)
+    lease.signature_alg = "RCLP-UNKNOWN"
+    lease.signature = key.sign(lease)
+    result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_SIGNATURE_ALGORITHM_UNSUPPORTED"
+
+    command = make_command()
+    command.signature_alg = "RCLP-UNKNOWN"
+    command.signature = CENTRAL_KEY.sign(command)
+    result = make_gate(key).evaluate(command, issue_valid_lease(key), current_state=make_state())
+    assert result.allowed is False
+    assert result.reason_code == "COMMAND_SIGNATURE_ALGORITHM_UNSUPPORTED"
+
+    revocation_lease = issue_valid_lease(key)
+    revocation = sign_revocation(
+        LeaseRevocation(
+            lease_id=revocation_lease.lease_id,
+            revoked_by=EDGE_AGENT_ID,
+            edge_agent_id=EDGE_AGENT_ID,
+            reason_code="COMPROMISE_SUSPECTED",
+            fallback_action=FallbackAction.HOLD_POSITION,
+            robot_id=revocation_lease.robot_id,
+            mission_id=revocation_lease.mission_id,
+            capability=revocation_lease.capability,
+        )
+    )
+    revocation.signature_alg = "RCLP-UNKNOWN"
+    revocation.signature = EDGE_KEY.sign(revocation)
+    gate = make_gate(key)
+    with pytest.raises(ValueError, match="revocation signature algorithm is unsupported"):
+        gate.revoke(revocation, lease=revocation_lease)
+    assert gate.audit_log.events[-1].payload["reason_code"] == (
+        "REVOCATION_SIGNATURE_ALGORITHM_UNSUPPORTED"
+    )
+
+
 def test_capability_request_missing_explicit_duration_is_denied_before_policy_allow():
     raw_request = make_request().model_dump(mode="json")
     raw_request.pop("requested_duration_seconds")
@@ -664,6 +869,109 @@ def test_explicit_human_operator_available_state_still_allows_policy():
     assert reason == "POLICY_SATISFIED"
     assert alternatives == []
     assert constraints is not None
+
+
+def test_policy_required_control_plane_state_must_be_present_before_policy_allow():
+    policy = make_policy().model_copy(deep=True)
+    policy.requirements.control_plane_required = True
+
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        make_request(),
+        make_state(),
+        policy,
+    )
+
+    assert decision == Decision.DENY
+    assert reason == "CONTROL_PLANE_STATE_REQUIRED"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+
+def test_policy_required_control_plane_state_must_be_signed_before_policy_allow():
+    policy = make_policy().model_copy(deep=True)
+    policy.requirements.control_plane_required = True
+    control_plane = make_control_plane().model_copy(update={"signature": None})
+
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        make_request(),
+        make_state(),
+        policy,
+        control_plane_state=control_plane,
+    )
+
+    assert decision == Decision.DENY
+    assert reason == "CONTROL_PLANE_SIGNATURE_MISSING"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+
+def test_policy_required_control_plane_reachability_is_explicit_at_boundary():
+    raw_control_plane = make_control_plane().model_dump(mode="json")
+    raw_control_plane.pop("reachable")
+
+    with pytest.raises(ValidationError, match="reachable"):
+        ControlPlaneReachabilityAssertion.model_validate(raw_control_plane)
+
+
+def test_policy_required_control_plane_partition_denies_authority():
+    policy = make_policy().model_copy(deep=True)
+    policy.requirements.control_plane_required = True
+    control_plane = make_control_plane(
+        reachability=ControlPlaneReachability.PARTITIONED,
+        reachable=False,
+    )
+
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        make_request(),
+        make_state(),
+        policy,
+        control_plane_state=control_plane,
+    )
+
+    assert decision == Decision.DENY
+    assert reason == "CONTROL_PLANE_UNREACHABLE"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+
+def test_policy_required_control_plane_reachable_state_allows_policy():
+    policy = make_policy().model_copy(deep=True)
+    policy.requirements.control_plane_required = True
+
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        make_request(),
+        make_state(),
+        policy,
+        control_plane_state=make_control_plane(),
+    )
+
+    assert decision == Decision.ALLOW
+    assert reason == "POLICY_SATISFIED"
+    assert alternatives == []
+    assert constraints is not None
+
+
+def test_policy_records_control_plane_reachability_in_decision_audit():
+    policy = make_policy().model_copy(deep=True)
+    policy.requirements.control_plane_required = True
+    control_plane = make_control_plane()
+    audit_log = AuditLog()
+
+    decision, reason, _, _, event = evaluate_policy(
+        make_request(),
+        make_state(),
+        policy,
+        audit_log=audit_log,
+        deciding_actor_id="issuer",
+        control_plane_state=control_plane,
+        **policy_trust_kwargs(policy),
+    )
+
+    assert decision == Decision.ALLOW
+    assert reason == "POLICY_SATISFIED"
+    assert event.payload["control_plane_reachability_assertion_id"] == (control_plane.message_id)
+    assert control_plane.message_id in event.state_refs
+    assert control_plane.message_id in event.related_message_ids
 
 
 def test_oversized_robot_state_material_rejects_before_signature_verification(monkeypatch):
@@ -1175,6 +1483,61 @@ def test_revocation_fallback_action_is_advisory_to_local_policy():
     assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
     assert result.fallback_declaration is not None
     assert result.fallback_declaration.revocation_id == revocation.message_id
+
+
+def test_signed_fallback_declaration_verifies_for_trust_boundary_use():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    emitted = []
+    gate = make_gate(
+        key,
+        fallback_sink=emitted.append,
+        fallback_signer=EDGE_KEY.sign,
+        fallback_authenticated_declared_by=EDGE_AGENT_ID,
+    )
+    bad_state = sign_state(
+        make_state().model_copy(
+            update={
+                "network_state": profile("uplink_bad"),
+                "signature": None,
+            }
+        )
+    )
+
+    result = gate.evaluate(make_command(), lease, current_state=bad_state)
+
+    assert result.allowed is False
+    assert result.reason_code == "NETWORK_UPLINK_TOO_LOW"
+    declaration = result.fallback_declaration
+    assert declaration is not None
+    assert declaration.signature_alg == ED25519_SIGNATURE_ALGORITHM
+    assert declaration.signature is not None
+    assert declaration.authenticated_declared_by == EDGE_AGENT_ID
+    assert emitted == [declaration]
+    assert (
+        fallback_declaration_auth_violation(
+            declaration,
+            {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
+        )
+        is None
+    )
+
+    missing_alg = parsed_without_field(declaration, "signature_alg")
+    assert (
+        fallback_declaration_auth_violation(
+            missing_alg,
+            {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
+        )
+        == "FALLBACK_SIGNATURE_ALGORITHM_MISSING"
+    )
+    unsupported_alg = declaration.model_copy(update={"signature_alg": "RCLP-UNKNOWN"})
+    assert (
+        fallback_declaration_auth_violation(
+            unsupported_alg,
+            {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
+        )
+        == "FALLBACK_SIGNATURE_ALGORITHM_UNSUPPORTED"
+    )
 
 
 def test_unsupported_revocation_protocol_version_is_rejected_without_mutation():
@@ -2022,6 +2385,38 @@ def test_edge_daemon_mismatch_without_command_auth_uses_command_gate_rejection()
     assert gate.fallback_events == []
 
 
+def test_edge_daemon_delegates_every_command_to_configured_command_gate():
+    class RecordingGate:
+        local_edge_agent_id = EDGE_AGENT_ID
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        def evaluate(self, command, lease, *, current_state=None):
+            self.calls.append(
+                {
+                    "command": command,
+                    "lease": lease,
+                    "current_state": current_state,
+                }
+            )
+            return GateResult(allowed=False, reason_code="RECORDED_GATE_REJECTION")
+
+    gate = RecordingGate()
+    daemon = EdgeAgentDaemon(EDGE_AGENT_ID, gate)
+    command = make_command()
+    state = make_state()
+
+    result = daemon.handle_command(command, None, current_state=state)
+
+    assert result.allowed is False
+    assert result.reason_code == "RECORDED_GATE_REJECTION"
+    assert len(gate.calls) == 1
+    assert gate.calls[0]["command"] is command
+    assert gate.calls[0]["lease"] is None
+    assert gate.calls[0]["current_state"] is state
+
+
 def test_command_without_authenticated_agent_is_rejected_before_lease_validation():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
@@ -2398,7 +2793,7 @@ def test_command_gate_rejects_signed_lease_missing_policy_provenance():
     lease = issue_valid_lease(key).model_copy(
         update={"policy_id": None, "policy_digest": None, "signature": None}
     )
-    lease.signature = key.sign(lease)
+    resign(lease, key)
 
     result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
 
@@ -2413,7 +2808,7 @@ def test_command_gate_rejects_signed_lease_policy_digest_mismatch():
     lease = issue_valid_lease(key).model_copy(
         update={"policy_digest": "sha256:stale-policy-digest", "signature": None}
     )
-    lease.signature = key.sign(lease)
+    resign(lease, key)
 
     result = make_gate(key).evaluate(make_command(), lease, current_state=make_state())
 
@@ -2505,6 +2900,32 @@ def test_replayed_signed_command_is_rejected_after_gate_restart(tmp_path):
     assert first.allowed is True
     assert second.allowed is False
     assert second.reason_code == "COMMAND_REPLAYED"
+
+
+def test_replayed_lease_nonce_is_rejected_after_gate_restart(tmp_path):
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    replay_store = tmp_path / "command-replay.sqlite3"
+
+    first_gate = make_gate(key, command_replay_cache=CommandReplayCache(replay_store))
+    first = first_gate.evaluate(
+        make_command(command_id="cmd_first_lease_nonce_use", command_nonce="cmd_nonce_first"),
+        lease,
+        current_state=make_state(),
+    )
+
+    second_gate = make_gate(key, command_replay_cache=CommandReplayCache(replay_store))
+    second = second_gate.evaluate(
+        make_command(command_id="cmd_second_lease_nonce_use", command_nonce="cmd_nonce_second"),
+        lease,
+        current_state=make_state(),
+    )
+
+    assert first.allowed is True
+    assert second.allowed is False
+    assert second.reason_code == "LEASE_NONCE_REPLAYED"
+    assert second.fallback_action is None
+    assert second.fallback_declaration is None
 
 
 def test_revoked_lease_is_rejected_after_gate_restart(tmp_path):
@@ -2868,6 +3289,7 @@ def test_unsigned_revocation_cannot_revoke_lease():
                 edge_agent_id=EDGE_AGENT_ID,
                 reason_code="COMPROMISE_SUSPECTED",
                 fallback_action=FallbackAction.HOLD_POSITION,
+                signature_alg=ED25519_SIGNATURE_ALGORITHM,
             ),
             lease=lease,
         )
@@ -2889,6 +3311,7 @@ def test_oversized_revocation_signature_rejects_before_decode_or_verify(monkeypa
         edge_agent_id=EDGE_AGENT_ID,
         reason_code="COMPROMISE_SUSPECTED",
         fallback_action=FallbackAction.HOLD_POSITION,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
         signature="A" * 2_000,
     )
 

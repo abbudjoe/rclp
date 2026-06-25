@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 SUPPORTED_PROTOCOL_VERSION = "0.0.1-draft"
 STRICT_MODEL_CONFIG = ConfigDict(extra="forbid")
+ED25519_SIGNATURE_ALGORITHM = "RCLP-DEV-ED25519"
 
 
 def utc_now() -> datetime:
@@ -92,6 +93,13 @@ class NetworkProfile(StrEnum):
     PARTITION = "partition"
 
 
+class ControlPlaneReachability(StrEnum):
+    UNKNOWN = "unknown"
+    REACHABLE = "reachable"
+    DEGRADED = "degraded"
+    PARTITIONED = "partitioned"
+
+
 class StrictModel(BaseModel):
     model_config = STRICT_MODEL_CONFIG
 
@@ -118,6 +126,19 @@ def protocol_version_violation(*messages: BaseMessage) -> str | None:
     return None
 
 
+def signature_algorithm_violation(
+    message: BaseModel,
+    *,
+    missing_reason: str,
+    unsupported_reason: str,
+) -> str | None:
+    if "signature_alg" not in message.model_fields_set:
+        return missing_reason
+    if getattr(message, "signature_alg", None) != ED25519_SIGNATURE_ALGORITHM:
+        return unsupported_reason
+    return None
+
+
 class AgentAttestation(BaseMessage):
     message_type: Literal["agent_attestation"] = "agent_attestation"
     agent_id: str
@@ -127,6 +148,7 @@ class AgentAttestation(BaseMessage):
     public_key_id: str
     trust_tier: Literal["development", "staging", "production"]
     revoked: bool = False
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     _validate_revoked_bool = field_validator("revoked", mode="before")(_reject_coerced_bool)
@@ -188,6 +210,7 @@ class RobotStateAssertion(BaseMessage):
     geofence_state: GeofenceState
     observed_at: datetime = Field(default_factory=utc_now)
     human_operator_available: bool = True
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     _validate_human_operator_available_bool = field_validator(
@@ -209,6 +232,7 @@ class NetworkStateAssertion(BaseMessage):
     observed_at: datetime = Field(default_factory=utc_now)
     measurement_window_seconds: int = Field(gt=0)
     source: str
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     _validate_attached_bool = field_validator("attached", mode="before")(_reject_coerced_bool)
@@ -218,6 +242,29 @@ class NetworkStateAssertion(BaseMessage):
         "uplink_mbps",
         mode="before",
     )(_reject_coerced_number)
+    _validate_measurement_window_seconds_int = field_validator(
+        "measurement_window_seconds",
+        mode="before",
+    )(_reject_coerced_int)
+
+
+class ControlPlaneReachabilityAssertion(BaseMessage):
+    message_type: Literal["control_plane_reachability_assertion"] = (
+        "control_plane_reachability_assertion"
+    )
+    edge_agent_id: str
+    authenticated_edge_agent_id: str | None = None
+    robot_id: str
+    mission_id: str
+    reachability: ControlPlaneReachability
+    reachable: bool
+    observed_at: datetime = Field(default_factory=utc_now)
+    measurement_window_seconds: int = Field(gt=0)
+    source: str
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
+    signature: str | None = None
+
+    _validate_reachable_bool = field_validator("reachable", mode="before")(_reject_coerced_bool)
     _validate_measurement_window_seconds_int = field_validator(
         "measurement_window_seconds",
         mode="before",
@@ -253,6 +300,7 @@ class CapabilityRequest(BaseMessage):
     requested_duration_seconds: int = Field(default=600, gt=0)
     requested_constraints: LeaseConstraints | None = None
     request_nonce: str = Field(default_factory=lambda: f"nonce_{uuid4().hex}")
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     _validate_requested_duration_seconds_int = field_validator(
@@ -314,6 +362,7 @@ class CapabilityLease(BaseMessage):
     nonce: str = Field(default_factory=lambda: f"lease_nonce_{uuid4().hex}")
     policy_id: str
     policy_digest: str
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
     @model_validator(mode="after")
@@ -339,6 +388,7 @@ class CapabilityDecision(BaseMessage):
     lease: CapabilityLease | None = None
     safe_alternatives: list[FallbackAction] = Field(default_factory=list)
     audit_id: str
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
 
@@ -353,6 +403,7 @@ class LeaseRevocation(BaseMessage):
     robot_id: str | None = None
     mission_id: str | None = None
     capability: Capability | None = None
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
 
@@ -364,9 +415,11 @@ class FallbackDeclaration(BaseMessage):
     trigger: str
     fallback_action: FallbackAction
     declared_by: str
+    authenticated_declared_by: str | None = None
     lease_id: str | None = None
     decision_id: str | None = None
     revocation_id: str | None = None
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
 
@@ -413,3 +466,32 @@ class AuditCommit(BaseMessage):
 
 
 AuditEvent = AuditCommit
+
+
+class AuditBatchCommit(BaseMessage):
+    message_type: Literal["audit_batch_commit"] = "audit_batch_commit"
+    batch_id: str = Field(default_factory=lambda: f"audit_batch_{uuid4().hex}")
+    audit_ids: list[str]
+    event_count: int = Field(gt=0)
+    chain_head: str
+    batch_hash: str
+    signed_by: str
+    authenticated_signed_by: str | None = None
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
+    signature: str | None = None
+
+    _validate_event_count_int = field_validator("event_count", mode="before")(_reject_coerced_int)
+
+    @model_validator(mode="after")
+    def validate_batch_commit(self) -> "AuditBatchCommit":
+        if not self.audit_ids:
+            raise ValueError("audit batch must include at least one audit_id")
+        if self.event_count != len(self.audit_ids):
+            raise ValueError("audit batch event_count must match audit_ids")
+        if not self.chain_head.startswith("sha256:"):
+            raise ValueError("audit batch chain_head must be a sha256 reference")
+        if not self.batch_hash.startswith("sha256:"):
+            raise ValueError("audit batch_hash must be a sha256 reference")
+        if not self.signed_by.strip():
+            raise ValueError("audit batch signed_by is required")
+        return self

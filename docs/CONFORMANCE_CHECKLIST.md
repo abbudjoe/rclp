@@ -27,14 +27,18 @@ Minimum v0.0.1 message checklist:
 
 - `AgentAttestation` identifies central and edge software actors, binds the
   claimed `agent_id` to `authenticated_agent_id`, and carries signature material
-  for trust-boundary verification.
+  plus explicit `signature_alg` metadata for trust-boundary verification.
 - `RobotStateAssertion` binds robot, edge agent, authenticated edge identity,
   mission, safety state, geofence state, network state, observation time, and
-  signature.
+  explicit signature metadata.
 - `NetworkStateAssertion` is available for standalone network-state profiles;
   the local demo embeds network state in `RobotStateAssertion`. Trust-boundary
   use requires an authenticated envelope; the v0.0.1 local demo does not verify
   standalone network assertion signatures.
+- `ControlPlaneReachabilityAssertion` is signed edge-local evidence for policies
+  that explicitly require hosted-control-plane reachability as a distinct input.
+  Missing, stale, unsigned, untrusted, partitioned, unknown, or explicitly
+  unreachable assertions fail closed only when the policy requires them.
 - `CapabilityRequest` is signed and includes requesting agent, edge agent,
   robot, mission, capability, reason, requested duration, and request nonce.
 - `CapabilityDecision` records allow, deny, or degrade with reason code,
@@ -53,11 +57,15 @@ Minimum v0.0.1 message checklist:
   `revoker_edge_scopes_by_id` configuration, and the selected fallback remains
   a local-policy decision.
 - `FallbackDeclaration` records the selected fallback hook; it is not a
-  certified safety behavior. Trust-boundary use requires an authenticated
-  envelope; the v0.0.1 local demo emits local fallback declarations without
-  verifying fallback declaration signatures.
+  certified safety behavior. Trust-boundary use requires `signature_alg`,
+  `authenticated_declared_by`, and a valid signature by an authorized edge
+  declarer. Local in-process fallback declarations may remain unsigned records.
 - `AuditCommit` records every authority-relevant request, decision, command
-  allow/reject, revocation, and fallback path.
+  allow/reject, revocation, and fallback path. The MVP schema lives at
+  `manifests/rclp_audit_conformance_schema.json`.
+- `AuditBatchCommit` signs a finite ordered batch of committed audit events and
+  their chain head as local validation evidence. It is not a production
+  append-only audit backend.
 
 ## Authority Evaluation
 
@@ -68,6 +76,8 @@ The policy path MUST:
   request signatures, missing replay protection, unauthenticated or stale state,
   unknown future policy fields, and unaccepted policy digests;
 - treat network state as an authorization input, not a network guarantee;
+- treat control-plane reachability as a separate authorization input only when a
+  policy explicitly requires it;
 - allow `remote_assist` only when identity, mission, geofence, human-operator,
   network, policy-digest, and request-signature checks pass;
 - degrade or deny when deterministic network profiles cross configured
@@ -87,6 +97,7 @@ The edge command gate MUST reject:
 - invalid lease signature;
 - expired, stale, or too-long lease;
 - lease context mismatch for agent, edge agent, robot, mission, or capability;
+- accepted lease nonce replay, including after command-gate restart;
 - missing required constraints for `remote_assist`;
 - known revoked lease, including after command-gate restart;
 - missing, unsigned, or stale current local state for state-constrained
@@ -97,6 +108,8 @@ The edge command gate MUST reject:
 - command payload members outside the accepted capability's typed payload
   schema, including nested speed or motion fields in the MVP speed-constrained
   profile;
+- missing or unsupported signature algorithm metadata for signed
+  trust-boundary messages;
 - signed command material that exceeds the verifier profile's pre-auth scalar,
   payload-size, node-count, or nesting-depth budget.
 - signed revocation material that exceeds the receiver's pre-auth text budget
@@ -115,6 +128,7 @@ Run these before claiming v0.0.1 local conformance:
 ```bash
 python -m compileall src tests
 python -m pytest
+python scripts/run_cross_language_conformance.py
 python -m rclp_agents.demo_remote_assist
 python -m rclp_agents.demo_remote_assist --network-profile uplink_bad
 ```
@@ -131,6 +145,6 @@ ruff format .
 The local profile does not prove field safety, real cellular behavior,
 production key management, signed policy bundle distribution, standalone
 network-state assertion signature verification, signed decision verification
-across a trust boundary, fallback declaration signature verification across a
-trust boundary, fleet-scale revocation propagation, or hosted SaaS behavior.
-Those are v0.1+ hardening items.
+across a trust boundary, production fallback execution semantics, fleet-scale
+revocation propagation, production append-only audit storage, or hosted SaaS
+behavior. Those are v0.1+ hardening items.

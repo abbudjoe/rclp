@@ -29,6 +29,7 @@ from rclp_core.models import (
     CapabilityLease,
     CapabilityRequest,
     Decision,
+    ED25519_SIGNATURE_ALGORITHM,
     FallbackAction,
     GeofenceState,
     LeaseConstraints,
@@ -206,6 +207,7 @@ def registry_failure(message: str) -> EvalCaseResult:
 
 def sign_request(request: CapabilityRequest, key: DemoKeyPair) -> CapabilityRequest:
     request.authenticated_agent_id = request.requesting_agent_id
+    request.signature_alg = ED25519_SIGNATURE_ALGORITHM
     request.signature = None
     request.signature = key.sign(request)
     return request
@@ -213,12 +215,14 @@ def sign_request(request: CapabilityRequest, key: DemoKeyPair) -> CapabilityRequ
 
 def sign_state(state: RobotStateAssertion, key: DemoKeyPair) -> RobotStateAssertion:
     state.authenticated_edge_agent_id = state.edge_agent_id
+    state.signature_alg = ED25519_SIGNATURE_ALGORITHM
     state.signature = None
     state.signature = key.sign(state)
     return state
 
 
 def sign_revocation(revocation: LeaseRevocation, key: DemoKeyPair) -> LeaseRevocation:
+    revocation.signature_alg = ED25519_SIGNATURE_ALGORITHM
     revocation.signature = None
     revocation.signature = key.sign(revocation)
     return revocation
@@ -261,10 +265,12 @@ def make_request(
         return sign_request(request, central_key)
     if signature_mode == "missing":
         request.authenticated_agent_id = request.requesting_agent_id
+        request.signature_alg = ED25519_SIGNATURE_ALGORITHM
         request.signature = None
         return request
     if signature_mode == "malformed":
         request.authenticated_agent_id = request.requesting_agent_id
+        request.signature_alg = ED25519_SIGNATURE_ALGORITHM
         request.signature = "not-a-valid-signature"
         return request
     raise ValueError(f"unknown request signature mode: {signature_mode}")
@@ -330,9 +336,11 @@ def make_state(
     if signature_mode == "valid":
         return sign_state(state, edge_key)
     if signature_mode == "missing":
+        state.signature_alg = ED25519_SIGNATURE_ALGORITHM
         state.signature = None
         return state
     if signature_mode == "malformed":
+        state.signature_alg = ED25519_SIGNATURE_ALGORITHM
         state.signature = "not-a-valid-signature"
         return state
     raise ValueError(f"unknown state signature mode: {signature_mode}")
@@ -412,6 +420,7 @@ def make_lease(
         nonce=lease_spec.get("nonce", "lease_nonce_eval"),
         policy_id=policy.policy_id,
         policy_digest=policy_digest(policy),
+        signature_alg=lease_spec.get("signature_alg", ED25519_SIGNATURE_ALGORITHM),
     )
     signature_mode = lease_spec.get("signature", "valid")
     if signature_mode == "valid":
@@ -419,7 +428,8 @@ def make_lease(
     elif signature_mode == "malformed":
         lease.signature = "not-a-valid-signature"
     elif signature_mode == "unknown_algorithm":
-        lease.signature = "RCLP-UNKNOWN:not-a-valid-signature"
+        lease.signature_alg = "RCLP-UNKNOWN"
+        lease.signature = issuer_key.sign(lease)
     elif signature_mode == "missing":
         lease.signature = None
     else:
@@ -429,6 +439,7 @@ def make_lease(
 
 def sign_command(command: Command, key: DemoKeyPair) -> Command:
     command.authenticated_agent_id = command.agent_id
+    command.signature_alg = ED25519_SIGNATURE_ALGORITHM
     command.signature = None
     command.signature = key.sign(command)
     return command
@@ -584,6 +595,7 @@ def run_command_gate(scenario: dict[str, Any]) -> EvalOutcome:
             sign_revocation(revocation, edge_key)
             revocation.reason_code = "TAMPERED_AFTER_SIGNING"
         elif signature_mode == "missing":
+            revocation.signature_alg = ED25519_SIGNATURE_ALGORITHM
             revocation.signature = None
         else:
             raise ValueError(f"unknown revocation signature mode: {signature_mode}")
@@ -698,6 +710,7 @@ def run_network_degrade_revokes(scenario: dict[str, Any]) -> EvalOutcome:
         nonce="lease_nonce_eval_network_degrade",
         policy_id=policy.policy_id,
         policy_digest=policy_digest(policy),
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     lease.signature = issuer_key.sign(lease)
     gate.evaluate(
@@ -863,6 +876,7 @@ def run_cloud_partition_expiry(scenario: dict[str, Any]) -> EvalOutcome:
         nonce="lease_nonce_eval_cloud_partition",
         policy_id=policy.policy_id,
         policy_digest=policy_digest(policy),
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     lease.signature = issuer_key.sign(lease)
     gate.evaluate(

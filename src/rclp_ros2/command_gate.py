@@ -22,11 +22,13 @@ from rclp_core.models import (
     CapabilityConstraintBounds,
     CapabilityConstraintRequirement,
     CapabilityLease,
+    ED25519_SIGNATURE_ALGORITHM,
     FallbackAction,
     FallbackDeclaration,
     LeaseRevocation,
     RobotStateAssertion,
     protocol_version_violation,
+    signature_algorithm_violation,
 )
 from rclp_core.state import DEFAULT_STATE_MAX_AGE_SECONDS
 
@@ -91,6 +93,7 @@ def _signed_command_material_budget_violation(command: Command) -> bool:
         command.mission_id,
         command.capability,
         command.command_nonce,
+        command.signature_alg,
         command.signature,
     ):
         if text_budget.exceeded(value):
@@ -115,6 +118,7 @@ def _signed_revocation_material_budget_violation(revocation: LeaseRevocation) ->
         revocation.robot_id,
         revocation.mission_id,
         revocation.capability,
+        revocation.signature_alg,
         revocation.signature,
     ):
         if text_budget.exceeded(str(value) if value is not None else None):
@@ -188,6 +192,7 @@ class EdgeCommand(BaseMessage):
     capability: str
     command_nonce: str = Field(default_factory=lambda: f"cmd_nonce_{uuid4().hex}")
     payload: dict
+    signature_alg: str = ED25519_SIGNATURE_ALGORITHM
     signature: str | None = None
 
 
@@ -411,6 +416,12 @@ class RevocationStore:
         return True
 
 
+class _ReplayEntryConflict(Exception):
+    def __init__(self, reason_code: str) -> None:
+        self.reason_code = reason_code
+        super().__init__(reason_code)
+
+
 class CommandReplayCache:
     """Durable replay window for signed edge commands.
 
@@ -431,6 +442,7 @@ class CommandReplayCache:
         self._tempdir: TemporaryDirectory[str] | None = None
         self._seen_command_ids: set[tuple[str, str]] = set()
         self._seen_nonces: set[tuple[str, str]] = set()
+        self._seen_lease_nonces: set[str] = set()
         if self._store_path is not None:
             self._store_path.parent.mkdir(parents=True, exist_ok=True)
             with self._connect() as connection:
@@ -472,6 +484,29 @@ class CommandReplayCache:
         if self._store_path is None:
             raise ValueError("command replay cache has no durable store")
         return sqlite3.connect(self._store_path, timeout=30, isolation_level="IMMEDIATE")
+
+    @staticmethod
+    def _lease_nonce_replay_scope() -> str:
+        return "__lease_nonce__"
+
+    @staticmethod
+    def _replay_entry(
+        authenticated_agent_id: str,
+        replay_kind: str,
+        replay_value: str,
+        command: Command,
+        *,
+        consumed_at: str,
+    ) -> tuple[str, str, str, str, str, str, str]:
+        return (
+            authenticated_agent_id,
+            replay_kind,
+            replay_value,
+            command.command_id,
+            command.command_nonce,
+            command.created_at.isoformat(),
+            consumed_at,
+        )
 
     def remember(self, command: Command) -> bool:
         if command.authenticated_agent_id is None:
@@ -537,6 +572,72 @@ class CommandReplayCache:
         self._seen_nonces.add(nonce_key)
         return True
 
+    def remember_authorized_use(self, command: Command, lease: CapabilityLease) -> tuple[bool, str]:
+        if command.authenticated_agent_id is None:
+            return False, "COMMAND_REPLAYED"
+        command_id_key = (command.authenticated_agent_id, command.command_id)
+        nonce_key = (command.authenticated_agent_id, command.command_nonce)
+        if self._store_path is not None:
+            consumed_at = datetime.now(timezone.utc).isoformat()
+            entries = [
+                (
+                    command.authenticated_agent_id,
+                    "command_id",
+                    command.command_id,
+                    "COMMAND_REPLAYED",
+                ),
+                (
+                    command.authenticated_agent_id,
+                    "command_nonce",
+                    command.command_nonce,
+                    "COMMAND_REPLAYED",
+                ),
+                (
+                    self._lease_nonce_replay_scope(),
+                    "lease_nonce",
+                    lease.nonce,
+                    "LEASE_NONCE_REPLAYED",
+                ),
+            ]
+            try:
+                with self._connect() as connection:
+                    for authenticated_agent_id, replay_kind, replay_value, reason_code in entries:
+                        try:
+                            connection.execute(
+                                """
+                                INSERT INTO command_replay_entries (
+                                    authenticated_agent_id,
+                                    replay_kind,
+                                    replay_value,
+                                    command_id,
+                                    command_nonce,
+                                    created_at,
+                                    consumed_at
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                self._replay_entry(
+                                    authenticated_agent_id,
+                                    replay_kind,
+                                    replay_value,
+                                    command,
+                                    consumed_at=consumed_at,
+                                ),
+                            )
+                        except sqlite3.IntegrityError as exc:
+                            raise _ReplayEntryConflict(reason_code) from exc
+            except _ReplayEntryConflict as exc:
+                return False, exc.reason_code
+            return True, "LEASE_VALID"
+        if command_id_key in self._seen_command_ids or nonce_key in self._seen_nonces:
+            return False, "COMMAND_REPLAYED"
+        if lease.nonce in self._seen_lease_nonces:
+            return False, "LEASE_NONCE_REPLAYED"
+        self._seen_command_ids.add(command_id_key)
+        self._seen_nonces.add(nonce_key)
+        self._seen_lease_nonces.add(lease.nonce)
+        return True, "LEASE_VALID"
+
     def contains(self, command: Command) -> bool:
         if command.authenticated_agent_id is None:
             return False
@@ -601,6 +702,8 @@ class CommandGate:
         max_state_age_seconds: int = DEFAULT_STATE_MAX_AGE_SECONDS,
         max_command_age_seconds: int = DEFAULT_COMMAND_MAX_AGE_SECONDS,
         max_revocation_age_seconds: int = DEFAULT_REVOCATION_MAX_AGE_SECONDS,
+        fallback_signer: Callable[[FallbackDeclaration], str] | None = None,
+        fallback_authenticated_declared_by: str | None = None,
     ) -> None:
         if not local_edge_agent_id.strip():
             raise ValueError("local_edge_agent_id is required")
@@ -685,6 +788,8 @@ class CommandGate:
         self.revocations: dict[str, RevokedLease] = self.revocation_store.load_all()
         self.fallback_events: list[FallbackDeclaration] = []
         self._fallback_sink = fallback_sink
+        self._fallback_signer = fallback_signer
+        self._fallback_authenticated_declared_by = fallback_authenticated_declared_by
         self.audit_log = audit_log or AuditLog()
 
     @property
@@ -796,6 +901,18 @@ class CommandGate:
             )
             raise ValueError("revocation actor is not trusted")
 
+        if alg_reason := signature_algorithm_violation(
+            revocation,
+            missing_reason="REVOCATION_SIGNATURE_ALGORITHM_MISSING",
+            unsupported_reason="REVOCATION_SIGNATURE_ALGORITHM_UNSUPPORTED",
+        ):
+            self._record_revocation_rejected(
+                revocation=revocation,
+                lease=lease,
+                reason_code=alg_reason,
+                summary="revocation rejected because signature algorithm is unsupported",
+            )
+            raise ValueError("revocation signature algorithm is unsupported")
         if revocation.signature is None:
             self._record_revocation_rejected(
                 revocation=revocation,
@@ -1005,12 +1122,16 @@ class CommandGate:
             now=now,
         )
         if ok:
-            if not self.command_replay_cache.remember(command):
+            recorded, replay_reason = self.command_replay_cache.remember_authorized_use(
+                command,
+                lease,
+            )
+            if not recorded:
                 return self._reject_command(
                     command=command,
                     lease=lease,
                     current_state=current_state,
-                    reason="COMMAND_REPLAYED",
+                    reason=replay_reason,
                     emit_fallback=False,
                 )
             payload = {
@@ -1024,6 +1145,7 @@ class CommandGate:
                 "capability": command.capability,
                 "command_nonce": command.command_nonce,
                 "lease_id": lease.lease_id if lease else None,
+                "lease_nonce": lease.nonce if lease else None,
                 "reason_code": reason,
             }
             state_refs: list[str] = []
@@ -1211,6 +1333,12 @@ class CommandGate:
         public_key = self.agent_public_keys_by_id.get(command.authenticated_agent_id)
         if public_key is None:
             return "COMMAND_AGENT_KEY_NOT_TRUSTED"
+        if alg_reason := signature_algorithm_violation(
+            command,
+            missing_reason="COMMAND_SIGNATURE_ALGORITHM_MISSING",
+            unsupported_reason="COMMAND_SIGNATURE_ALGORITHM_UNSUPPORTED",
+        ):
+            return alg_reason
         if command.signature is None:
             return "COMMAND_SIGNATURE_MISSING"
         if _signed_command_material_budget_violation(command):
@@ -1377,6 +1505,13 @@ class CommandGate:
         return command.command_id
 
     def _emit_fallback(self, declaration: FallbackDeclaration) -> None:
+        if self._fallback_signer is not None:
+            declaration.authenticated_declared_by = (
+                self._fallback_authenticated_declared_by or declaration.declared_by
+            )
+            declaration.signature_alg = ED25519_SIGNATURE_ALGORITHM
+            declaration.signature = None
+            declaration.signature = self._fallback_signer(declaration)
         self.fallback_events.append(declaration)
         self.audit_log.record(
             event_type=AuditEventType.FALLBACK_DECLARED,

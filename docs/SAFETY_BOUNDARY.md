@@ -41,6 +41,8 @@ Examples of fail-closed behavior in this MVP:
 - wrong robot, mission, agent, edge agent, or capability -> reject
 - network or geofence constraints violated -> reject
 - known revocation -> reject
+- missing or unsupported signature algorithm metadata -> reject
+- accepted lease nonce replay -> reject
 
 ## Fallback Hooks
 
@@ -51,6 +53,11 @@ certified safety behavior.
 
 The fallback hook is an authorization and audit signal. The robot's local safety
 controller remains responsible for physical safety.
+
+Fallback declarations that cross a trust boundary can be signed and verified in
+the MVP reference profile. A valid fallback declaration still means only that
+the edge agent declared a local fallback hook; it does not certify the physical
+fallback behavior.
 
 ## Certification Scope
 

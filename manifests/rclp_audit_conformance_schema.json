@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rclp.dev/schemas/rclp_audit_conformance_schema_v0.json",
+  "title": "RCLP MVP AuditCommit Conformance Schema",
+  "description": "MVP audit schema for controlled technical validation. This is not a production audit-backend certification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "message_id",
+    "audit_id",
+    "correlation_id",
+    "created_at",
+    "message_type",
+    "event_type",
+    "actor_id",
+    "summary",
+    "payload",
+    "payload_hash",
+    "authority_relevant",
+    "integrity_profile",
+    "integrity_proof"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": "0.0.1-draft"
+    },
+    "message_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "message_type": {
+      "const": "audit_commit"
+    },
+    "audit_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "enum": [
+        "demo_setup",
+        "capability_requested",
+        "network_state_asserted",
+        "capability_allowed",
+        "capability_denied",
+        "capability_degraded",
+        "command_allowed",
+        "command_rejected",
+        "lease_revoked",
+        "revocation_rejected",
+        "fallback_declared",
+        "diagnostic"
+      ]
+    },
+    "actor_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "robot_id": {
+      "type": ["string", "null"]
+    },
+    "mission_id": {
+      "type": ["string", "null"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object"
+    },
+    "payload_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "authority_relevant": {
+      "type": "boolean"
+    },
+    "integrity_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "integrity_proof": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "previous_audit_hash": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "policy_id": {
+      "type": ["string", "null"]
+    },
+    "policy_digest": {
+      "type": ["string", "null"]
+    },
+    "state_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "related_message_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "authority_relevant": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "robot_id",
+          "mission_id"
+        ],
+        "properties": {
+          "robot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mission_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "integrity_proof": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  ],
+  "x-rclp-authority-event-types": [
+    "capability_requested",
+    "network_state_asserted",
+    "capability_allowed",
+    "capability_denied",
+    "capability_degraded",
+    "command_allowed",
+    "command_rejected",
+    "lease_revoked",
+    "revocation_rejected",
+    "fallback_declared"
+  ],
+  "x-rclp-causality-requirements": {
+    "state_dependent_decisions": "state_refs MUST include policy-relevant state assertion ids.",
+    "command_enforcement": "related_message_ids SHOULD include the command message id and any state assertion id used for enforcement.",
+    "fallback": "related_message_ids SHOULD include the triggering lease, decision, or revocation id when available."
+  }
+}

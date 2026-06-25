@@ -12,6 +12,7 @@ from rclp_core.models import (
     AuditEventType,
     Capability,
     CapabilityRequest,
+    ED25519_SIGNATURE_ALGORITHM,
     GeofenceState,
     RobotStateAssertion,
     SafetyState,
@@ -42,6 +43,7 @@ def signed_request(key: DemoKeyPair) -> CapabilityRequest:
         capability=Capability.REMOTE_ASSIST,
         reason="conformance scenario",
         requested_duration_seconds=600,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     request.signature = key.sign(request)
     return request
@@ -57,6 +59,7 @@ def robot_state(network_profile: str) -> RobotStateAssertion:
         network_state=profile(network_profile),
         geofence_state=GeofenceState(geofence_id="test-zone-a", inside=True),
         human_operator_available=True,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
     )
     state.signature = EDGE_KEY.sign(state)
     return state
@@ -136,6 +139,15 @@ def test_sample_replay_events_are_valid_audit_commits():
     assert [event.audit_id for event in log.events] == [
         raw_event["audit_id"] for raw_event in sample["events"]
     ]
+
+
+def test_crypto_profiles_name_current_dev_algorithms_and_parity_runner():
+    profiles = (ROOT / "docs/CRYPTO_PROFILES.md").read_text(encoding="utf-8")
+
+    assert "RCLP-DEV-ED25519" in profiles
+    assert "RCLP-DEV-HMAC-SHA256" in profiles
+    assert "canonical_json()" in profiles
+    assert "scripts/run_cross_language_conformance.py" in profiles
 
 
 def test_network_degrade_scenario_matches_current_policy_profile_behavior(tmp_path):

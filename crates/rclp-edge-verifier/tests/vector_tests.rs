@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use hmac::{Hmac, Mac};
@@ -135,6 +136,29 @@ fn edge_verifier_vectors_match_expected_decisions() {
             vector.name
         );
     }
+}
+
+#[test]
+fn cli_verifies_json_vector_with_durable_replay_cache() {
+    let vector_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/vectors/edge_verifier/valid_remote_assist_lease.json");
+    let replay_cache_dir = replay_cache_path("cli");
+
+    let output = ProcessCommand::new(env!("CARGO_BIN_EXE_rclp-edge-verify"))
+        .arg(&vector_path)
+        .arg(&replay_cache_dir)
+        .output()
+        .expect("rclp-edge-verify CLI can run");
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let decision: Value = serde_json::from_slice(&output.stdout).expect("CLI emits JSON decision");
+    assert_eq!(decision["decision"], "allow");
+    assert_eq!(decision["reason_code"], "ALLOW");
+    assert_eq!(decision["audit_event"]["event_type"], "command_allowed");
 }
 
 #[test]

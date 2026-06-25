@@ -7,6 +7,7 @@ messages:
   - AgentAttestation
   - RobotStateAssertion
   - NetworkStateAssertion
+  - ControlPlaneReachabilityAssertion
   - CapabilityRequest
   - CapabilityDecision
   - CapabilityLease
@@ -14,6 +15,7 @@ messages:
   - LeaseRevocation
   - FallbackDeclaration
   - AuditCommit
+  - AuditBatchCommit
 message_models:
   AgentAttestation:
     python_model: rclp_core.models.AgentAttestation
@@ -30,6 +32,7 @@ message_models:
       - manifest_digest
       - public_key_id
       - trust_tier
+      - signature_alg
       - signature
     runtime_required_fields:
       - protocol_version
@@ -38,6 +41,7 @@ message_models:
       - created_at
       - message_type
       - authenticated_agent_id
+      - signature_alg
       - signature
   RobotStateAssertion:
     python_model: rclp_core.models.RobotStateAssertion
@@ -56,6 +60,7 @@ message_models:
       - geofence_state
       - network_state
       - observed_at
+      - signature_alg
       - signature
     runtime_required_fields:
       - protocol_version
@@ -66,6 +71,7 @@ message_models:
       - authenticated_edge_agent_id
       - safety_state
       - observed_at
+      - signature_alg
       - signature
   NetworkStateAssertion:
     python_model: rclp_core.models.NetworkStateAssertion
@@ -87,6 +93,7 @@ message_models:
       - observed_at
       - measurement_window_seconds
       - source
+      - signature_alg
       - signature
     runtime_required_fields:
       - protocol_version
@@ -95,6 +102,37 @@ message_models:
       - created_at
       - message_type
       - observed_at
+      - signature_alg
+      - signature
+  ControlPlaneReachabilityAssertion:
+    python_model: rclp_core.models.ControlPlaneReachabilityAssertion
+    message_type: control_plane_reachability_assertion
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - edge_agent_id
+      - authenticated_edge_agent_id
+      - robot_id
+      - mission_id
+      - reachability
+      - reachable
+      - observed_at
+      - measurement_window_seconds
+      - source
+      - signature_alg
+      - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - authenticated_edge_agent_id
+      - observed_at
+      - signature_alg
       - signature
   CapabilityRequest:
     python_model: rclp_core.models.CapabilityRequest
@@ -114,6 +152,7 @@ message_models:
       - reason
       - requested_duration_seconds
       - request_nonce
+      - signature_alg
       - signature
     runtime_required_fields:
       - protocol_version
@@ -124,6 +163,7 @@ message_models:
       - authenticated_agent_id
       - requested_duration_seconds
       - request_nonce
+      - signature_alg
       - signature
   CapabilityDecision:
     python_model: rclp_core.models.CapabilityDecision
@@ -143,6 +183,7 @@ message_models:
       - audit_id
       - lease
       - safe_alternatives
+      - signature_alg
       - signature
     runtime_required_fields:
       - protocol_version
@@ -154,6 +195,7 @@ message_models:
       - policy_digest
       - lease
       - safe_alternatives
+      - signature_alg
       - signature
   CapabilityLease:
     python_model: rclp_core.models.CapabilityLease
@@ -177,11 +219,13 @@ message_models:
       - nonce
       - policy_id
       - policy_digest
+      - signature_alg
       - signature
     runtime_required_fields:
       - lease_id
       - issued_at
       - nonce
+      - signature_alg
       - signature
   EdgeCommand:
     python_model: rclp_ros2.command_gate.EdgeCommand
@@ -201,6 +245,7 @@ message_models:
       - capability
       - command_nonce
       - payload
+      - signature_alg
       - signature
     runtime_required_fields:
       - protocol_version
@@ -210,6 +255,7 @@ message_models:
       - message_type
       - authenticated_agent_id
       - command_nonce
+      - signature_alg
       - signature
   LeaseRevocation:
     python_model: rclp_core.models.LeaseRevocation
@@ -226,6 +272,7 @@ message_models:
       - reason_code
       - revoked_at
       - fallback_action
+      - signature_alg
       - signature
     runtime_required_fields:
       - protocol_version
@@ -234,6 +281,7 @@ message_models:
       - created_at
       - message_type
       - revoked_at
+      - signature_alg
       - signature
   FallbackDeclaration:
     python_model: rclp_core.models.FallbackDeclaration
@@ -250,6 +298,8 @@ message_models:
       - trigger
       - fallback_action
       - declared_by
+      - authenticated_declared_by
+      - signature_alg
       - signature
     runtime_required_fields:
       - protocol_version
@@ -257,6 +307,8 @@ message_models:
       - correlation_id
       - created_at
       - message_type
+      - authenticated_declared_by
+      - signature_alg
       - signature
   AuditCommit:
     python_model: rclp_core.models.AuditCommit
@@ -292,6 +344,34 @@ message_models:
       - authority_relevant
       - integrity_profile
       - integrity_proof
+  AuditBatchCommit:
+    python_model: rclp_core.models.AuditBatchCommit
+    message_type: audit_batch_commit
+    required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - batch_id
+      - audit_ids
+      - event_count
+      - chain_head
+      - batch_hash
+      - signed_by
+      - authenticated_signed_by
+      - signature_alg
+      - signature
+    runtime_required_fields:
+      - protocol_version
+      - message_id
+      - correlation_id
+      - created_at
+      - message_type
+      - batch_id
+      - authenticated_signed_by
+      - signature_alg
+      - signature
 non_goals:
   - fleet_dispatch
   - low_level_safety_control

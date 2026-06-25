@@ -2,12 +2,21 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from rclp_core.models import AuditCommit, AuditEventType, stable_json_hash
+from rclp_core.crypto import verify_with_public_key_b64
+from rclp_core.models import (
+    ED25519_SIGNATURE_ALGORITHM,
+    AuditBatchCommit,
+    AuditCommit,
+    AuditEventType,
+    signature_algorithm_violation,
+    stable_json_hash,
+)
 
 
 AUTHORITY_EVENT_TYPES = {
@@ -39,6 +48,23 @@ LOAD_REQUIRED_FIELDS = {
     "integrity_profile",
     "integrity_proof",
 }
+MAX_BATCH_SIGNED_TEXT_FIELD_BYTES = 1_024
+MAX_BATCH_SIGNED_TEXT_TOTAL_BYTES = 16_384
+
+
+class _SignedTextBudget:
+    def __init__(self) -> None:
+        self.total_bytes = 0
+
+    def exceeded(self, value: object | None) -> bool:
+        if value is None:
+            return False
+        size = len(str(value).encode("utf-8"))
+        self.total_bytes += size
+        return (
+            size > MAX_BATCH_SIGNED_TEXT_FIELD_BYTES
+            or self.total_bytes > MAX_BATCH_SIGNED_TEXT_TOTAL_BYTES
+        )
 
 
 class ReplayItem(BaseModel):
@@ -236,6 +262,141 @@ class AuditLog:
 
 
 AuditImportProfile = Literal["authority_chain", "diagnostic_only"]
+
+
+def audit_batch_chain_violation(events: Sequence[AuditCommit]) -> str | None:
+    event_list = list(events)
+    if not event_list:
+        return "AUDIT_BATCH_EVENTS_REQUIRED"
+
+    validator = AuditLog()
+    previous_hash: str | None = None
+    audit_ids: set[str] = set()
+    for event in event_list:
+        if event.audit_id in audit_ids:
+            return "AUDIT_BATCH_DUPLICATE_AUDIT_ID"
+        audit_ids.add(event.audit_id)
+        try:
+            validator._validate_context(event)
+        except ValueError:
+            return "AUDIT_BATCH_EVENT_CONTEXT_INVALID"
+        if event.payload_hash != stable_json_hash(event.payload):
+            return "AUDIT_BATCH_EVENT_PAYLOAD_HASH_INVALID"
+        if event.previous_audit_hash != previous_hash:
+            return "AUDIT_BATCH_PREVIOUS_HASH_MISMATCH"
+        expected_proof = validator._integrity_proof(event, previous_hash)
+        if event.integrity_proof != expected_proof:
+            return "AUDIT_BATCH_INTEGRITY_PROOF_INVALID"
+        previous_hash = event.integrity_proof
+    return None
+
+
+def audit_batch_payload(events: Sequence[AuditCommit]) -> dict[str, Any]:
+    event_list = list(events)
+    if chain_reason := audit_batch_chain_violation(event_list):
+        raise ValueError(chain_reason)
+    return {
+        "message_type": "audit_batch_payload_v0",
+        "audit_ids": [event.audit_id for event in event_list],
+        "event_count": len(event_list),
+        "chain_head": event_list[-1].integrity_proof,
+        "events": [event.model_dump(mode="json") for event in event_list],
+    }
+
+
+def audit_batch_hash(events: Sequence[AuditCommit]) -> str:
+    return stable_json_hash(audit_batch_payload(events))
+
+
+def create_signed_audit_batch(
+    events: Sequence[AuditCommit],
+    *,
+    signed_by: str,
+    signer: Callable[[AuditBatchCommit], str],
+    authenticated_signed_by: str | None = None,
+) -> AuditBatchCommit:
+    payload = audit_batch_payload(events)
+    batch = AuditBatchCommit(
+        audit_ids=payload["audit_ids"],
+        event_count=payload["event_count"],
+        chain_head=payload["chain_head"],
+        batch_hash=stable_json_hash(payload),
+        signed_by=signed_by,
+        authenticated_signed_by=authenticated_signed_by or signed_by,
+        signature_alg=ED25519_SIGNATURE_ALGORITHM,
+        signature=None,
+    )
+    batch.signature = signer(batch)
+    return batch
+
+
+def audit_batch_event_violation(
+    batch: AuditBatchCommit,
+    events: Sequence[AuditCommit],
+) -> str | None:
+    event_list = list(events)
+    if chain_reason := audit_batch_chain_violation(event_list):
+        return chain_reason
+    if batch.audit_ids != [event.audit_id for event in event_list]:
+        return "AUDIT_BATCH_EVENT_IDS_MISMATCH"
+    if batch.event_count != len(event_list):
+        return "AUDIT_BATCH_EVENT_COUNT_MISMATCH"
+    if batch.chain_head != event_list[-1].integrity_proof:
+        return "AUDIT_BATCH_CHAIN_HEAD_MISMATCH"
+    if batch.batch_hash != audit_batch_hash(event_list):
+        return "AUDIT_BATCH_HASH_MISMATCH"
+    return None
+
+
+def audit_batch_auth_violation(
+    batch: AuditBatchCommit,
+    public_keys_by_signer_id: Mapping[str, str],
+) -> str | None:
+    if alg_reason := signature_algorithm_violation(
+        batch,
+        missing_reason="AUDIT_BATCH_SIGNATURE_ALGORITHM_MISSING",
+        unsupported_reason="AUDIT_BATCH_SIGNATURE_ALGORITHM_UNSUPPORTED",
+    ):
+        return alg_reason
+    if not batch.signed_by.strip():
+        return "AUDIT_BATCH_SIGNER_MISSING"
+    if batch.authenticated_signed_by is None:
+        return "AUDIT_BATCH_AUTHENTICATED_SIGNER_MISSING"
+    if batch.authenticated_signed_by != batch.signed_by:
+        return "AUDIT_BATCH_AUTHENTICATED_SIGNER_MISMATCH"
+    if batch.signature is None:
+        return "AUDIT_BATCH_SIGNATURE_MISSING"
+    public_key = public_keys_by_signer_id.get(batch.authenticated_signed_by)
+    if public_key is None:
+        return "AUDIT_BATCH_SIGNER_KEY_NOT_TRUSTED"
+    if _audit_batch_signed_material_too_large(batch):
+        return "AUDIT_BATCH_SIGNED_MATERIAL_TOO_LARGE"
+    if not verify_with_public_key_b64(batch, batch.signature, public_key):
+        return "AUDIT_BATCH_SIGNATURE_INVALID"
+    return None
+
+
+def _audit_batch_signed_material_too_large(batch: AuditBatchCommit) -> bool:
+    text_budget = _SignedTextBudget()
+    for value in (
+        batch.protocol_version,
+        batch.message_id,
+        batch.correlation_id,
+        batch.created_at.isoformat(),
+        batch.message_type,
+        batch.batch_id,
+        ",".join(batch.audit_ids),
+        batch.event_count,
+        batch.chain_head,
+        batch.batch_hash,
+        batch.signed_by,
+        batch.authenticated_signed_by,
+        batch.signature_alg,
+        batch.signature,
+    ):
+        if text_budget.exceeded(value):
+            return True
+    return False
 
 
 def load_jsonl(

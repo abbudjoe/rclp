@@ -19,6 +19,7 @@ post-review security regressions:
 - valid remote-assist authority
 - missing, expired, not-yet-valid, revoked, replayed, malformed, and
   bad-signature authority
+- missing or unsupported signature algorithm metadata
 - wrong central agent, edge agent, robot, mission, and capability
 - geofence violation, high latency, high packet loss, and partitioned network
 - stale command after expiry and conflicting local state
@@ -38,7 +39,8 @@ high-risk paths are expected to deny or degrade with an explicit reason code.
 The eval harness does not test certified safety behavior, robot motion,
 real cellular behavior, carrier APIs, Isaac Sim, ROS 2 runtime delivery,
 production key management, hardware trust roots, hosted services, fleet
-management, teleoperation media, or a commercial dashboard.
+management, teleoperation media, production audit storage, or a commercial
+dashboard.
 
 It runs only local deterministic Python reference behavior.
 
@@ -56,6 +58,7 @@ The full local validation path is:
 python -m compileall src tests
 pytest
 python tests/evals/eval_runner.py
+python scripts/run_cross_language_conformance.py
 ```
 
 Expected successful eval summary:
@@ -125,15 +128,35 @@ audit behavior, and the T12 eval harness.
 
 The Rust verifier spike continues to consume shared vectors under
 `tests/vectors/edge_verifier/` through `cargo test --workspace`. The Python
-eval runner does not invoke Cargo so pytest and CI stay deterministic for
-Python-only environments.
+eval runner does not invoke Cargo by default so pytest and CI stay
+deterministic for Python-only environments.
 
-There is no Rust CLI yet for direct Python-vs-Rust eval comparison. Until one
-exists, parity is checked by:
+For direct vector-level checks, the Rust crate also exposes:
+
+```bash
+cargo run -p rclp-edge-verifier --bin rclp-edge-verify -- \
+  tests/vectors/edge_verifier/valid_remote_assist_lease.json
+```
+
+Parity is checked by:
 
 - Python evals over the reference policy and command gate
 - Python vector-shape tests for the shared Rust vectors
 - Rust workspace tests over the shared edge-verifier vectors
+- the Rust `rclp-edge-verify` CLI over shared JSON vectors when Cargo is
+  available
+
+Run the combined local parity gate with:
+
+```bash
+python scripts/run_cross_language_conformance.py
+```
+
+It writes `tests/evals/reports/cross_language_latest.json` and compares shared
+allow/deny/degrade decisions across mapped Python eval scenarios and Rust
+vectors. Reason codes remain implementation-native, but each mapped attack path
+also has an accepted Python and Rust reason-code set so wrong-deny regressions do
+not pass merely because both sides denied.
 
 ## Why Fail-Closed Matters
 
@@ -148,17 +171,15 @@ local state.
 
 ## Known Gaps
 
-- The Python MVP signature profile does not expose a first-class signature
-  algorithm field. The Python eval for an unknown signature profile fails
-  closed as `INVALID_SIGNATURE`; the Rust vectors cover `UNKNOWN_ALGORITHM`
-  explicitly.
-- Cloud connectivity is not a separate protocol field in the Python MVP.
-  Partition behavior is represented through deterministic network state. The
-  current command gate denies partitioned `remote_assist` commands before lease
-  expiry because the lease's network constraints are violated.
-- Audit completeness is checked through an eval mapping rather than a finalized
-  v0.1 conformance schema.
+- Control-plane reachability is an optional signed protocol input in the Python
+  MVP, but the eval suite still uses deterministic local network-state scenarios
+  for the default cloud-partition path. It does not exercise a hosted
+  control-plane service.
+- Audit completeness is checked through the MVP
+  `manifests/rclp_audit_conformance_schema.json` plus eval-specific mappings,
+  signed batch helpers, and local hash-chain verification, not through a
+  production audit backend certification.
 - The runner writes a local report artifact but does not publish or persist
   evidence to an external audit backend.
-- Production key rotation, hardware-backed trust, durable replay storage, and
-  signed fallback envelopes remain future hardening work.
+- Production key rotation, hardware-backed trust, clustered replay storage, and
+  production fallback execution semantics remain future hardening work.

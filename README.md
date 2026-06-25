@@ -16,11 +16,15 @@ not the future hosted commercial platform.
 - central-agent capability requests
 - edge-agent local verification
 - signed short-lived leases
+- explicit MVP signature algorithm metadata
 - allow, deny, degrade, and revoke decisions
 - network-state-conditioned authority
+- optional control-plane-reachability-conditioned authority
 - geofence-conditioned authority
 - command gating before a robot-facing command path
 - audit JSONL and replay of the authority chain
+- signed local audit batches for validation evidence
+- audit conformance schema for the MVP authority chain
 - Python reference implementation
 - Rust edge verifier spike
 
@@ -61,6 +65,7 @@ python -m pip install -e '.[dev]'
 python -m compileall src tests
 python -m pytest
 python tests/evals/eval_runner.py
+python scripts/run_cross_language_conformance.py
 python -m rclp_agents.demo_remote_assist
 ```
 
@@ -100,6 +105,8 @@ If Rust is installed, run the edge verifier spike:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo run -p rclp-edge-verifier --bin rclp-edge-verify -- \
+  tests/vectors/edge_verifier/valid_remote_assist_lease.json
 ```
 
 Rust prerequisites are the standard stable Rust toolchain with `cargo`,
@@ -171,6 +178,12 @@ Five-minute validation script: `docs/DEMO_SCRIPT.md`.
 Detailed walkthrough: `docs/DEMO_WALKTHROUGH.md`.
 
 Customer call packet: `docs/CUSTOMER_CALL_PACKET.md`.
+
+Adapter enforcement contract: `docs/ADAPTER_ENFORCEMENT_CONTRACT.md`.
+
+Audit conformance schema: `manifests/rclp_audit_conformance_schema.json`.
+
+Development crypto profiles: `docs/CRYPTO_PROFILES.md`.
 
 ## Repository Layout
 

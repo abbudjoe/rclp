@@ -1,5 +1,295 @@
 # Assembly Ledger
 
+## S2 Protocol/Security Red-team Review Refresh - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: run the S2 protocol/security red-team review using `assembly`.
+- Required read list, attack/failure-mode list, command list, and report
+  structure in the S2 prompt.
+- Required report path:
+  `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+
+Preflight note:
+
+- This is a hostile protocol/security review/report phase, not a remediation
+  phase.
+- Broad code changes are out of scope. Only tiny fixes would be allowed if a
+  small obvious bug prevented the review from running.
+- No cloud jobs, GPU jobs, AWS Lambda functions, or paid compute are required,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+
+Target contract:
+
+Assess whether the current MVP hardening claim is credible enough for controlled
+technical validation calls, without claiming production safety or production
+security and without broad code changes.
+
+Success criterion:
+
+The required docs/code/eval surfaces are read, supported tests/evals/lints are
+run, every requested attack/failure mode is evaluated, a subagent
+spec-conformance review is clean or valid findings are addressed, and the S2
+report plus ledger are updated with concrete evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required docs and repository doctrine are read. | met | Read `AGENTS.md`, `README.md`, `docs/SAFETY_BOUNDARY.md`, `docs/EVALS.md`, `docs/RUST_EDGE_VERIFIER.md`, `docs/DEMO_SCRIPT.md`, `docs/ENGINEERING_DOCTRINE.md`, `docs/SECURITY_DOCTRINE.md`, `docs/DESIGN_TASTE.md`, `docs/PROTOCOL_SPEC_DRAFT.md`, `docs/THREAT_MODEL.md`, `docs/TEST_STRATEGY.md`, `docs/CRYPTO_PROFILES.md`, and `docs/ADAPTER_ENFORCEMENT_CONTRACT.md`. |
+| D2: Required Python/Rust authority surfaces and eval scenarios are reviewed. | met | Reviewed `tests/evals/scenarios/`, `tests/evals/eval_runner.py`, `src/rclp_core/`, `src/rclp_ros2/command_gate.py`, `src/rclp_agents/edge_agent_daemon.py`, `crates/rclp-edge-verifier/`, and representative protocol/security/audit/conformance tests. |
+| D3: Every requested attack/failure mode is evaluated against code/tests/docs. | met | Report maps the S2 attack list under "Attack paths reviewed" and ties outcomes to policy, command-gate, audit, eval, and Rust verifier evidence. |
+| D4: Supported evidence commands pass or failures are recorded. | met | Bare `pytest` was unavailable on `PATH`; `.venv/bin/python -m pytest` passed 267 tests; `.venv/bin/python tests/evals/eval_runner.py` passed 33 scenarios; `cargo test --workspace` passed 3 unit and 48 vector/integration tests; `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `.venv/bin/python -m compileall src tests`, `.venv/bin/ruff check .`, `.venv/bin/ruff format --check .`, and `.venv/bin/python scripts/run_cross_language_conformance.py --require-rust` all passed. |
+| D5: S2 report is written at the requested path with required headings and no production-safety/security claim. | met | Updated `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md` with GREEN verdict scoped to controlled technical validation calls and fresh command evidence. |
+| D6: Assembly subagent review of report/spec conformance is clean, or valid findings are fixed. | met | Read-only explorer subagent `019effe0-d207-7092-81ce-7a9533309a16` returned CLEAN: required headings present, every attack/failure mode evaluated, production safety/security claims avoided, verdict/evidence consistent with current repo, and no blocking report changes needed. |
+
+## S2 Recommended Fixes Hardening Pass - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: implement all recommended fixes from
+  `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`
+  using `assembly`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/SECURITY_DOCTRINE.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- This is a bounded MVP hardening pass. The S2 report explicitly says no
+  blocking fixes are required before technical validation calls, so this pass
+  implements the non-blocking recommendations as reference protocol/test
+  artifacts without claiming production safety, production security, hosted
+  control-plane readiness, or production audit infrastructure.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+- The working tree already contained the updated S2 review report and prior
+  review ledger entry before this implementation pass began.
+
+Target contract:
+
+Close the S2 report's remaining recommended hardening items in the local MVP
+reference implementation: cross-language crypto/canonicalization profile
+documentation, one command for Python/Rust conformance evidence, bounded Rust
+trust-boundary extensions where appropriate for the verifier spike, adapter
+bypass tests, an explicit control-plane reachability input, and signed-batch
+audit evidence. Keep production-safety/security claims out of scope.
+
+Success criterion:
+
+Every recommended fix maps to a concrete artifact or an explicit MVP-scope
+implementation boundary, focused and full validation gates pass, a subagent
+spec-conformance review returns clean or all valid findings are fixed, and the
+S2 report/ledger are updated with final evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: A normative dev cross-language signature and canonicalization profile is documented and has conformance evidence. | met | Added `docs/CRYPTO_PROFILES.md`, spec/checklist references, and `test_crypto_profiles_name_current_dev_algorithms_and_parity_runner`. |
+| D2: One local conformance command runs Python eval scenarios and Rust verifier vectors/CLI evidence. | met | Added `scripts/run_cross_language_conformance.py`; latest run with `--require-rust` passed 15 mapped Python/Rust cases with decision and reason-code checks. |
+| D3: Rust extension scope is explicit and covers the feasible verifier-side trust-boundary artifacts without pretending to be a production trust service. | met | Updated `docs/RUST_EDGE_VERIFIER.md` to keep Rust scoped to verifier vectors and list Python-only/future trust-boundary work. |
+| D4: Current adapter/daemon command routes have bypass-resistant tests tied to `CommandGate`; future adapter scope remains documented. | met | Added `test_edge_daemon_delegates_every_command_to_configured_command_gate`; real ROS 2/VDA5050/Open-RMF/MCP/A2A adapters remain future documented scope. |
+| D5: Control-plane reachability exists as a distinct protocol input and cannot be confused with network-state guarantees. | met | Added `ControlPlaneReachabilityAssertion`, policy-required fail-closed checks, audit linkage, manifest/spec docs, and negative/allow tests. |
+| D6: Audit has signed-batch reference evidence while production append-only backend claims remain out of scope. | met | Added `AuditBatchCommit`, signed batch helpers, chain validation before signing/verification, and tests for tampered, duplicate, out-of-order, mixed, and non-contiguous chains. |
+| D7: Focused and full validation gates pass after implementation. | met | Focused `pytest tests/test_audit.py tests/test_cross_language_conformance.py -q` passed 25 tests; `./scripts/run_validation_checks.sh` passed compileall, 267 pytest tests, 33 evals, Ruff, Cargo fmt/clippy/tests, and cross-language conformance. |
+| D8: Assembly subagent spec-conformance review is clean, or valid findings are fixed and rerun. | met | Subagent first found audit batch chain-validation and paperwork gaps; fixes were applied; re-review returned no remaining blocking code findings, and the clean subagent was closed. |
+
+Changed files:
+
+- `README.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/CONFORMANCE_CHECKLIST.md`
+- `docs/CRYPTO_PROFILES.md`
+- `docs/EVALS.md`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/RUST_EDGE_VERIFIER.md`
+- `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`
+- `manifests/rclp_protocol_manifest.yaml`
+- `scripts/run_cross_language_conformance.py`
+- `scripts/run_validation_checks.sh`
+- `src/rclp_core/audit.py`
+- `src/rclp_core/models.py`
+- `src/rclp_core/policy.py`
+- `src/rclp_core/state.py`
+- `tests/test_audit.py`
+- `tests/test_conformance_contract.py`
+- `tests/test_cross_language_conformance.py`
+- `tests/test_security_negative_paths.py`
+
+Final evidence:
+
+- `.venv/bin/python -m pytest tests/test_audit.py tests/test_cross_language_conformance.py -q` passed: 25 tests.
+- `.venv/bin/python scripts/run_cross_language_conformance.py --require-rust` passed: 15 mapped Python/Rust cases.
+- `./scripts/run_validation_checks.sh` passed: compileall, 267 pytest tests, 33 eval scenarios, Ruff check/format, `cargo fmt`, `cargo clippy -D warnings`, `cargo test --workspace`, and cross-language conformance.
+- Assembly subagent re-review: clean after audit-batch chain validation and reason-code parity fixes.
+
+## S2 Protocol/Security Red-team Review - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: run the S2 protocol/security red-team review using `assembly`.
+- Required read list in the S2 prompt.
+- Attack/failure-mode list in the S2 prompt.
+- Required report path:
+  `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+
+Preflight note:
+
+- This is a review/report phase, not a protocol implementation phase.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required,
+  and none will be launched, stopped, resized, deleted, or otherwise mutated.
+- No subagent was spawned because the deliverable is a scoped hostile review
+  report with no implementation changes.
+
+Target contract:
+
+Assess whether the MVP hardening claim is credible enough for controlled
+technical validation calls, without claiming production safety or production
+security and without making broad code changes.
+
+Success criterion:
+
+The required docs/code/eval surfaces are read, the requested commands are run
+when supported, every listed attack/failure mode is reviewed, and the S2 report
+is written in the required structure with a clear GREEN/YELLOW/RED verdict.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Required repository docs and protocol/security doctrine are read. | done | Read `AGENTS.md`, `README.md`, `docs/SAFETY_BOUNDARY.md`, `docs/EVALS.md`, `docs/RUST_EDGE_VERIFIER.md`, `docs/DEMO_SCRIPT.md`, and local doctrine/spec/threat/test docs. |
+| D2: Required Python/Rust authority surfaces and eval scenarios are reviewed. | done | Reviewed `tests/evals/scenarios/`, `src/rclp_core/`, `src/rclp_ros2/command_gate.py`, and `crates/rclp-edge-verifier/`. |
+| D3: All listed attack/failure modes are evaluated against code/tests/docs. | done | Report includes each S2 attack/failure mode under "Attack paths reviewed." |
+| D4: Requested tests/evals/lints are run where supported. | done | `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest -q` (251 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed); `cargo fmt --all -- --check`; `cargo test --workspace` (3 unit, 48 vector tests); `cargo clippy --workspace --all-targets -- -D warnings`; `.venv/bin/ruff check .`; `.venv/bin/ruff format --check .`. |
+| D5: S2 report is written at the requested path with required headings and no production-safety/security claim. | done | Updated `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md` with GREEN verdict scoped to controlled technical validation calls. |
+
+## S2 Protocol/Security Red-team Fixes - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: implement all recommended fixes from the S2 protocol/security
+  red-team review using `assembly`.
+- `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+- `docs/EVALS.md`
+- `docs/RUST_EDGE_VERIFIER.md`
+
+Preflight note:
+
+- The working tree already contained the untracked S2 review report before this
+  fix pass began.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this remediation, and none will be launched, stopped, resized, deleted,
+  or otherwise mutated.
+
+Target contract:
+
+Make the MVP hardening claim credible enough for controlled technical
+validation calls by closing the S2 report's recommended gaps without broad
+feature expansion or production-safety claims.
+
+Success criterion:
+
+Python and Rust replay/signature semantics are aligned where the MVP claims
+parity, fallback trust-boundary declarations are signable/verifiable, audit
+conformance and cloud/control-plane boundaries are explicit, adapter
+enforcement contracts are documented/tested, and focused plus full validation
+gates pass.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Python command gate consumes lease nonce on successful authorization and rejects a second valid command using the same signed lease nonce. | met | `CommandReplayCache.remember_authorized_use()` records command id, command nonce, and lease nonce atomically; `test_replayed_lease_nonce_is_rejected_after_gate_restart` passed with `LEASE_NONCE_REPLAYED`. |
+| D2: Python signed trust-boundary messages carry an explicit `signature_alg` and fail closed when the field is missing or unsupported. | met | `signature_alg` is modeled and checked for request, state, lease, command, revocation, attestation, and fallback paths; negative tests passed, and `unknown_alg_denied` now expects `LEASE_SIGNATURE_ALGORITHM_UNSUPPORTED`. |
+| D3: Fallback declarations can be signed and verified for trust-boundary use, while local fallback hooks remain non-certified. | met | `src/rclp_core/fallback.py` verifies signed fallback declarations; `CommandGate` can sign emitted fallbacks; `test_signed_fallback_declaration_verifies_for_trust_boundary_use` passed. |
+| D4: Rust edge verifier exposes a CLI bridge for JSON vectors without duplicating verifier logic. | met | `crates/rclp-edge-verifier/src/bin/rclp-edge-verify.rs` calls `verify_json_value`; `cli_verifies_json_vector_with_durable_replay_cache` passed. |
+| D5: Audit conformance has a first-class schema/checklist beyond eval scenario mapping. | met | `manifests/rclp_audit_conformance_schema.json` added; `test_audit_conformance_schema_matches_runtime_required_fields` passed; docs point eval/audit readers to the schema. |
+| D6: Cloud/control-plane reachability boundary is explicitly documented separate from local network-state authorization. | met | `docs/PROTOCOL_SPEC_DRAFT.md` now has a Cloud / Control-Plane Reachability section, and `docs/EVALS.md` describes partition scenarios as deterministic local network-state behavior. |
+| D7: Adapter-level command routes are documented and covered by a bypass-resistant gate test. | met | `docs/ADAPTER_ENFORCEMENT_CONTRACT.md` added; existing daemon/gate tests cover no-lease, edge mismatch, and unauthenticated command rejection through `CommandGate`. |
+| D8: Focused and full validation gates pass after fixes. | met | Focused security/audit/eval tests, full pytest, compileall, eval runner, Ruff, cargo fmt, cargo test, cargo clippy, and `git diff --check` passed. |
+
+Changed files:
+
+- `README.md`
+- `crates/rclp-edge-verifier/src/bin/rclp-edge-verify.rs`
+- `crates/rclp-edge-verifier/tests/vector_tests.rs`
+- `docs/ADAPTER_ENFORCEMENT_CONTRACT.md`
+- `docs/ASSEMBLY_LEDGER.md`
+- `docs/CONFORMANCE_CHECKLIST.md`
+- `docs/EVALS.md`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/RUST_EDGE_VERIFIER.md`
+- `docs/SAFETY_BOUNDARY.md`
+- `docs/TEST_STRATEGY.md`
+- `manifests/rclp_audit_conformance_schema.json`
+- `manifests/rclp_protocol_manifest.yaml`
+- `src/rclp_agents/central_agent_mock.py`
+- `src/rclp_agents/demo_remote_assist.py`
+- `src/rclp_core/attestation.py`
+- `src/rclp_core/conformance.py`
+- `src/rclp_core/fallback.py`
+- `src/rclp_core/leases.py`
+- `src/rclp_core/models.py`
+- `src/rclp_core/policy.py`
+- `src/rclp_core/state.py`
+- `src/rclp_ros2/command_gate.py`
+- `tests/evals/eval_runner.py`
+- `tests/evals/scenarios/unknown_alg_denied.yaml`
+- `tests/test_audit.py`
+- `tests/test_conformance_contract.py`
+- `tests/test_protocol_flow.py`
+- `tests/test_security_negative_paths.py`
+
+Review notes:
+
+- No subagent review was spawned; the parent agent checked the implementation
+  against the S2 report's recommended-fix list and the assembly definition of
+  done.
+- The pre-existing untracked S2 review report remains at
+  `docs/reviews/codex_simulated_review/S2_protocol_security_red_team.md`.
+
+Evidence:
+
+- Focused regression gate passed:
+  `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py::test_signed_trust_boundary_messages_require_explicit_signature_algorithm tests/test_security_negative_paths.py::test_unsupported_signature_algorithms_are_denied_before_signature_verification tests/test_security_negative_paths.py::test_replayed_lease_nonce_is_rejected_after_gate_restart tests/test_security_negative_paths.py::test_signed_fallback_declaration_verifies_for_trust_boundary_use tests/test_audit.py::test_audit_conformance_schema_matches_runtime_required_fields tests/test_protocol_evals.py`
+  (9 passed).
+- Focused touched-suite gate passed:
+  `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py tests/test_audit.py tests/test_protocol_evals.py tests/test_conformance_contract.py`
+  (205 passed).
+- Eval runner passed:
+  `.venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed).
+- Full Python gates passed:
+  `.venv/bin/python -m compileall src tests`;
+  `.venv/bin/python -m pytest -q` (251 passed);
+  `.venv/bin/ruff check .`;
+  `.venv/bin/ruff format --check .`.
+- Rust gates passed:
+  `cargo fmt --all -- --check`;
+  `cargo test --workspace` (3 unit tests, 0 binary tests, 48 vector tests);
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Hygiene passed:
+  `git diff --check`.
+
 ## S1 Fresh-clone Reproducibility Review Rerun 2 - 2026-06-25
 
 Status: successful
@@ -1672,68 +1962,6 @@ Definition of done:
 | RCLP-TESTS-001 | Changed behavior has focused negative tests / vectors; Python and Rust fixtures are updated. | met | Python negative tests and Rust shared vectors updated; `EdgeCommand` added to protocol docs and manifest. |
 | RCLP-GATES-001 | Focused smoke plus required local gates pass where feasible. | met | Passed: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (136 passed); `.venv/bin/python tests/evals/eval_runner.py` (33 passed); `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace`; `.venv/bin/ruff check .`; `.venv/bin/ruff format --check .`. |
 | RCLP-REVIEW-001 | Spec-conformance review is performed and post-review smoke reruns cleanly. | met | Subagent spec review found audit-proof, command-auth coverage, and `edge_command` protocol-surface gaps; all were resolved, rechecked cleanly, and the full verification gates reran successfully. |
-
-## Post-Scan 3-Finding Security Remediation - 2026-06-23
-
-Status: successful
-
-Source contract:
-
-- User request: resolve the three Codex Security findings using `assembly`.
-- Completed Codex Security scan `1a82e261-a7ff-4db1-868e-bae9c5a42599`.
-- Scan report:
-  `local Codex Security report artifact redacted`
-- `AGENTS.md`
-- Required repo doctrine under `docs/`
-- `docs/PROTOCOL_SPEC_DRAFT.md`
-- `docs/THREAT_MODEL.md`
-- `docs/TEST_STRATEGY.md`
-
-Preflight note:
-
-- No cloud jobs or paid compute are required for this remediation, and none
-  will be launched, stopped, resized, deleted, or otherwise mutated.
-
-Target contract:
-
-Close the three validated findings at their root authority contracts:
-Rust verifier capability authorization must be explicit and local, Rust replay
-nonce consumption must be atomic from the verifier contract's perspective, and
-signed revocations must be scoped to the referenced lease edge context unless
-an explicit broader role exists.
-
-Success criterion:
-
-The Rust edge verifier rejects HMAC-valid unsupported capabilities and consumes
-lease nonces through a single atomic operation; the Python command gate rejects
-cross-edge revocations from otherwise trusted revokers; focused negative tests
-and local validation gates pass.
-
-Definition of done:
-
-| Item | Status | Evidence |
-|---|---|---|
-| RCLP-RUST-EDGE-001: Rust verifier enforces explicit local accepted capability and issuer-to-capability scope before allow/degrade. | met | `TrustedVerifierContext` now carries `accepted_capabilities` and `issuer_capability_scopes`; `verify()` rejects signed capabilities that are not locally accepted or issuer-scoped with `DENY_CAPABILITY_NOT_GRANTED`. Rust regressions cover an HMAC-valid unsupported capability and issuer scope mismatch. Shared vectors and Python vector-shape tests include the new trusted context contract. |
-| RCLP-RUST-EDGE-002: Rust replay cache contract exposes atomic nonce consumption and no verifier path uses split check/mark. | met | `ReplayCache` now exposes only `consume_nonce()`, and `verify()` consumes the nonce immediately before `allow` or `degrade`. The public `InMemoryReplayCache` export was removed so the crate does not present process-local replay storage as a production default. Rust regressions cover same-cache replay rejection after both allow and degrade. |
-| RCLP-CG-REVOCATION-CTX-001: revocation signer authority is bound to the referenced lease edge context or an explicit scope. | met | `LeaseRevocation` now requires `edge_agent_id`. `CommandGate` verifies signed revocations, requires revocation edge context to match the lease, rejects cross-edge revokers by default, and permits broader revokers only through explicit `revoker_edge_scopes_by_id`. Python tests cover cross-edge denial, explicit scoped revoker allow, and revocation edge mismatch denial. |
-| Security-relevant tests cover every changed behavior. | met | Added Rust vector tests for unsupported signed capability, issuer-capability scope mismatch, allow replay consumption, and degrade replay consumption. Added Python negative/positive revocation tests for cross-edge revoker denial, explicit scoped revoker allow, and revocation edge context mismatch. |
-| Validation gates pass. | met | Focused smoke passed: `cargo test -p rclp-edge-verifier --test vector_tests` (8 passed) and `.venv/bin/python -m pytest tests/test_security_negative_paths.py tests/test_protocol_flow.py tests/test_rust_edge_vectors.py tests/test_conformance_contract.py` (111 passed). Broader gates passed: `.venv/bin/python -m compileall src tests`; `.venv/bin/python -m pytest` (127 passed); `PYTHONPATH=src .venv/bin/python tests/evals/eval_runner.py` (33 passed, 0 failed); `cargo test --workspace`; `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `.venv/bin/ruff check .`; `.venv/bin/ruff format . --check`. |
-| Assembly spec-conformance review is clean and post-review gates pass. | met | Subagent review classified code-level remediation as sound and found only ledger/docs parity nits. Those docs were updated, and post-review gates were rerun successfully. |
-
-Cloud/job status:
-
-- No cloud jobs or paid compute are required for this remediation.
-- Repository cloud mutation rule reviewed; no launch, stop, delete, resize, or
-  other paid-compute mutation will be performed.
-
-Review notes:
-
-- Subagent reviewer: `019ef25b-c45e-7322-bf27-ff39aa71d782` ("Franklin").
-- Initial review status: no code-level security blocker; docs/ledger parity
-  updates requested for this section, `docs/THREAT_MODEL.md`, and
-  `docs/CONFORMANCE_CHECKLIST.md`.
-- Post-review action: updated ledger evidence and clarified revocation edge
-  scoping and advisory fallback wording in summary docs.
 
 ## Post-Scan 10-Finding Security Remediation - 2026-06-23
 
