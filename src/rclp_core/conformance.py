@@ -18,12 +18,12 @@ from rclp_core.models import (
     CapabilityConstraintBounds,
     CapabilityConstraintRequirement,
     CapabilityLease,
-    NetworkProfile,
     RobotStateAssertion,
     protocol_version_violation,
 )
 from rclp_core.state import (
     DEFAULT_STATE_MAX_AGE_SECONDS,
+    network_state_authority_violation,
     state_auth_violation,
     state_time_violation,
 )
@@ -280,10 +280,8 @@ def validate_lease_against_state(
     network = state.network_state
     if network_state_malformed(state):
         return False, "NETWORK_STATE_MALFORMED"
-    if network.profile == NetworkProfile.UNKNOWN:
-        return False, "NETWORK_STATE_UNKNOWN"
-    if not network.attached:
-        return False, "NETWORK_DETACHED"
+    if authority_reason := network_state_authority_violation(network):
+        return False, authority_reason
     if (
         constraints.max_latency_ms_p95 is not None
         and network.latency_ms_p95 > constraints.max_latency_ms_p95

@@ -6,18 +6,21 @@ from rclp_core.models import NetworkProfile, NetworkState
 PROFILES: dict[NetworkProfile, NetworkState] = {
     NetworkProfile.NORMAL: NetworkState(
         profile=NetworkProfile.NORMAL,
+        attached=True,
         latency_ms_p95=45,
         packet_loss_pct=0.1,
         uplink_mbps=8.0,
     ),
     NetworkProfile.DEGRADED_TELEOP: NetworkState(
         profile=NetworkProfile.DEGRADED_TELEOP,
+        attached=True,
         latency_ms_p95=180,
         packet_loss_pct=3.5,
         uplink_mbps=1.0,
     ),
     NetworkProfile.UPLINK_BAD: NetworkState(
         profile=NetworkProfile.UPLINK_BAD,
+        attached=True,
         latency_ms_p95=70,
         packet_loss_pct=0.5,
         uplink_mbps=0.6,

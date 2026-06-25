@@ -118,6 +118,8 @@ Rejection conditions:
 
 - missing or unsupported `kind`
 - missing `manifest_digest`, `public_key_id`, or trust tier
+- signed material exceeds the active per-field or total attestation budget
+  before signature verification or canonicalization
 - attestation is stale for the active profile
 - manifest digest does not match the referenced implementation manifest
 - authenticated identity does not match `agent_id`
@@ -144,6 +146,7 @@ Required fields:
 - `safety_state`
 - `geofence_state`
 - `network_state`
+- `network_state.attached`
 - `observed_at`
 - `signature` or equivalent authenticated envelope
 
@@ -156,6 +159,10 @@ Rejection conditions:
 - robot, edge agent, or mission does not match the request or lease context
 - state is stale for the policy profile in use
 - safety, geofence, network, or mission state is missing or unsupported
+- nested authority inputs required by policy, including `network_state.attached`,
+  are missing from the signed wire object
+- network profile is unknown or internally contradictory, including
+  `profile=partition` with `attached=true`
 - authenticated identity does not match `edge_agent_id`
 - signature is missing, malformed, or invalid
 - nested network/geofence observation timestamps are stale or in the future
@@ -389,6 +396,7 @@ Rejection conditions:
   payload-size, node-count, or nesting-depth budget
 - command is stale or not yet valid outside the receiver's explicit clock-skew
   tolerance
+- a matching capability lease is absent
 - `command_id` or `command_nonce` has already been accepted in the replay
   window
 - command agent, edge agent, robot, mission, capability, or payload does not
@@ -405,8 +413,15 @@ Audit impact:
 - Command-authentication failure diagnostics MUST bound untrusted claimed text
   fields before audit storage, either by truncating, hashing, or recording
   lengths instead of copying oversized attacker-controlled values.
+- A command rejected only because the matching lease is absent MUST NOT consume
+  command replay state or emit a fallback declaration.
+- Lease authentication, provenance, freshness, scope, policy, constraint, and
+  payload-validation denials MUST NOT emit a fallback declaration or invoke
+  fallback hooks merely because a non-`None` lease was presented.
 - Rejections after command authentication MAY emit a `FallbackDeclaration`
-  chosen by local fallback policy.
+  chosen by local fallback policy only for local state fail-closed reasons or
+  authenticated revocation-backed denials that provide enough authority context
+  for the fallback hook.
 - Command rejection audit MUST include the command identity, authenticated
   command actor, lease reference when present, reason code, and policy-relevant
   state references.
@@ -513,7 +528,10 @@ Normative behavior:
 - A receiver MAY use a coarser local network profile when exact measurements
   are unavailable, but it MUST treat unknown state conservatively for
   high-authority capabilities.
-
+- `attached` MUST be present explicitly on the signed wire object; a receiver
+  MUST NOT authorize from a default-filled attachment value.
+- `profile=partition` MUST be treated as detached for authority decisions even
+  if `attached=true` and measurements appear healthy.
 Rejection conditions:
 
 - assertion is stale for the policy profile in use

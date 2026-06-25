@@ -113,7 +113,7 @@ def lease_time_violation(
     if lease.expires_at <= lease.issued_at:
         return "LEASE_TIME_WINDOW_INVALID"
     lease_ttl = lease.expires_at - lease.issued_at
-    if lease_ttl > timedelta(seconds=max_lease_ttl_seconds) + skew:
+    if lease_ttl > timedelta(seconds=max_lease_ttl_seconds):
         return "LEASE_TTL_TOO_LONG"
     lease_age = at - lease.issued_at
     if lease_age > timedelta(seconds=max_lease_age_seconds) + skew:

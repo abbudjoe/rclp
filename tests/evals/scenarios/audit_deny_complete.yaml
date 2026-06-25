@@ -1,5 +1,5 @@
 name: audit_deny_complete
-description: The deny path has the audit fields and fallback hook needed for eval replay.
+description: The missing-lease deny path has the audit fields needed for eval replay without emitting fallback.
 kind: command_gate
 now_unix_ms: 1760000000000
 input:
@@ -21,4 +21,3 @@ expected:
     - requested_capability
     - network_state
     - geofence_state
-    - fallback_action

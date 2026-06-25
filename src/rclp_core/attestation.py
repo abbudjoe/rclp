@@ -9,6 +9,42 @@ from rclp_core.models import AgentAttestation
 
 DEFAULT_ATTESTATION_MAX_AGE_SECONDS = 300
 ATTESTATION_CLOCK_SKEW_SECONDS = 30
+MAX_SIGNED_TEXT_FIELD_BYTES = 1_024
+MAX_SIGNED_TEXT_TOTAL_BYTES = 16_384
+
+
+class _SignedTextBudget:
+    def __init__(self) -> None:
+        self.total_bytes = 0
+
+    def exceeded(self, value: object | None) -> bool:
+        if value is None:
+            return False
+        size = len(str(value).encode("utf-8"))
+        self.total_bytes += size
+        return size > MAX_SIGNED_TEXT_FIELD_BYTES or self.total_bytes > MAX_SIGNED_TEXT_TOTAL_BYTES
+
+
+def attestation_signed_material_too_large(attestation: AgentAttestation) -> bool:
+    text_budget = _SignedTextBudget()
+    for value in (
+        attestation.protocol_version,
+        attestation.message_id,
+        attestation.correlation_id,
+        attestation.created_at.isoformat(),
+        attestation.message_type,
+        attestation.agent_id,
+        attestation.authenticated_agent_id,
+        attestation.kind,
+        attestation.manifest_digest,
+        attestation.public_key_id,
+        attestation.trust_tier,
+        attestation.revoked,
+        attestation.signature,
+    ):
+        if text_budget.exceeded(value):
+            return True
+    return False
 
 
 def attestation_auth_violation(
@@ -25,6 +61,8 @@ def attestation_auth_violation(
     public_key = agent_public_keys_by_id.get(attestation.authenticated_agent_id)
     if public_key is None:
         return "ATTESTATION_AGENT_KEY_NOT_TRUSTED"
+    if attestation_signed_material_too_large(attestation):
+        return "ATTESTATION_SIGNED_MATERIAL_TOO_LARGE"
     if not verify_with_public_key_b64(attestation, attestation.signature, public_key):
         return "ATTESTATION_SIGNATURE_INVALID"
     return None
@@ -61,14 +99,22 @@ def attestation_trust_violation(
         return "ATTESTATION_PUBLIC_KEY_ID_MISMATCH"
     if attestation.revoked:
         return "ATTESTATION_AGENT_REVOKED"
-    if accepted_trust_tiers is not None and attestation.trust_tier not in accepted_trust_tiers:
+    if not accepted_trust_tiers:
+        return "ATTESTATION_TRUST_TIER_POLICY_REQUIRED"
+    normalized_trust_tiers = {tier for tier in accepted_trust_tiers if tier.strip()}
+    if len(normalized_trust_tiers) != len(accepted_trust_tiers):
+        return "ATTESTATION_TRUST_TIER_POLICY_REQUIRED"
+    if "trust_tier" not in attestation.model_fields_set:
+        return "ATTESTATION_TRUST_TIER_MISSING"
+    if attestation.trust_tier not in normalized_trust_tiers:
         return "ATTESTATION_TRUST_TIER_NOT_ACCEPTED"
-    if manifest_digests_by_agent_id is not None:
-        expected_manifest_digest = manifest_digests_by_agent_id.get(attestation.agent_id)
-        if expected_manifest_digest is None or not expected_manifest_digest.strip():
-            return "ATTESTATION_MANIFEST_DIGEST_NOT_TRUSTED"
-        if attestation.manifest_digest != expected_manifest_digest:
-            return "ATTESTATION_MANIFEST_DIGEST_MISMATCH"
+    if manifest_digests_by_agent_id is None:
+        return "ATTESTATION_MANIFEST_DIGEST_POLICY_REQUIRED"
+    expected_manifest_digest = manifest_digests_by_agent_id.get(attestation.agent_id)
+    if expected_manifest_digest is None or not expected_manifest_digest.strip():
+        return "ATTESTATION_MANIFEST_DIGEST_NOT_TRUSTED"
+    if attestation.manifest_digest != expected_manifest_digest:
+        return "ATTESTATION_MANIFEST_DIGEST_MISMATCH"
     return None
 
 

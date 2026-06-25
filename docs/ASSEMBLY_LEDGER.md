@@ -1,5 +1,303 @@
 # Assembly Ledger
 
+## Post-Scan 2-Finding Security Remediation - 2026-06-25 (scan ff73e22a)
+
+Status: successful
+
+Source contract:
+
+- User request: resolve the two findings from Codex Security scan
+  `ff73e22a-43d8-4ebe-8c31-14d9e44dcd9b` using `assembly`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/46787d7ec659fdcb380b7312790194274c314186_20260625T020045Z_pgmh5g8w/report.md`
+- Findings:
+  `csf_b88c842c54b2e57b23544d31` and
+  `csf_bac2df8348c750866b4e43d0`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- The working tree already contained uncommitted remediation changes before
+  this pass began; this entry records the additional work for scan `ff73e22a`.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this remediation, and none will be launched, stopped, resized, deleted,
+  or otherwise mutated.
+
+Target contract:
+
+Close the two validated findings at their root authority contracts: Rust edge
+verifier command payload constraints must be enforced before any non-deny
+degrade authority result, and Python signed lease duration must be compared to
+the exact local max TTL policy without widening by wall-clock skew.
+
+Success criterion:
+
+The original vulnerable paths no longer reproduce, focused negative
+regressions prove each invariant and legitimate behavior, assembly
+spec-conformance review is clean, post-review validation passes, and this
+ledger is updated with final evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Rust verifier denies an overspeed signed command under soft network degradation with `DENY_COMMAND_CONSTRAINT` before `Decision::Degrade`. | met | `verify()` now runs `command_constraint_violation()` inside the `DegradeNetworkPolicy` branch before returning `Decision::Degrade`; regression `network_degrade_overspeed_command_denies_before_degrade` mutates the degrade vector with coherent max-speed bounds and an overspeed payload and passed. |
+| D2: Python lease duration rejects `max_lease_ttl_seconds + 1` even when the overage is inside `LEASE_CLOCK_SKEW_SECONDS`, while exact max TTL still passes. | met | `lease_time_violation()` now compares signed lease duration to the exact `max_lease_ttl_seconds` policy; regressions `test_lease_ttl_exact_max_passes_but_max_plus_one_rejects_within_skew` and `test_command_gate_rejects_lease_ttl_max_plus_one_even_within_skew` passed. |
+| D3: Focused and full validation gates pass after assembly review. | met | Focused Python and Rust smokes passed before review; Cicero subagent review found only this ledger status gap, then reported compileall, full pytest, Rust workspace, Ruff, cargo fmt/clippy, and `git diff --check` passing. Post-review focused smokes and `git diff --check` passed after the ledger update. |
+
+Changed files:
+
+- `crates/rclp-edge-verifier/src/verifier.rs`
+- `crates/rclp-edge-verifier/tests/vector_tests.rs`
+- `src/rclp_core/leases.py`
+- `tests/test_security_negative_paths.py`
+- `docs/ASSEMBLY_LEDGER.md`
+
+Review notes:
+
+- Cicero reviewed spec conformance and DoD satisfaction. D1 and D2 were
+  classified `met`; D3 was initially `partial` only because this ledger entry
+  still said `in-progress`/`not-started`.
+- No code-level contract, source-parity, runtime, safety, or provenance
+  blockers remained after this ledger update.
+- The review subagent was closed after completion.
+
+Evidence:
+
+- Focused Python regression gate passed:
+  `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py::test_lease_ttl_exact_max_passes_but_max_plus_one_rejects_within_skew tests/test_security_negative_paths.py::test_command_gate_rejects_lease_ttl_max_plus_one_even_within_skew`
+  (2 passed).
+- Focused Rust regression gate passed:
+  `cargo test -p rclp-edge-verifier --test vector_tests network_degrade_overspeed_command_denies_before_degrade`
+  (1 passed).
+- Broad touched-suite gates passed:
+  `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py`
+  (175 passed) and
+  `cargo test -p rclp-edge-verifier --test vector_tests`
+  (47 passed).
+- Cicero review validation passed:
+  `.venv/bin/python -m compileall src tests`;
+  `.venv/bin/python -m pytest -q` (246 passed);
+  `cargo test --workspace` (3 unit tests and 47 vector tests);
+  `.venv/bin/ruff check .`;
+  `.venv/bin/ruff format --check .`;
+  `cargo fmt --all -- --check`;
+  `cargo clippy --workspace --all-targets -- -D warnings`;
+  `git diff --check`.
+- Final local full-gate rerun passed after review and ledger correction:
+  `.venv/bin/python -m compileall src tests`;
+  `.venv/bin/python -m pytest -q` (246 passed);
+  `.venv/bin/ruff check .`;
+  `.venv/bin/ruff format --check .`;
+  `cargo fmt --all -- --check`;
+  `cargo test --workspace` (3 unit tests and 47 vector tests);
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+
+## Post-Scan 4-Finding Security Remediation - 2026-06-25 (scan 6eba756f)
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all four findings from Codex Security scan
+  `6eba756f-be06-4876-adbc-336f3a3a7271` using `assembly`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/46787d7ec659fdcb380b7312790194274c314186_20260625T010150Z_am_1f_i_/report.md`
+- Findings:
+  `csf_64d842e5a53d7e92519cdf9a`,
+  `csf_22c57b9b68fc8ec1228f5edb`,
+  `csf_19fb9d50b5523232aef924f3`, and
+  `csf_b5fd272221dd38e06f71514d`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- The working tree already contained uncommitted remediation changes before
+  this pass began; this entry records only the additional work for scan
+  `6eba756f`.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this remediation, and none will be launched, stopped, resized, deleted,
+  or otherwise mutated.
+
+Target contract:
+
+Close the four validated findings at their root authority contracts: signed
+network state must not authorize from defaulted or contradictory attachment
+state; attestation trust must require explicit `trust_tier`; attestation signed
+material must be size-budgeted before signature verification/canonicalization;
+and command-gate lease-validation failures must not emit fallback hooks unless
+the denial is tied to locally authenticated revocation or already-valid local
+state context.
+
+Success criterion:
+
+The original vulnerable paths no longer reproduce, focused negative
+regressions prove each invariant and legitimate behavior, assembly
+spec-conformance review is clean, post-review validation passes, and this
+ledger is updated with final evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Signed robot state missing nested `network_state.attached` is rejected before policy or command-gate allow. | met | `NetworkState.attached` is now structurally required, `state_auth_violation()` also checks nested `model_fields_set`, and `test_robot_state_missing_network_attached_is_rejected_before_policy_allow` proves raw signed state without the nested field cannot reach policy or gate allow. |
+| D2: Contradictory `NetworkProfile.PARTITION` with `attached=True` and healthy metrics is fail-closed by policy and command-gate state conformance. | met | Shared helper `network_state_authority_violation()` treats partition as detached and is used by policy issuance and lease/state conformance. Regression `test_partition_profile_with_attached_state_denies_policy_and_command_gate` proves both paths deny with `NETWORK_DETACHED`. |
+| D3: Attestation signed material is bounded before signature verification/canonical JSON for both valid and invalid signatures. | met | `attestation_auth_violation()` calls `attestation_signed_material_too_large()` before `verify_with_public_key_b64()`. Regressions `test_oversized_attestation_material_rejects_before_signature_verification` and `test_oversized_invalid_attestation_material_rejects_before_signature_verification` monkeypatch verification and prove it is not reached. |
+| D4: Missing attestation `trust_tier` cannot default to `development` through trust-boundary validation. | met | `AgentAttestation.trust_tier` no longer has a default, the protocol manifest no longer treats it as runtime-defaulted, demo attestations set it explicitly, and `test_agent_attestation_missing_trust_tier_is_rejected_at_boundary` proves omission fails at the model boundary. |
+| D5: Invalid non-`None` lease validation denials do not emit fallback declarations or fallback-sink calls; revocation-backed denials still can. | met | `CommandGate._denial_can_emit_fallback()` allowlists state fail-closed reasons and authenticated `LEASE_REVOKED` denials. Invalid signature, policy-provenance, policy-digest, forged-revocation, expired-lease, context, payload, and constraint regressions now assert no fallback; `test_replayed_post_auth_denial_does_not_reemit_fallback` preserves authenticated revocation fallback behavior. |
+| D6: Focused and full validation gates pass after assembly review. | met | Focused and broad pytest suites, compileall, full pytest, eval runner, Rust workspace test, Ruff, cargo fmt/clippy, and `git diff --check` passed after local assembly review. |
+
+Changed files:
+
+- `src/rclp_core/models.py`
+- `src/rclp_core/network.py`
+- `src/rclp_core/state.py`
+- `src/rclp_core/policy.py`
+- `src/rclp_core/conformance.py`
+- `src/rclp_core/attestation.py`
+- `src/rclp_ros2/command_gate.py`
+- `src/rclp_agents/demo_remote_assist.py`
+- `manifests/rclp_protocol_manifest.yaml`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/TEST_STRATEGY.md`
+- `tests/test_security_negative_paths.py`
+- `tests/test_protocol_flow.py`
+
+Review notes:
+
+- Assembly spec-conformance review checked the patched authority boundaries
+  against the four scan findings: no unsafe model defaults remain for
+  `network_state.attached` or attestation `trust_tier`; policy and command
+  conformance share the partition/detached helper; attestation size checks run
+  before verification; and fallback emission is explicit by denial class.
+- Multi-agent tooling is available, but its active rule forbids spawning
+  subagents unless the user explicitly asks for subagents/delegation. Assembly
+  spec-conformance review was therefore completed locally.
+- The worktree already contained uncommitted remediation changes before this
+  pass began; those files were preserved and validated rather than reverted.
+
+Evidence:
+
+- Focused regression gate passed:
+  `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py::test_oversized_attestation_material_rejects_before_signature_verification tests/test_security_negative_paths.py::test_oversized_invalid_attestation_material_rejects_before_signature_verification tests/test_security_negative_paths.py::test_agent_attestation_missing_trust_tier_is_rejected_at_boundary tests/test_security_negative_paths.py::test_partition_profile_with_attached_state_denies_policy_and_command_gate tests/test_security_negative_paths.py::test_command_gate_rejects_signed_lease_missing_policy_provenance tests/test_security_negative_paths.py::test_command_gate_rejects_signed_lease_policy_digest_mismatch tests/test_security_negative_paths.py::test_forged_revoked_lease_id_cannot_select_revocation_fallback`
+  (7 passed).
+- Broad touched-suite gate passed:
+  `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py tests/test_protocol_flow.py tests/test_demo_remote_assist.py`
+  (216 passed).
+- Manifest conformance gate passed:
+  `.venv/bin/python -m pytest -q tests/test_conformance_contract.py::test_protocol_manifest_matches_exported_message_models`
+  (1 passed).
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/python -m pytest -q` passed: 244 tests.
+- `.venv/bin/python tests/evals/eval_runner.py` passed: 33/33 evals.
+- `cargo test --workspace` passed: 3 unit tests and 46 vector tests.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format --check .` passed.
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `git diff --check` passed.
+
+## Post-Scan 5-Finding Security Remediation - 2026-06-25 (scan a6759ec9)
+
+Status: successful
+
+Source contract:
+
+- User request: resolve all five findings from Codex Security scan
+  `a6759ec9-0b09-4053-a71c-338d081bdaf2` using `assembly`.
+- Scan report:
+  `/private/var/folders/5s/5dk3z2k93lgfqmsn0l28_lbm0000gn/T/codex-security-scans-YcEiz6/rclp/46787d7ec659fdcb380b7312790194274c314186_20260624T213854Z_xvcccu4e/report.md`
+- Findings:
+  `csf_fcf962ab89e1a38173c7e2cc`,
+  `csf_bf47df01065ce7ffecface5e`,
+  `csf_3672d8e61ae65b2e9ba4da74`,
+  `csf_17c586c247ad83ec4d574053`, and
+  `csf_c05aa5124fe6dcd69dd2f54b`.
+- `AGENTS.md`
+- Required repo doctrine under `docs/`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- Working tree was clean before this remediation began.
+- No cloud jobs, AWS Lambda functions, GPU jobs, or paid compute are required
+  for this remediation, and none will be launched, stopped, resized, deleted,
+  or otherwise mutated.
+
+Target contract:
+
+Close the five validated findings at their root authority/audit contracts:
+missing-lease command denials must not consume replay state or emit fallback;
+robot state assertions must be size-budgeted before signature decode or
+canonicalization; Python pre-auth command/revocation diagnostics must bound
+claimed untrusted fields before audit construction; Rust malformed-input
+diagnostics must bound parser summaries before audit storage; and attestation
+trust must fail closed unless manifest and trust-tier policies are explicit.
+
+Success criterion:
+
+The original vulnerable paths no longer reproduce, focused negative
+regressions prove each invariant and legitimate behavior, assembly
+spec-conformance review is clean, post-review gates pass, and this ledger is
+updated with final evidence.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1: Signed commands presented with `lease=None` do not consume command replay state or emit fallback declarations. | met | `CommandGate.evaluate()` now rejects `lease=None` before replay consumption and with `emit_fallback=False`. Regression `test_missing_lease_denial_does_not_consume_command_replay_or_emit_fallback` proves the later command-plus-lease use is accepted and no fallback is emitted. |
+| D2: `RobotStateAssertion` signed material is budgeted before base64 decode, canonical JSON, or signature verification. | met | `state_auth_violation()` now calls `robot_state_signed_material_too_large()` before `verify_with_public_key_b64()`. Regression `test_oversized_robot_state_material_rejects_before_signature_verification` monkeypatches verification and proves over-budget state returns `STATE_SIGNED_MATERIAL_TOO_LARGE` first. |
+| D3: Python command and revocation pre-auth diagnostics bound claimed untrusted text before audit construction. | met | `CommandGate` now records oversized claimed diagnostic text as byte length, SHA-256, and truncation metadata; pre-auth command diagnostics no longer include untrusted command IDs in summaries or irrelevant state snapshots. Regressions `test_command_auth_diagnostic_bounds_oversized_claimed_fields` and `test_revocation_diagnostic_bounds_oversized_claimed_revoker` passed. |
+| D4: Rust malformed pre-parse diagnostics bound parser summaries before audit construction. | met | `malformed_decision()` now stores `bounded_diagnostic_text(&summary)`. Regression `malformed_input_diagnostic_summary_bounds_oversized_parse_errors` passed and asserts the oversized unknown key is absent from the audit payload. |
+| D5: Attestation trust requires explicit accepted trust tiers and manifest digest policy before returning trusted. | met | `attestation_trust_violation()` now returns `ATTESTATION_TRUST_TIER_POLICY_REQUIRED` or `ATTESTATION_MANIFEST_DIGEST_POLICY_REQUIRED` when those policy surfaces are omitted. Regressions `test_agent_attestation_requires_explicit_trust_tier_policy` and `test_agent_attestation_requires_explicit_manifest_policy` passed. |
+| Focused and full validation gates pass after assembly review. | met | Focused gates passed: `.venv/bin/python -m pytest -q tests/test_security_negative_paths.py -k 'attestation_requires_explicit or oversized_robot_state or diagnostic_bounds or missing_lease_denial or replayed_post_auth'` (7 passed), `.venv/bin/python -m pytest -q tests/test_protocol_flow.py::test_no_lease_rejected tests/test_protocol_flow.py::test_fallback_declaration_uses_command_correlation_id tests/test_demo_remote_assist.py::test_demo_remote_assist_outputs_full_local_authority_flow` (3 passed), and `cargo test -p rclp-edge-verifier --test vector_tests malformed_input_diagnostic_summary_bounds_oversized_parse_errors` (1 passed). Post-review full gates passed: compileall, full pytest, eval runner, cargo test, Ruff check/format check, cargo fmt check, Clippy, and `git diff --check`. |
+
+Changed files:
+
+- `src/rclp_ros2/command_gate.py`
+- `src/rclp_core/state.py`
+- `src/rclp_core/attestation.py`
+- `crates/rclp-edge-verifier/src/verifier.rs`
+- `tests/test_security_negative_paths.py`
+- `tests/test_protocol_flow.py`
+- `tests/test_demo_remote_assist.py`
+- `tests/evals/scenarios/audit_deny_complete.yaml`
+- `crates/rclp-edge-verifier/tests/vector_tests.rs`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/TEST_STRATEGY.md`
+- `docs/ASSEMBLY_LEDGER.md`
+
+Review notes:
+
+- Assembly spec-conformance review found the five remediation contracts met and
+  added one sibling hardening fix: pre-auth command diagnostics no longer attach
+  irrelevant `current_state` snapshots.
+- Multi-agent tooling is available, but its active rule forbids spawning
+  subagents unless the user explicitly asks for subagents/delegation. Assembly
+  spec-conformance review was therefore completed locally.
+
+Evidence:
+
+- `.venv/bin/python -m compileall src tests` passed.
+- `.venv/bin/python -m pytest -q` passed: 239 tests.
+- `.venv/bin/python tests/evals/eval_runner.py` passed: 33/33 evals.
+- `cargo test --workspace` passed: 3 unit tests and 46 vector tests.
+- `.venv/bin/ruff check .` passed.
+- `.venv/bin/ruff format --check .` passed.
+- `cargo fmt --all -- --check` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `git diff --check` passed.
+
 ## Post-Scan 4-Finding Security Remediation - 2026-06-24 (scan 72e1cd1f)
 
 Status: successful

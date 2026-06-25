@@ -269,6 +269,7 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
             kind="central_agent",
             manifest_digest="sha256:demo-central-agent-v0.1",
             public_key_id="demo-central-ed25519-non-production",
+            trust_tier="development",
         ),
         central_key,
     )
@@ -278,6 +279,7 @@ def main(impaired_network_profile: str = "degraded_teleop") -> None:
             kind="edge_agent",
             manifest_digest="sha256:demo-edge-agent-v0.1",
             public_key_id="demo-edge-ed25519-non-production",
+            trust_tier="development",
         ),
         edge_key,
     )

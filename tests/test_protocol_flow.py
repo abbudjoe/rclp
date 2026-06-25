@@ -212,6 +212,7 @@ def state_with_unknown_network() -> RobotStateAssertion:
             update={
                 "network_state": NetworkState(
                     profile=NetworkProfile.UNKNOWN,
+                    attached=True,
                     latency_ms_p95=45,
                     packet_loss_pct=0.1,
                     uplink_mbps=8.0,
@@ -440,15 +441,12 @@ def test_no_lease_rejected():
     result = gate.evaluate(make_command(), None)
     assert result.allowed is False
     assert result.reason_code == "NO_LEASE"
-    assert result.audit_id == gate.audit_log.events[-2].audit_id
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
-    assert result.fallback_declaration is not None
-    assert result.fallback_declaration.trigger == "NO_LEASE"
-    assert result.fallback_declaration.edge_agent_id == "edge-agent:rover-001"
-    assert gate.fallback_events == [result.fallback_declaration]
+    assert result.audit_id == gate.audit_log.events[-1].audit_id
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
+    assert gate.fallback_events == []
     assert [event.event_type for event in gate.audit_log.events] == [
         AuditEventType.COMMAND_REJECTED,
-        AuditEventType.FALLBACK_DECLARED,
     ]
     assert {event.correlation_id for event in gate.audit_log.events} == {"cmd_test"}
 
@@ -456,7 +454,8 @@ def test_no_lease_rejected():
 def test_fallback_declaration_uses_command_correlation_id():
     key = DemoKeyPair()
     command = make_command(correlation_id="corr_command")
-    result = make_gate(key).evaluate(command, None)
+    lease = issue_valid_lease(key)
+    result = make_gate(key).evaluate(command, lease, current_state=make_state("uplink_bad"))
     assert result.fallback_declaration is not None
     assert result.fallback_declaration.correlation_id == "corr_command"
 
@@ -496,8 +495,8 @@ def test_expired_lease_rejected():
     result = make_gate(key).evaluate(make_command(), lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_EXPIRED"
-    assert result.fallback_declaration is not None
-    assert result.fallback_declaration.lease_id == lease.lease_id
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_wrong_robot_rejected():
@@ -507,7 +506,8 @@ def test_wrong_robot_rejected():
     result = make_gate(key).evaluate(command, lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONTEXT_MISMATCH"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_wrong_mission_rejected():
@@ -517,6 +517,8 @@ def test_wrong_mission_rejected():
     result = make_gate(key).evaluate(command, lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONTEXT_MISMATCH"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_wrong_capability_rejected():
@@ -526,7 +528,8 @@ def test_wrong_capability_rejected():
     result = make_gate(key).evaluate(command, lease)
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONTEXT_MISMATCH"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_revoked_lease_rejected():
@@ -629,7 +632,8 @@ def test_invalid_signature_rejected():
     result = make_gate(bad_key).evaluate(make_command(), lease)
     assert result.allowed is False
     assert result.reason_code == "INVALID_SIGNATURE"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_tampered_lease_rejected_before_context_use():
@@ -638,6 +642,8 @@ def test_tampered_lease_rejected_before_context_use():
     result = make_gate(key).evaluate(make_command(), lease)
     assert result.allowed is False
     assert result.reason_code == "INVALID_SIGNATURE"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_missing_remote_assist_constraints_rejected():

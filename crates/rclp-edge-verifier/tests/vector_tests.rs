@@ -159,6 +159,37 @@ fn verifier_rejects_non_durable_replay_cache_before_authority_decision() {
 }
 
 #[test]
+fn malformed_input_diagnostic_summary_bounds_oversized_parse_errors() {
+    let vector = load_vector("valid_remote_assist_lease");
+    let huge_key = "x".repeat(20_000);
+    let mut input_map = serde_json::Map::new();
+    input_map.insert(huge_key.clone(), Value::Bool(true));
+    let input = Value::Object(input_map);
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(decision.reason_code.as_str(), "DENY_MALFORMED_INPUT");
+    assert_eq!(decision.audit_event.event_type, "diagnostic");
+    assert!(!decision.audit_event.authority_relevant);
+    let summary = decision.audit_event.payload["summary"]
+        .as_object()
+        .expect("oversized malformed summary is stored as bounded metadata");
+    assert!(summary["byte_length"]
+        .as_u64()
+        .is_some_and(|value| value > 20_000));
+    assert_eq!(summary["truncated"].as_bool(), Some(true));
+    assert!(summary["sha256"]
+        .as_str()
+        .is_some_and(|value| value.starts_with("sha256:")));
+    assert!(summary.get("value").is_none());
+    assert!(!serde_json::to_string(&decision.audit_event.payload)
+        .expect("audit payload serializes")
+        .contains(&huge_key));
+}
+
+#[test]
 fn file_replay_cache_preserves_replay_state_after_verifier_recreation() {
     let vector = load_vector("valid_remote_assist_lease");
     let cache_path = replay_cache_path("restart");
@@ -420,6 +451,32 @@ fn replay_cache_consumes_nonce_on_degrade_decision() {
     let second = verify_json_value(input, &vector.trusted_context, &mut replay_cache);
     assert_eq!(second.decision.as_str(), "deny");
     assert_eq!(second.reason_code.as_str(), "DENY_REPLAYED_NONCE");
+}
+
+#[test]
+fn network_degrade_overspeed_command_denies_before_degrade() {
+    let vector = load_vector("network_degrade_denies_or_revokes");
+    let mut input = vector.input;
+    let mut trusted_context = vector.trusted_context;
+    trusted_context.capability_constraint_requirements[0].require_max_speed_mps = true;
+    trusted_context.capability_constraint_bounds[0].max_speed_mps = Some(0.5);
+    input["lease"]["claims"]["lease_id"] = Value::from("lease-network-degrade-overspeed");
+    input["lease"]["claims"]["nonce"] = Value::from("nonce-network-degrade-overspeed");
+    input["lease"]["claims"]["constraints"]["max_speed_mps"] = Value::from(0.5);
+    input["command"]["payload"] = json!({"max_speed_mps": 0.6});
+    resign_command_value(
+        &mut input,
+        "cmd-network-degrade-overspeed",
+        "cmd-nonce-network-degrade-overspeed",
+        &trusted_context.command_hmac_secret,
+    );
+    resign_lease_value(&mut input, &trusted_context.dev_hmac_secret);
+    let mut replay_cache = fresh_replay_cache();
+
+    let decision = verify_json_value(input, &trusted_context, &mut replay_cache);
+
+    assert_eq!(decision.decision.as_str(), "deny");
+    assert_eq!(decision.reason_code.as_str(), "DENY_COMMAND_CONSTRAINT");
 }
 
 #[test]

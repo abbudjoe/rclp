@@ -7,10 +7,12 @@ from pydantic import ValidationError
 
 from rclp_agents.edge_agent_daemon import EdgeAgentDaemon
 from rclp_agents.central_agent_mock import request_remote_assist
+import rclp_core.attestation as attestation_module
 from rclp_core.attestation import attestation_auth_violation, attestation_trust_violation
 import rclp_core.crypto as crypto
 import rclp_core.leases as leases_module
 import rclp_core.policy as policy_module
+import rclp_core.state as state_module
 from rclp_core.audit import AuditLog
 from rclp_core.crypto import DemoKeyPair
 from rclp_core.leases import issue_lease
@@ -308,6 +310,7 @@ def make_attestation(**updates) -> AgentAttestation:
         kind="central_agent",
         manifest_digest="sha256:test-central-agent",
         public_key_id="test-central-ed25519",
+        trust_tier="development",
     )
     if updates:
         attestation = attestation.model_copy(update=updates)
@@ -342,6 +345,86 @@ def test_signed_agent_attestation_satisfies_trust_boundary():
             },
         )
         is None
+    )
+
+
+def test_agent_attestation_missing_trust_tier_is_rejected_at_boundary():
+    raw_attestation = make_attestation().model_dump(mode="json")
+    raw_attestation.pop("trust_tier")
+
+    with pytest.raises(ValidationError, match="trust_tier"):
+        AgentAttestation.model_validate(raw_attestation)
+
+
+def test_agent_attestation_requires_explicit_trust_tier_policy():
+    attestation = make_attestation()
+
+    assert (
+        attestation_trust_violation(
+            attestation,
+            {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+            public_key_ids_by_agent_id={
+                CENTRAL_AGENT_ID: "test-central-ed25519",
+            },
+            manifest_digests_by_agent_id={
+                CENTRAL_AGENT_ID: "sha256:test-central-agent",
+            },
+        )
+        == "ATTESTATION_TRUST_TIER_POLICY_REQUIRED"
+    )
+
+
+def test_agent_attestation_requires_explicit_manifest_policy():
+    attestation = make_attestation()
+
+    assert (
+        attestation_trust_violation(
+            attestation,
+            {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+            public_key_ids_by_agent_id={
+                CENTRAL_AGENT_ID: "test-central-ed25519",
+            },
+            accepted_trust_tiers={"development"},
+        )
+        == "ATTESTATION_MANIFEST_DIGEST_POLICY_REQUIRED"
+    )
+
+
+def test_oversized_attestation_material_rejects_before_signature_verification(monkeypatch):
+    attestation = make_attestation(manifest_digest=f"sha256:{'x' * 2_000}")
+
+    def fail_verify(payload, signature, public_key_b64):
+        raise AssertionError("attestation signature verification should not run")
+
+    monkeypatch.setattr(attestation_module, "verify_with_public_key_b64", fail_verify)
+
+    assert (
+        attestation_auth_violation(
+            attestation,
+            {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+        )
+        == "ATTESTATION_SIGNED_MATERIAL_TOO_LARGE"
+    )
+
+
+def test_oversized_invalid_attestation_material_rejects_before_signature_verification(
+    monkeypatch,
+):
+    attestation = make_attestation(manifest_digest=f"sha256:{'x' * 2_000}").model_copy(
+        update={"signature": "not-a-valid-signature"}
+    )
+
+    def fail_verify(payload, signature, public_key_b64):
+        raise AssertionError("invalid oversized attestation should not reach verification")
+
+    monkeypatch.setattr(attestation_module, "verify_with_public_key_b64", fail_verify)
+
+    assert (
+        attestation_auth_violation(
+            attestation,
+            {CENTRAL_AGENT_ID: CENTRAL_KEY.public_key_b64},
+        )
+        == "ATTESTATION_SIGNED_MATERIAL_TOO_LARGE"
     )
 
 
@@ -558,6 +641,14 @@ def test_policy_required_human_operator_state_must_be_explicit_before_policy_all
     assert constraints is None
 
 
+def test_robot_state_missing_network_attached_is_rejected_before_policy_allow():
+    raw_state = make_state().model_dump(mode="json")
+    raw_state["network_state"].pop("attached")
+
+    with pytest.raises(ValidationError, match="attached"):
+        RobotStateAssertion.model_validate(raw_state)
+
+
 def test_explicit_human_operator_available_state_still_allows_policy():
     state = make_state()
 
@@ -573,6 +664,23 @@ def test_explicit_human_operator_available_state_still_allows_policy():
     assert reason == "POLICY_SATISFIED"
     assert alternatives == []
     assert constraints is not None
+
+
+def test_oversized_robot_state_material_rejects_before_signature_verification(monkeypatch):
+    state = make_state().model_copy(update={"mission_id": "x" * 2_000})
+
+    def fail_verify(payload, signature, public_key_b64):
+        raise AssertionError("state signature verification should not run for oversized state")
+
+    monkeypatch.setattr(state_module, "verify_with_public_key_b64", fail_verify)
+
+    assert (
+        state_module.state_auth_violation(
+            state,
+            {EDGE_AGENT_ID: EDGE_KEY.public_key_b64},
+        )
+        == "STATE_SIGNED_MATERIAL_TOO_LARGE"
+    )
 
 
 def test_oversized_request_signature_rejects_before_decode_or_verify(monkeypatch):
@@ -628,7 +736,8 @@ def test_malformed_lease_signature_encoding_is_rejected():
 
     assert result.allowed is False
     assert result.reason_code == "INVALID_SIGNATURE"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_oversized_lease_signature_rejects_before_decode_or_verify(monkeypatch):
@@ -645,7 +754,8 @@ def test_oversized_lease_signature_rejects_before_decode_or_verify(monkeypatch):
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_SIGNED_MATERIAL_TOO_LARGE"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
     rejected = next(
         event
         for event in gate.audit_log.events
@@ -670,7 +780,8 @@ def test_oversized_lease_signed_field_rejects_before_canonical_json_or_verify(
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_SIGNED_MATERIAL_TOO_LARGE"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
     rejected = next(
         event
         for event in gate.audit_log.events
@@ -699,7 +810,12 @@ def test_nonfinite_signed_network_state_is_denied_at_runtime():
 
 def test_nonfinite_network_and_constraint_models_are_rejected():
     with pytest.raises(ValueError):
-        NetworkState(latency_ms_p95=float("inf"), packet_loss_pct=0.0, uplink_mbps=1.0)
+        NetworkState(
+            attached=True,
+            latency_ms_p95=float("inf"),
+            packet_loss_pct=0.0,
+            uplink_mbps=1.0,
+        )
     with pytest.raises(ValueError):
         LeaseConstraints(max_speed_mps=float("inf"))
     with pytest.raises(ValueError):
@@ -722,7 +838,8 @@ def test_nonfinite_lease_constraint_is_denied_at_runtime():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONSTRAINT_MALFORMED"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_unsupported_request_protocol_version_is_denied():
@@ -916,6 +1033,7 @@ def test_authority_models_reject_string_numeric_and_boolean_scalars_at_boundary(
 
 def test_json_integer_network_metrics_remain_valid_numbers():
     network = NetworkState(
+        attached=True,
         latency_ms_p95=45,
         packet_loss_pct=0,
         uplink_mbps=8,
@@ -924,6 +1042,40 @@ def test_json_integer_network_metrics_remain_valid_numbers():
     assert network.latency_ms_p95 == 45
     assert network.packet_loss_pct == 0
     assert network.uplink_mbps == 8
+
+
+def test_partition_profile_with_attached_state_denies_policy_and_command_gate():
+    key = DemoKeyPair()
+    contradictory_network = profile("normal").model_copy(
+        update={
+            "profile": NetworkProfile.PARTITION,
+            "attached": True,
+        }
+    )
+    state = sign_state(
+        make_state().model_copy(
+            update={
+                "network_state": contradictory_network,
+                "signature": None,
+            }
+        )
+    )
+
+    decision, reason, alternatives, constraints = evaluate_inputs(
+        make_request(),
+        state,
+        make_policy(),
+    )
+    assert decision == Decision.DENY
+    assert reason == "NETWORK_DETACHED"
+    assert alternatives == [FallbackAction.LOCAL_AUTONOMY_ONLY]
+    assert constraints is None
+
+    result = make_gate(key).evaluate(make_command(), issue_valid_lease(key), current_state=state)
+    assert result.allowed is False
+    assert result.reason_code == "NETWORK_DETACHED"
+    assert result.fallback_declaration is not None
+    assert result.fallback_declaration.fallback_action == FallbackAction.CRAWL_TO_SAFE_ZONE
 
 
 @pytest.mark.parametrize(
@@ -970,10 +1122,11 @@ def test_naive_lease_timestamps_are_denied_without_crashing():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_TIMESTAMP_INVALID"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
-def test_expired_lease_uses_local_fallback_not_lease_constraint():
+def test_expired_lease_does_not_emit_fallback_from_lease_constraint():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
     constraints = lease.constraints.model_copy(
@@ -994,7 +1147,8 @@ def test_expired_lease_uses_local_fallback_not_lease_constraint():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_EXPIRED"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_revocation_fallback_action_is_advisory_to_local_policy():
@@ -1149,6 +1303,7 @@ def test_authenticated_denied_request_nonce_cannot_later_allow(tmp_path):
             update={
                 "network_state": NetworkState(
                     profile=NetworkProfile.UNKNOWN,
+                    attached=True,
                     latency_ms_p95=45,
                     packet_loss_pct=0.1,
                     uplink_mbps=8.0,
@@ -1480,6 +1635,71 @@ def test_stale_lease_is_rejected_even_before_expiry():
     assert result.reason_code == "LEASE_STALE"
 
 
+def test_lease_ttl_exact_max_passes_but_max_plus_one_rejects_within_skew():
+    key = DemoKeyPair()
+    now = datetime.now(timezone.utc)
+    exact_max_lease = issue_valid_lease(key).model_copy(
+        update={
+            "issued_at": now,
+            "expires_at": now + timedelta(seconds=600),
+            "signature": None,
+        }
+    )
+    overlong_lease = issue_valid_lease(key).model_copy(
+        update={
+            "issued_at": now,
+            "expires_at": now + timedelta(seconds=601),
+            "signature": None,
+        }
+    )
+    resign(exact_max_lease, key)
+    resign(overlong_lease, key)
+
+    assert (
+        leases_module.lease_time_violation(
+            exact_max_lease,
+            at=now,
+            max_lease_age_seconds=600,
+            max_lease_ttl_seconds=600,
+            clock_skew_seconds=30,
+        )
+        is None
+    )
+    assert (
+        leases_module.lease_time_violation(
+            overlong_lease,
+            at=now,
+            max_lease_age_seconds=600,
+            max_lease_ttl_seconds=600,
+            clock_skew_seconds=30,
+        )
+        == "LEASE_TTL_TOO_LONG"
+    )
+
+
+def test_command_gate_rejects_lease_ttl_max_plus_one_even_within_skew():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    overlong_lease = lease.model_copy(
+        update={
+            "expires_at": lease.issued_at + timedelta(seconds=601),
+            "signature": None,
+        }
+    )
+    resign(overlong_lease, key)
+
+    result = make_gate(key, max_lease_ttl_seconds=600).evaluate(
+        make_command(),
+        overlong_lease,
+        current_state=make_state(),
+    )
+
+    assert result.allowed is False
+    assert result.reason_code == "LEASE_TTL_TOO_LONG"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
+
+
 def test_state_scoped_remote_assist_lease_requires_current_state_at_command_gate():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
@@ -1548,7 +1768,8 @@ def test_no_speed_lease_rejects_nonempty_command_payload_schema(payload):
 
     assert result.allowed is False
     assert result.reason_code == "COMMAND_PAYLOAD_SCHEMA_VIOLATION"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_signed_lease_cannot_expand_policy_absent_speed_ceiling():
@@ -1565,7 +1786,8 @@ def test_signed_lease_cannot_expand_policy_absent_speed_ceiling():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONSTRAINTS_EXCEED_POLICY"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_signed_lease_cannot_relax_policy_network_thresholds():
@@ -1581,6 +1803,8 @@ def test_signed_lease_cannot_relax_policy_network_thresholds():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONSTRAINTS_EXCEED_POLICY"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_policy_derived_bounds_include_required_geofence_identity():
@@ -1607,6 +1831,8 @@ def test_signed_lease_cannot_expand_policy_geofence_identity():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_CONSTRAINTS_EXCEED_POLICY"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 @pytest.mark.parametrize(
@@ -1688,6 +1914,8 @@ def test_lease_context_replay_to_wrong_agent_robot_mission_or_capability_is_reje
 
     assert result.allowed is False
     assert result.reason_code == expected_reason
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 @pytest.mark.parametrize(
@@ -2027,6 +2255,56 @@ def test_command_auth_denials_do_not_emit_fallback_side_effects(case_name, expec
     assert payload["claimed_lease_id"] == lease.lease_id
 
 
+def test_command_auth_diagnostic_bounds_oversized_claimed_fields():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    huge_command_id = "cmd-" + ("x" * 20_000)
+    command = make_command(command_id=huge_command_id).model_copy(
+        update={"authenticated_agent_id": None, "signature": None}
+    )
+    gate = make_gate(key)
+
+    result = gate.evaluate(command, lease, current_state=make_state())
+
+    assert result.allowed is False
+    assert result.reason_code == "COMMAND_AUTHENTICATED_AGENT_MISSING"
+    event = gate.audit_log.events[-1]
+    assert event.event_type == AuditEventType.DIAGNOSTIC
+    assert huge_command_id not in event.summary
+    claimed_command_id = event.payload["claimed_command_id"]
+    assert claimed_command_id["byte_length"] == len(huge_command_id)
+    assert claimed_command_id["truncated"] is True
+    assert claimed_command_id["sha256"].startswith("sha256:")
+    assert "value" not in claimed_command_id
+
+
+def test_revocation_diagnostic_bounds_oversized_claimed_revoker():
+    key = DemoKeyPair()
+    lease = issue_valid_lease(key)
+    huge_revoker = "revoker-" + ("x" * 20_000)
+    revocation = LeaseRevocation(
+        lease_id=lease.lease_id,
+        revoked_by=huge_revoker,
+        edge_agent_id=EDGE_AGENT_ID,
+        reason_code="NETWORK_PROFILE_REVOKE",
+        fallback_action=FallbackAction.HOLD_POSITION,
+    )
+    gate = make_gate(key)
+
+    with pytest.raises(ValueError, match="revocation actor is not trusted"):
+        gate.revoke(revocation, lease=lease)
+
+    event = gate.audit_log.events[-1]
+    assert event.event_type == AuditEventType.REVOCATION_REJECTED
+    assert huge_revoker not in event.summary
+    assert event.related_message_ids == []
+    claimed_revoked_by = event.payload["claimed_revoked_by"]
+    assert claimed_revoked_by["byte_length"] == len(huge_revoker)
+    assert claimed_revoked_by["truncated"] is True
+    assert claimed_revoked_by["sha256"].startswith("sha256:")
+    assert "value" not in claimed_revoked_by
+
+
 def test_replayed_signed_command_is_rejected_before_second_authorization():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
@@ -2049,7 +2327,7 @@ def test_replayed_signed_command_is_rejected_before_second_authorization():
     assert gate.audit_log.events[-1].payload["fallback_action"] is None
 
 
-def test_missing_lease_denial_consumes_command_replay_state_before_fallback_side_effect():
+def test_missing_lease_denial_does_not_consume_command_replay_or_emit_fallback():
     key = DemoKeyPair()
     lease = issue_valid_lease(key)
     emitted = []
@@ -2061,31 +2339,48 @@ def test_missing_lease_denial_consumes_command_replay_state_before_fallback_side
 
     assert missing_lease.allowed is False
     assert missing_lease.reason_code == "NO_LEASE"
-    assert missing_lease.fallback_declaration is not None
-    assert with_valid_lease.allowed is False
-    assert with_valid_lease.reason_code == "COMMAND_REPLAYED"
+    assert missing_lease.fallback_action is None
+    assert missing_lease.fallback_declaration is None
+    assert with_valid_lease.allowed is True
+    assert with_valid_lease.reason_code == "LEASE_VALID"
     assert with_valid_lease.fallback_declaration is None
-    assert len(emitted) == 1
-    assert len(gate.fallback_events) == 1
+    assert emitted == []
+    assert gate.fallback_events == []
 
 
 def test_replayed_post_auth_denial_does_not_reemit_fallback():
     key = DemoKeyPair()
     emitted = []
     gate = make_gate(key, fallback_sink=emitted.append)
+    lease = issue_valid_lease(key)
+    revocation = sign_revocation(
+        LeaseRevocation(
+            lease_id=lease.lease_id,
+            revoked_by=EDGE_AGENT_ID,
+            edge_agent_id=EDGE_AGENT_ID,
+            reason_code="COMPROMISE_SUSPECTED",
+            fallback_action=FallbackAction.HOLD_POSITION,
+            robot_id=lease.robot_id,
+            mission_id=lease.mission_id,
+            capability=lease.capability,
+        )
+    )
+    gate.revoke(revocation, lease=lease)
+    baseline_fallback_count = len(gate.fallback_events)
+    emitted.clear()
     command = make_command()
 
-    first = gate.evaluate(command, None, current_state=make_state())
-    second = gate.evaluate(command, None, current_state=make_state())
+    first = gate.evaluate(command, lease, current_state=make_state())
+    second = gate.evaluate(command, lease, current_state=make_state())
 
     assert first.allowed is False
-    assert first.reason_code == "NO_LEASE"
+    assert first.reason_code == "LEASE_REVOKED"
     assert first.fallback_declaration is not None
     assert second.allowed is False
     assert second.reason_code == "COMMAND_REPLAYED"
     assert second.fallback_declaration is None
     assert len(emitted) == 1
-    assert len(gate.fallback_events) == 1
+    assert len(gate.fallback_events) == baseline_fallback_count + 1
 
 
 def test_command_gate_accepts_signed_lease_with_matching_policy_provenance():
@@ -2109,7 +2404,8 @@ def test_command_gate_rejects_signed_lease_missing_policy_provenance():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_POLICY_PROVENANCE_REQUIRED"
-    assert result.fallback_declaration is not None
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_command_gate_rejects_signed_lease_policy_digest_mismatch():
@@ -2123,7 +2419,8 @@ def test_command_gate_rejects_signed_lease_policy_digest_mismatch():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_POLICY_NOT_ACCEPTED"
-    assert result.fallback_declaration is not None
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_command_gate_requires_durable_command_replay_cache():
@@ -2500,6 +2797,8 @@ def test_expired_lease_is_rejected():
 
     assert result.allowed is False
     assert result.reason_code == "LEASE_EXPIRED"
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_revoked_lease_is_rejected():
@@ -2552,10 +2851,8 @@ def test_forged_revoked_lease_id_cannot_select_revocation_fallback():
 
     assert result.allowed is False
     assert result.reason_code == "INVALID_SIGNATURE"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
-    assert result.fallback_declaration is not None
-    assert result.fallback_declaration.revocation_id is None
-    assert result.fallback_declaration.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_unsigned_revocation_cannot_revoke_lease():
@@ -2969,7 +3266,8 @@ def test_unknown_lease_issuer_is_rejected_even_with_a_valid_signature():
 
     assert result.allowed is False
     assert result.reason_code == "ISSUER_NOT_TRUSTED"
-    assert result.fallback_action == FallbackAction.LOCAL_AUTONOMY_ONLY
+    assert result.fallback_action is None
+    assert result.fallback_declaration is None
 
 
 def test_lease_issuer_identity_must_match_verification_key():

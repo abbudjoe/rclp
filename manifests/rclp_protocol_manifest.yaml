@@ -38,7 +38,6 @@ message_models:
       - created_at
       - message_type
       - authenticated_agent_id
-      - trust_tier
       - signature
   RobotStateAssertion:
     python_model: rclp_core.models.RobotStateAssertion

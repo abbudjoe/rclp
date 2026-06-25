@@ -125,7 +125,7 @@ class AgentAttestation(BaseMessage):
     kind: Literal["central_agent", "edge_agent", "human_operator", "service"]
     manifest_digest: str
     public_key_id: str
-    trust_tier: Literal["development", "staging", "production"] = "development"
+    trust_tier: Literal["development", "staging", "production"]
     revoked: bool = False
     signature: str | None = None
 
@@ -154,7 +154,7 @@ class MissionContext(StrictModel):
 
 class NetworkState(StrictModel):
     profile: NetworkProfile = NetworkProfile.UNKNOWN
-    attached: bool = True
+    attached: bool
     latency_ms_p95: float = Field(ge=0, allow_inf_nan=False)
     packet_loss_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
     uplink_mbps: float = Field(ge=0, allow_inf_nan=False)

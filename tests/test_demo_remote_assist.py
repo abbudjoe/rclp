@@ -60,11 +60,8 @@ def test_demo_remote_assist_outputs_full_local_authority_flow(capsys):
     assert missing_lease_result["audit_id"].startswith("audit_")
     assert missing_lease_result["gate_result"]["allowed"] is False
     assert missing_lease_result["gate_result"]["audit_id"] == missing_lease_result["audit_id"]
-    assert missing_lease_result["gate_result"]["fallback_action"] == "local_autonomy_only"
-    assert (
-        missing_lease_result["gate_result"]["fallback_declaration"]["correlation_id"]
-        == "corr_demo_remote_assist"
-    )
+    assert missing_lease_result["gate_result"]["fallback_action"] is None
+    assert missing_lease_result["gate_result"]["fallback_declaration"] is None
 
     degraded_decision = json.loads(_section(output, "impaired_network_decision"))
     assert degraded_decision["decision"] == "degrade"
@@ -101,7 +98,6 @@ def test_demo_remote_assist_outputs_full_local_authority_flow(capsys):
         "capability_allowed",
         "command_allowed",
         "command_rejected",
-        "fallback_declared",
         "network_state_asserted",
         "capability_requested",
         "capability_degraded",

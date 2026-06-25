@@ -3,6 +3,7 @@ from __future__ import annotations
 import binascii
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
+import hashlib
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
@@ -36,6 +37,7 @@ DEFAULT_COMMAND_MAX_AGE_SECONDS = 30
 COMMAND_CLOCK_SKEW_SECONDS = 30
 MAX_SIGNED_TEXT_FIELD_BYTES = 1_024
 MAX_SIGNED_TEXT_TOTAL_BYTES = 16_384
+MAX_DIAGNOSTIC_TEXT_BYTES = 256
 MAX_COMMAND_PAYLOAD_DEPTH = 32
 MAX_COMMAND_PAYLOAD_NODES = 2_048
 MAX_COMMAND_PAYLOAD_ESTIMATED_BYTES = 65_536
@@ -50,6 +52,16 @@ DEFAULT_LOCAL_FALLBACK_ACTIONS_BY_REASON: dict[str, FallbackAction] = {
     "NETWORK_DEGRADED_REVOKE": FallbackAction.CRAWL_TO_SAFE_ZONE,
     "GEOFENCE_CONSTRAINT_VIOLATED": FallbackAction.HOLD_POSITION,
 }
+STATE_FALLBACK_DENIAL_REASONS = frozenset(
+    {
+        "NETWORK_LATENCY_TOO_HIGH",
+        "NETWORK_PACKET_LOSS_TOO_HIGH",
+        "NETWORK_UPLINK_TOO_LOW",
+        "NETWORK_DETACHED",
+        "NETWORK_STATE_UNKNOWN",
+        "GEOFENCE_CONSTRAINT_VIOLATED",
+    }
+)
 
 
 class _SignedTextBudget:
@@ -148,6 +160,21 @@ def _estimated_payload_bytes(value: object) -> int:
     if isinstance(value, dict | list):
         return 2
     return len(str(value).encode("utf-8"))
+
+
+def _bounded_diagnostic_text(value: object | None) -> object | None:
+    if value is None:
+        return None
+    text = str(value)
+    encoded = text.encode("utf-8")
+    if len(encoded) <= MAX_DIAGNOSTIC_TEXT_BYTES:
+        return text
+    digest = hashlib.sha256(encoded).hexdigest()
+    return {
+        "byte_length": len(encoded),
+        "sha256": f"sha256:{digest}",
+        "truncated": True,
+    }
 
 
 class EdgeCommand(BaseMessage):
@@ -680,10 +707,10 @@ class CommandGate:
                     correlation_id=lease.lease_id,
                     summary="raw lease-id revocation rejected because protocol context is required",
                     payload={
-                        "lease_id": revocation,
+                        "claimed_lease_id": _bounded_diagnostic_text(revocation),
                         "reason_code": "REVOCATION_CONTEXT_REQUIRED",
                     },
-                    related_message_ids=[revocation],
+                    related_message_ids=[],
                 )
             raise ValueError("revocation requires a LeaseRevocation message")
 
@@ -711,10 +738,10 @@ class CommandGate:
                     "lease_id": record.lease_id,
                     "reason_code": "REVOCATION_CONTEXT_REQUIRED",
                     "revocation_id": record.revocation_id,
-                    "claimed_revoked_by": revoked_by,
+                    "claimed_revoked_by": _bounded_diagnostic_text(revoked_by),
                 },
                 authority_relevant=False,
-                related_message_ids=[record.revocation_id] if record.revocation_id else [],
+                related_message_ids=[],
             )
             raise ValueError("revocation requires lease context")
 
@@ -741,13 +768,13 @@ class CommandGate:
                 payload={
                     "lease_id": record.lease_id,
                     "revocation_id": record.revocation_id,
-                    "claimed_revoked_by": revoked_by,
+                    "claimed_revoked_by": _bounded_diagnostic_text(revoked_by),
                     "expected_edge_agent_id": self.local_edge_agent_id,
-                    "revocation_edge_agent_id": revocation.edge_agent_id,
+                    "revocation_edge_agent_id": _bounded_diagnostic_text(revocation.edge_agent_id),
                     "lease_edge_agent_id": lease.edge_agent_id,
                     "reason_code": "REVOCATION_EDGE_AGENT_MISMATCH",
                 },
-                related_message_ids=[record.revocation_id] if record.revocation_id else [],
+                related_message_ids=[],
             )
             raise ValueError("revocation edge_agent_id does not match local edge")
 
@@ -762,10 +789,10 @@ class CommandGate:
                 payload={
                     "lease_id": record.lease_id,
                     "revocation_id": record.revocation_id,
-                    "claimed_revoked_by": revoked_by,
+                    "claimed_revoked_by": _bounded_diagnostic_text(revoked_by),
                     "reason_code": "REVOCATION_ACTOR_NOT_TRUSTED",
                 },
-                related_message_ids=[record.revocation_id] if record.revocation_id else [],
+                related_message_ids=[],
             )
             raise ValueError("revocation actor is not trusted")
 
@@ -944,6 +971,14 @@ class CommandGate:
                 reason="COMMAND_REPLAYED",
                 emit_fallback=False,
             )
+        if lease is None:
+            return self._reject_command(
+                command=command,
+                lease=lease,
+                current_state=current_state,
+                reason="NO_LEASE",
+                emit_fallback=False,
+            )
         ok, reason = validate_lease_for_command(
             lease,
             issuer_public_key_b64=self.issuer_public_key_b64,
@@ -1077,7 +1112,7 @@ class CommandGate:
         command_correlation_id = self._command_correlation_id(command, lease, revocation)
         fallback: FallbackAction | None = None
         declaration: FallbackDeclaration | None = None
-        if emit_fallback:
+        if emit_fallback and self._denial_can_emit_fallback(reason, revocation):
             fallback = self._fallback_action_for_denial(command, lease, reason, revocation)
             declaration = FallbackDeclaration(
                 correlation_id=command_correlation_id,
@@ -1107,25 +1142,32 @@ class CommandGate:
             }
         else:
             payload = {
-                "claimed_command_id": command.command_id,
-                "claimed_command_message_id": command.message_id,
-                "claimed_agent_id": command.agent_id,
-                "claimed_authenticated_agent_id": command.authenticated_agent_id,
-                "claimed_edge_agent_id": command.edge_agent_id,
-                "claimed_robot_id": command.robot_id,
-                "claimed_mission_id": command.mission_id,
-                "claimed_capability": command.capability,
-                "claimed_command_nonce": command.command_nonce,
-                "claimed_lease_id": lease.lease_id if lease else None,
+                "claimed_command_id": _bounded_diagnostic_text(command.command_id),
+                "claimed_command_message_id": _bounded_diagnostic_text(command.message_id),
+                "claimed_agent_id": _bounded_diagnostic_text(command.agent_id),
+                "claimed_authenticated_agent_id": _bounded_diagnostic_text(
+                    command.authenticated_agent_id
+                ),
+                "claimed_edge_agent_id": _bounded_diagnostic_text(command.edge_agent_id),
+                "claimed_robot_id": _bounded_diagnostic_text(command.robot_id),
+                "claimed_mission_id": _bounded_diagnostic_text(command.mission_id),
+                "claimed_capability": _bounded_diagnostic_text(command.capability),
+                "claimed_command_nonce": _bounded_diagnostic_text(command.command_nonce),
+                "claimed_lease_id": _bounded_diagnostic_text(lease.lease_id if lease else None),
                 "reason_code": reason,
                 "fallback_action": fallback,
             }
         state_refs = []
-        related_message_ids = [command.message_id]
-        if current_state is not None:
+        related_message_ids = [command.message_id] if authority_relevant else []
+        if authority_relevant and current_state is not None:
             state_refs.append(current_state.message_id)
             related_message_ids.append(current_state.message_id)
             payload["current_state"] = current_state.model_dump(mode="json")
+        summary = (
+            f"command {command.command_id} rejected: {reason}"
+            if authority_relevant
+            else f"untrusted command rejected: {reason}"
+        )
         event = self.audit_log.record(
             event_type=AuditEventType.COMMAND_REJECTED
             if authority_relevant
@@ -1134,7 +1176,7 @@ class CommandGate:
             robot_id=command.robot_id if authority_relevant else None,
             mission_id=command.mission_id if authority_relevant else None,
             correlation_id=command_correlation_id,
-            summary=f"command {command.command_id} rejected: {reason}",
+            summary=summary,
             payload=payload,
             authority_relevant=authority_relevant,
             state_refs=state_refs,
@@ -1211,6 +1253,15 @@ class CommandGate:
             return self._local_fallback_action(revocation.reason_code)
         return self._local_fallback_action(reason)
 
+    def _denial_can_emit_fallback(
+        self,
+        reason: str,
+        revocation: RevokedLease | None,
+    ) -> bool:
+        if reason == "LEASE_REVOKED":
+            return revocation is not None
+        return reason in STATE_FALLBACK_DENIAL_REASONS
+
     def _local_fallback_action(self, reason: str) -> FallbackAction:
         return self.fallback_actions_by_reason.get(reason, FallbackAction.LOCAL_AUTONOMY_ONLY)
 
@@ -1249,7 +1300,7 @@ class CommandGate:
         actor_payload = (
             {"revoked_by": revocation.revoked_by}
             if authenticated_actor
-            else {"claimed_revoked_by": revocation.revoked_by}
+            else {"claimed_revoked_by": _bounded_diagnostic_text(revocation.revoked_by)}
         )
         self.audit_log.record(
             event_type=AuditEventType.REVOCATION_REJECTED,
@@ -1264,7 +1315,7 @@ class CommandGate:
                 **actor_payload,
                 "reason_code": reason_code,
             },
-            related_message_ids=[revocation.message_id],
+            related_message_ids=[revocation.message_id] if authenticated_actor else [],
         )
 
     def _revocation_context_conflicts(

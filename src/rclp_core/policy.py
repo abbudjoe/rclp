@@ -22,7 +22,6 @@ from rclp_core.models import (
     Decision,
     FallbackAction,
     LeaseConstraints,
-    NetworkProfile,
     RobotStateAssertion,
     protocol_version_violation,
     stable_json_hash,
@@ -30,6 +29,7 @@ from rclp_core.models import (
 from rclp_core.state import (
     DEFAULT_STATE_MAX_AGE_SECONDS,
     ROBOT_STATE_REQUIRED_WIRE_FIELDS,
+    network_state_authority_violation,
     state_auth_violation,
     state_time_violation,
 )
@@ -498,10 +498,8 @@ def _evaluate_network_requirements(
     net,
     fallback: FallbackPolicy,
 ) -> tuple[Decision, str, list[FallbackAction], LeaseConstraints | None] | None:
-    if net.profile == NetworkProfile.UNKNOWN:
-        return Decision.DENY, "NETWORK_STATE_UNKNOWN", [fallback.on_disconnect], None
-    if not net.attached:
-        return Decision.DENY, "NETWORK_DETACHED", [fallback.on_disconnect], None
+    if authority_reason := network_state_authority_violation(net):
+        return Decision.DENY, authority_reason, [fallback.on_disconnect], None
     if net.latency_ms_p95 > req.deny_above_latency_ms_p95:
         return Decision.DENY, "NETWORK_LATENCY_TOO_HIGH", [fallback.on_network_degrade], None
     if net.packet_loss_pct > req.deny_above_packet_loss_pct:

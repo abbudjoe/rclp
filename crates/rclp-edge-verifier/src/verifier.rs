@@ -237,6 +237,9 @@ pub fn verify(
     }
     if let Some(reason) = network_policy_violation(&input) {
         if reason == ReasonCode::DegradeNetworkPolicy {
+            if let Some(command_reason) = command_constraint_violation(&input) {
+                return deny(&input, trusted_context, command_reason);
+            }
             if let Some(replay_reason) = final_replay_violation(&input, claims, replay_cache) {
                 return deny(&input, trusted_context, replay_reason);
             }
@@ -1093,7 +1096,7 @@ fn malformed_decision(
     let payload = serde_json::json!({
         "decision": Decision::Deny.as_str(),
         "reason_code": reason_code.as_str(),
-        "summary": summary,
+        "summary": bounded_diagnostic_text(&summary),
     });
     VerificationDecision {
         decision: Decision::Deny,
