@@ -1,5 +1,73 @@
 # Assembly Ledger
 
+## S4 Fresh Open-source / Commercial-boundary Review - 2026-06-25
+
+Status: successful
+
+Source contract:
+
+- User request: perform the S4 open-source / commercial-boundary review and
+  write `docs/reviews/codex_simulated_review/S4_open_source_commercial_boundary.md`
+  using `assembly`.
+- Target state: controlled external technical validation, not public
+  standardization or production deployment.
+- `AGENTS.md`
+- `README.md`
+- `LICENSE`
+- `SECURITY.md`
+- `CONTRIBUTING.md`
+- `docs/COMMERCIAL_BOUNDARY.md`
+- `docs/GOVERNANCE.md`
+- `docs/SAFETY_BOUNDARY.md`
+- `docs/CUSTOMER_VALIDATION_MEMO.md`
+- `docs/VALIDATION_RELEASE_NOTES.md`
+- `docs/ENGINEERING_DOCTRINE.md`
+- `docs/SECURITY_DOCTRINE.md`
+- `docs/DESIGN_TASTE.md`
+- `docs/PROTOCOL_SPEC_DRAFT.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_STRATEGY.md`
+
+Preflight note:
+
+- No cloud jobs, GPU jobs, Lambda instances, or paid compute mutations are
+  required for this review. None will be launched, stopped, resized, deleted,
+  or otherwise mutated.
+
+Target contract:
+
+Evaluate whether the RCLP open protocol MVP is safe to share with controlled
+external technical reviewers without leaking commercial strategy, overclaiming
+safety, or creating avoidable confusion. Keep changes narrow: update the S4
+review report and ledger only unless an obvious sensitive-content cleanup is
+required.
+
+Definition of done:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Required S4 and repo doctrine documents are read before report update. | met | Read `README.md`, `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/COMMERCIAL_BOUNDARY.md`, `docs/GOVERNANCE.md`, `docs/SAFETY_BOUNDARY.md`, `docs/CUSTOMER_VALIDATION_MEMO.md`, `docs/VALIDATION_RELEASE_NOTES.md`, `AGENTS.md`, and the required doctrine docs before editing the report. |
+| Requested search targets and sensitive-content scans are run without exposing possible secrets. | met | Ran tracked-file searches for the requested terms, targeted local-path scans, named-company scans, license posture checks, security-contact checks, source/review-packet scans with repository ignore rules, and secret-shaped pattern scans. The report now states that ignored generated artifacts such as virtualenvs, build outputs, caches, and bytecode must be cleaned or excluded before packaging. No possible secret values are quoted in the report. |
+| S4 report is written at the requested path with the requested structure and answers all six evaluation questions. | met | Updated `docs/reviews/codex_simulated_review/S4_open_source_commercial_boundary.md` with the required sections, GREEN verdict, current scan evidence, commercial-boundary assessment, safety/security wording risks, sensitive-reference assessment, blocking issues, and recommended fixes. |
+| Verdict is appropriate for controlled external technical validation and avoids public-launch or production-deployment overclaiming. | met | The report says suitable for controlled external technical validation, not public standardization or production deployment, and keeps public security intake/counsel review as public-launch cautions rather than controlled-validation blockers. |
+| Changes remain narrow and do not introduce secrets, local paths, private references, unsafe wording, or commercial strategy. | met | Edits are limited to the S4 report and this assembly ledger entry; tracked-source and review-packet scans found no local absolute paths, named-company target hits, or secret-shaped pattern matches. |
+| Validation/evidence gates and subagent spec-conformance review complete. | met | `git diff --check`, `.venv/bin/python -m compileall src tests`, `.venv/bin/python -m pytest -q` (246 passed), `.venv/bin/ruff check .`, `.venv/bin/ruff format . --check`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (3 unit tests and 47 vector tests), and `.venv/bin/python tests/evals/eval_runner.py` (33 passed) passed. McClintock's initial review found one evidence-scope wording issue and the pending ledger row; both were resolved, and the re-review found no remaining blocking, partial, or evidence risks. |
+
+Changed files:
+
+- `docs/reviews/codex_simulated_review/S4_open_source_commercial_boundary.md`
+- `docs/ASSEMBLY_LEDGER.md`
+
+Review notes:
+
+- McClintock confirmed the report structure and GREEN verdict satisfy the S4
+  contract for controlled external technical validation.
+- The valid review finding about overbroad local-path evidence wording was
+  fixed by scoping the report to tracked-source and review-packet scans and by
+  adding a generated-artifact cleanup/exclusion guard before packaging.
+- McClintock's re-review classified all DoD items as met and found no remaining
+  blocking, partial, or evidence risks.
+
 ## S4 Recommended-fix Closure Follow-up - 2026-06-25
 
 Status: successful

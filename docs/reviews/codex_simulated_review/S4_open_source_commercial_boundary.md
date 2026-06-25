@@ -16,7 +16,8 @@ The prior yellow release-hygiene items have been remediated for controlled
 validation: Rust and Python package metadata now align on Apache-2.0,
 `SECURITY.md` no longer contains a placeholder reporting contact, and
 `docs/CONTROLLED_REVIEW_PACKET.md` defines the external review surface and
-excludes planning docs unless deliberately included.
+excludes planning docs unless deliberately included. This fresh review pass
+found no new controlled-validation blockers.
 
 ## Open-source posture
 
@@ -35,6 +36,9 @@ excludes planning docs unless deliberately included.
   private review channel that distributed the packet, avoids public disclosure
   of sensitive vulnerability details, and leaves monitored public security
   intake as a public-launch requirement.
+- `docs/CONTROLLED_REVIEW_PACKET.md`, `docs/VALIDATION_RELEASE_NOTES.md`, demo
+  docs, eval docs, and the technical FAQ invite concrete technical feedback on
+  the protocol primitive without packaging the full planning backlog.
 
 ## Commercial-boundary assessment
 
@@ -53,6 +57,9 @@ excludes planning docs unless deliberately included.
   explicitly needs planning context.
 - The commercial roadmap content is high-level and does not reveal carrier
   contracts, pricing, a customer list, or a proprietary integration plan.
+- The repo invites useful technical review of the authority primitive, demo,
+  conformance tests, threat model, and safety boundary while excluding planning
+  and discovery aids from the default external packet.
 
 ## Safety/security wording risks
 
@@ -75,9 +82,11 @@ excludes planning docs unless deliberately included.
 
 ## Sensitive references or local paths
 
-- Tracked-file search found no local absolute paths. A raw search did hit the
-  worktree `.git` pointer, but that is local Git metadata and not tracked repo
-  content.
+- Tracked-source and review-packet scans found no local absolute paths.
+  Non-`.git` scans were run with repository ignore rules, so ignored generated
+  artifacts such as virtualenvs, build outputs, caches, and bytecode are not
+  part of the review-packet evidence. Clean or exclude generated artifacts
+  before packaging a local checkout.
 - No obvious real secrets, API keys, bearer tokens, SSH private keys, cloud
   account IDs, or private keys were found in tracked files by targeted pattern
   search.
@@ -92,9 +101,10 @@ excludes planning docs unless deliberately included.
   customer-list, or pricing content except checklist statements saying such
   references must not be present.
 - Evidence basis included tracked-file scans with `git ls-files -z | xargs -0
-  rg` for the requested terms, a targeted secret-pattern scan, and a tracked
-  local-absolute-path scan. A raw all-file scan was used only to distinguish
-  tracked content from local worktree metadata.
+  rg` for the requested terms, a targeted secret-pattern scan, a tracked
+  local-absolute-path scan, and source/review-packet scans with repository
+  ignore rules for local paths, named-company references, and secret-shaped
+  patterns.
 
 ## Blocking issues
 
@@ -122,3 +132,5 @@ excludes planning docs unless deliberately included.
   for validation demos; do not add real customer logs, cloud identifiers,
   account names, pricing, carrier details, or proprietary workflows to this
   repo.
+- Before assembling a packet from a local checkout, clean or exclude ignored
+  generated artifacts such as virtualenvs, build outputs, caches, and bytecode.
